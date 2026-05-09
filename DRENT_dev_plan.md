@@ -17,31 +17,31 @@
 
 ---
 
-## FASE 0 — Foundation
+## FASE 0 — Foundation (SELESAI)
 
 > Tujuan: Project siap dijalankan, struktur folder terbentuk, migrasi DB dasar jalan, auth bisa login.
 
-### 0.1 — Setup Project (SUDAH SELESAI)
+### 0.1 — Setup Project (SELESAI)
 - Laravel project dibuat di folder `backend/`
 - Vue 3 + Vite dibuat di folder `frontend/`
 - `.env` dikonfigurasi untuk koneksi DB
 - Laravel Sanctum diinstall dan dikonfigurasi
 - Tailwind CSS + PrimeVue diinstall di frontend
 
-### 0.2 — Migrasi Database Inti (SUDAH SELESAI)
+### 0.2 — Migrasi Database Inti (SELESAI)
 - Buat migration: `tenants`, `branches`, `users`
 - Tambahkan kolom `tenant_id` dan `branch_id` di semua tabel utama
 - Buat seeder: 1 tenant default, 1 branch default, 1 user superadmin
 - Jalankan dan verifikasi migrasi berjalan tanpa error
 
-### 0.3 — Auth Backend (SUDAH SELESAI)
+### 0.3 — Auth Backend (SELESAI)
 - Endpoint `POST /api/v1/login` — return Sanctum token + user context (role, branch)
 - Endpoint `POST /api/v1/logout` — revoke token
 - Endpoint `GET /api/v1/me` — return user yang sedang login
 - Middleware branch scope: pastikan setiap request membawa `branch_id`
 - Buat `UserResource` untuk response
 
-### 0.4 — Auth Frontend (SUDAH SELESAI)
+### 0.4 — Auth Frontend (SELESAI)
 - Halaman Login (`/login`) dengan form email + password
 - Pinia store `useAuthStore`: simpan token, user, branch aktif
 - Axios interceptor: tambah token ke header setiap request
