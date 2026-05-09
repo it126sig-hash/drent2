@@ -31,6 +31,11 @@ const router = createRouter({
           name: 'units',
           component: () => import('../views/units/UnitListView.vue'),
         },
+        {
+          path: '/drivers',
+          name: 'drivers',
+          component: () => import('../views/drivers/DriverListView.vue'),
+        },
       ]
     }
   ]
