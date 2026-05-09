@@ -395,6 +395,7 @@
 6. **Amount** → semua angka uang sebagai integer IDR, tanpa desimal
 7. **Soft delete** → semua model pakai `SoftDeletes` trait
 8. **tenant_id** → semua tabel wajib punya kolom `tenant_id` (SaaS-ready)
+9. **API URL** → Gunakan prefix `/v1` di frontend (`src/api/*.js`) untuk semua request ke backend, sesuai dengan struktur routing Laravel di `api.php`.
 
 ### Hal yang Belum Boleh Diimplementasi
 - Strategi arsip data (tunggu konfirmasi: soft-delete vs tabel terpisah vs is_archived)

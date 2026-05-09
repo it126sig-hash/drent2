@@ -93,6 +93,7 @@ $this->authorize('updateBalance', $driver);
 |---------|----------|
 | Laravel Controller | `BookingController`, bukan `BookingsController` |
 | Laravel Route | `/api/v1/bookings` (plural, kebab-case) |
+| API URL (Frontend) | `/v1/users` (selalu pakai prefix `/v1`) |
 | Vue component | `BookingForm.vue`, `UnitCard.vue` (PascalCase) |
 | Pinia store | `useBookingStore`, `useFinanceStore` |
 | Composable | `useBooking`, `useUnit` |

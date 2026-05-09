@@ -12,11 +12,12 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
 // Keputusan ini belum final per [2026-05-09].
 
-#[Fillable(['name', 'email', 'password', 'tenant_id', 'branch_id', 'role'])]
+#[Fillable(['name', 'email', 'password', 'tenant_id', 'branch_id', 'role', 'is_active'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -33,6 +34,25 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function getRoleLabelAttribute(): string
+    {
+        return match($this->role) {
+            'superadmin'   => 'Super Admin',
+            'admin_branch' => 'Admin Branch',
+            'finance'      => 'Finance',
+            'driver_tetap' => 'Driver Tetap',
+            'cs'           => 'Customer Service',
+            'teknisi'      => 'Teknisi',
+            default        => $this->role,
+        };
     }
 }

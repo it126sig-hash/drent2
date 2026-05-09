@@ -61,6 +61,12 @@ const router = createRouter({
           name: 'member-edit',
           component: () => import('../views/members/MemberFormView.vue'),
         },
+        {
+          path: '/users',
+          name: 'users',
+          component: () => import('../views/users/UserListView.vue'),
+          meta: { roles: ['superadmin', 'admin_branch'] }
+        },
       ]
     }
   ]
