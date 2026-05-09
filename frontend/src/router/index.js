@@ -26,6 +26,11 @@ const router = createRouter({
           name: 'rental-owners',
           component: () => import('../views/rental-owners/RentalOwnerListView.vue'),
         },
+        {
+          path: '/units',
+          name: 'units',
+          component: () => import('../views/units/UnitListView.vue'),
+        },
       ]
     }
   ]
