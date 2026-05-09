@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\RentalOwnerController;
 use App\Http\Controllers\Api\V1\UnitController;
 use App\Http\Controllers\Api\V1\DriverController;
+use App\Http\Controllers\Api\V1\CustomerController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -24,5 +25,8 @@ Route::prefix('v1')->group(function () {
         // Drivers
         Route::apiResource('drivers', DriverController::class);
         Route::patch('drivers/{driver}/balance', [DriverController::class, 'updateBalance']);
+
+        // Customers
+        Route::apiResource('customers', CustomerController::class);
     });
 });

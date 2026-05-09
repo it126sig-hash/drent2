@@ -94,17 +94,17 @@
 - Panel saldo driver: tampil saldo saat ini + tombol edit saldo (Finance only)
 - Integrasi ke `src/api/driver.js`
 
-### 1.7 — MDM: Pelanggan (Backend)
+### 1.7 — MDM: Pelanggan (Backend) (SELESAI)
 - Migration tabel `customers` (field: nama, kontak_1, kontak_2, alamat, kota, status, has_apply_member, tenant_id, soft-delete)
 - CRUD endpoint: `GET/POST /api/v1/customers`, `GET/PUT/DELETE /api/v1/customers/{id}`
 - Filter endpoint: `?status=Redflag` untuk pengecekan booking
 - `CustomerResource` untuk response
 
-### 1.8 — MDM: Pelanggan (Frontend)
+### 1.8 — MDM: Pelanggan (Frontend) (SELESAI)
 - Halaman list pelanggan dengan DataTable + filter status
 - Dialog form tambah/edit pelanggan
-- Badge status pelanggan (warna merah untuk Redflag/Blacklist)
-- Warning banner jika status Redflag atau Blacklist
+- Badge status pelanggan (Normal, Corporate, Redflag, Blacklist)
+- Warning banner sesuai status: Redflag (peringatan risiko), Blacklist (blokir booking)
 - Integrasi ke `src/api/customer.js`
 
 ### 1.9 — MDM: Member (Backend)
@@ -155,7 +155,7 @@
 
 ### 2.3 — Booking: Form Buat Booking (Frontend)
 - Halaman form booking baru
-- Autocomplete pilih pelanggan (warning jika Redflag/Blacklist)
+- Autocomplete pilih pelanggan (warning risiko jika Redflag, error/blokir jika Blacklist)
 - Input: tanggal sewa & kembali, tujuan, harga dealing, dp (opsional)
 - Submit → status otomatis Follow Up atau Confirm
 - Integrasi ke `src/api/booking.js`
