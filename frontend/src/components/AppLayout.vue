@@ -30,6 +30,7 @@ const menuItems = [
   { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units' },
   { label: 'Driver', icon: 'pi pi-id-card', route: '/drivers' },
   { label: 'Pelanggan', icon: 'pi pi-users', route: '/customers' },
+  { label: 'Member', icon: 'pi pi-id-card', route: '/mdm/members' },
 ]
 </script>
 

@@ -107,14 +107,14 @@
 - Warning banner sesuai status: Redflag (peringatan risiko), Blacklist (blokir booking)
 - Integrasi ke `src/api/customer.js`
 
-### 1.9 — MDM: Member (Backend)
+### 1.9 — MDM: Member (Backend) (SELESAI)
 - Migration tabel `members` (field: customer_id, id_member, status_member, tanggal_survey, tanggal_aktif, tanggal_exp, surveyor_id, catatan, + field identitas, pekerjaan, keluarga)
 - Upload dokumen: KTP, foto wajah, dokumen pendukung
 - Endpoint: `GET/POST /api/v1/members`, `GET/PUT /api/v1/members/{id}`
 - Endpoint: `PATCH /api/v1/members/{id}/activate` — aktivasi member (Admin)
 - `MemberResource` untuk response
 
-### 1.10 — MDM: Member (Frontend)
+### 1.10 — MDM: Member (Frontend) (SELESAI)
 - Halaman list member dengan DataTable + filter status_member
 - Form member lengkap (multi-section: identitas, pekerjaan, keluarga)
 - Upload foto dan dokumen

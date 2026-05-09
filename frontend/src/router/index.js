@@ -41,6 +41,26 @@ const router = createRouter({
           name: 'customers',
           component: () => import('../views/customers/CustomerListView.vue'),
         },
+        {
+          path: '/mdm/members',
+          name: 'members',
+          component: () => import('../views/members/MemberListView.vue'),
+        },
+        {
+          path: '/mdm/members/create',
+          name: 'member-create',
+          component: () => import('../views/members/MemberFormView.vue'),
+        },
+        {
+          path: '/mdm/members/:id',
+          name: 'member-detail',
+          component: () => import('../views/members/MemberDetailView.vue'),
+        },
+        {
+          path: '/mdm/members/:id/edit',
+          name: 'member-edit',
+          component: () => import('../views/members/MemberFormView.vue'),
+        },
       ]
     }
   ]

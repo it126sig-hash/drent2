@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\RentalOwnerController;
 use App\Http\Controllers\Api\V1\UnitController;
 use App\Http\Controllers\Api\V1\DriverController;
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\MemberController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -28,5 +29,10 @@ Route::prefix('v1')->group(function () {
 
         // Customers
         Route::apiResource('customers', CustomerController::class);
+
+        // Members
+        Route::apiResource('members', MemberController::class);
+        Route::patch('members/{member}/activate', [MemberController::class, 'activate']);
+        Route::get('members/{member}/documents/{type}', [MemberController::class, 'showDocument']);
     });
 });
