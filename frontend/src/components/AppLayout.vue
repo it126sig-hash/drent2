@@ -26,6 +26,7 @@ const handleLogout = async () => {
 
 const menuItems = [
   { label: 'Dashboard', icon: 'pi pi-home', route: '/' },
+  { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings' },
   { label: 'Pemilik Rental', icon: 'pi pi-users', route: '/rental-owners' },
   { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units' },
   { label: 'Driver', icon: 'pi pi-id-card', route: '/drivers' },

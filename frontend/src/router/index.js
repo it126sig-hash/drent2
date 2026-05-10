@@ -67,6 +67,16 @@ const router = createRouter({
           component: () => import('../views/users/UserListView.vue'),
           meta: { roles: ['superadmin', 'admin_branch'] }
         },
+        {
+          path: '/bookings',
+          name: 'BookingList',
+          component: () => import('../views/bookings/BookingListView.vue'), // To be created
+        },
+        {
+          path: '/bookings/create',
+          name: 'BookingCreate',
+          component: () => import('../views/bookings/BookingCreateView.vue'),
+        },
       ]
     }
   ]

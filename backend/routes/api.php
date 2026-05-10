@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\DriverController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\MemberController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\BookingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -42,5 +43,8 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('members', MemberController::class);
         Route::patch('members/{member}/activate', [MemberController::class, 'activate']);
         Route::get('members/{member}/documents/{type}', [MemberController::class, 'showDocument']);
+
+        // Bookings
+        Route::apiResource('bookings', BookingController::class);
     });
 });
