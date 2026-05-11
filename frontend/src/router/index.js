@@ -31,6 +31,42 @@ const router = createRouter({
           name: 'units',
           component: () => import('../views/units/UnitListView.vue'),
         },
+        {
+          path: '/drivers',
+          name: 'drivers',
+          component: () => import('../views/drivers/DriverListView.vue'),
+        },
+        {
+          path: '/customers',
+          name: 'customers',
+          component: () => import('../views/customers/CustomerListView.vue'),
+        },
+        {
+          path: '/mdm/members',
+          name: 'members',
+          component: () => import('../views/members/MemberListView.vue'),
+        },
+        {
+          path: '/mdm/members/create',
+          name: 'member-create',
+          component: () => import('../views/members/MemberFormView.vue'),
+        },
+        {
+          path: '/mdm/members/:id',
+          name: 'member-detail',
+          component: () => import('../views/members/MemberDetailView.vue'),
+        },
+        {
+          path: '/mdm/members/:id/edit',
+          name: 'member-edit',
+          component: () => import('../views/members/MemberFormView.vue'),
+        },
+        {
+          path: '/users',
+          name: 'users',
+          component: () => import('../views/users/UserListView.vue'),
+          meta: { roles: ['superadmin', 'admin_branch'] }
+        },
       ]
     }
   ]

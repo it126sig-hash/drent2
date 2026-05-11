@@ -94,27 +94,27 @@
 - Panel saldo driver: tampil saldo saat ini + tombol edit saldo (Finance only)
 - Integrasi ke `src/api/driver.js`
 
-### 1.7 — MDM: Pelanggan (Backend)
+### 1.7 — MDM: Pelanggan (Backend) (SELESAI)
 - Migration tabel `customers` (field: nama, kontak_1, kontak_2, alamat, kota, status, has_apply_member, tenant_id, soft-delete)
 - CRUD endpoint: `GET/POST /api/v1/customers`, `GET/PUT/DELETE /api/v1/customers/{id}`
 - Filter endpoint: `?status=Redflag` untuk pengecekan booking
 - `CustomerResource` untuk response
 
-### 1.8 — MDM: Pelanggan (Frontend)
+### 1.8 — MDM: Pelanggan (Frontend) (SELESAI)
 - Halaman list pelanggan dengan DataTable + filter status
 - Dialog form tambah/edit pelanggan
-- Badge status pelanggan (warna merah untuk Redflag/Blacklist)
-- Warning banner jika status Redflag atau Blacklist
+- Badge status pelanggan (Normal, Corporate, Redflag, Blacklist)
+- Warning banner sesuai status: Redflag (peringatan risiko), Blacklist (blokir booking)
 - Integrasi ke `src/api/customer.js`
 
-### 1.9 — MDM: Member (Backend)
+### 1.9 — MDM: Member (Backend) (SELESAI)
 - Migration tabel `members` (field: customer_id, id_member, status_member, tanggal_survey, tanggal_aktif, tanggal_exp, surveyor_id, catatan, + field identitas, pekerjaan, keluarga)
 - Upload dokumen: KTP, foto wajah, dokumen pendukung
 - Endpoint: `GET/POST /api/v1/members`, `GET/PUT /api/v1/members/{id}`
 - Endpoint: `PATCH /api/v1/members/{id}/activate` — aktivasi member (Admin)
 - `MemberResource` untuk response
 
-### 1.10 — MDM: Member (Frontend)
+### 1.10 — MDM: Member (Frontend) (SELESAI)
 - Halaman list member dengan DataTable + filter status_member
 - Form member lengkap (multi-section: identitas, pekerjaan, keluarga)
 - Upload foto dan dokumen
@@ -155,7 +155,7 @@
 
 ### 2.3 — Booking: Form Buat Booking (Frontend)
 - Halaman form booking baru
-- Autocomplete pilih pelanggan (warning jika Redflag/Blacklist)
+- Autocomplete pilih pelanggan (warning risiko jika Redflag, error/blokir jika Blacklist)
 - Input: tanggal sewa & kembali, tujuan, harga dealing, dp (opsional)
 - Submit → status otomatis Follow Up atau Confirm
 - Integrasi ke `src/api/booking.js`
@@ -395,6 +395,7 @@
 6. **Amount** → semua angka uang sebagai integer IDR, tanpa desimal
 7. **Soft delete** → semua model pakai `SoftDeletes` trait
 8. **tenant_id** → semua tabel wajib punya kolom `tenant_id` (SaaS-ready)
+9. **API URL** → Gunakan prefix `/v1` di frontend (`src/api/*.js`) untuk semua request ke backend, sesuai dengan struktur routing Laravel di `api.php`.
 
 ### Hal yang Belum Boleh Diimplementasi
 - Strategi arsip data (tunggu konfirmasi: soft-delete vs tabel terpisah vs is_archived)

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import Button from 'primevue/button'
@@ -28,7 +28,18 @@ const menuItems = [
   { label: 'Dashboard', icon: 'pi pi-home', route: '/' },
   { label: 'Pemilik Rental', icon: 'pi pi-users', route: '/rental-owners' },
   { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units' },
+  { label: 'Driver', icon: 'pi pi-id-card', route: '/drivers' },
+  { label: 'Pelanggan', icon: 'pi pi-users', route: '/customers' },
+  { label: 'Member', icon: 'pi pi-id-card', route: '/mdm/members' },
+  { label: 'Manajemen User', icon: 'pi pi-user-plus', route: '/users', roles: ['superadmin', 'admin_branch'] },
 ]
+
+const filteredMenuItems = computed(() => {
+  return menuItems.filter(item => {
+    if (!item.roles) return true
+    return item.roles.includes(authStore.user?.role)
+  })
+})
 </script>
 
 <template>
@@ -44,7 +55,7 @@ const menuItems = [
       
       <nav class="sidebar-nav">
         <RouterLink 
-          v-for="item in menuItems" 
+          v-for="item in filteredMenuItems" 
           :key="item.route" 
           :to="item.route" 
           class="nav-item"
