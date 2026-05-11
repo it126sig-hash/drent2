@@ -54,28 +54,28 @@
 
 > Tujuan: Semua data referensi tersedia sebelum modul transaksi dibuat.
 
-### 1.1 — MDM: Pemilik Rental (Backend)
+### 1.1 — MDM: Pemilik Rental (Backend) (SELESAI)
 - Migration tabel `rental_owners` (field: nama, kontak_1, kontak_2, alamat, kota, bank, no_rek, atas_nama, is_owner, tenant_id, soft-delete)
 - CRUD endpoint: `GET/POST /api/v1/rental-owners`, `GET/PUT/DELETE /api/v1/rental-owners/{id}`
 - FormRequest untuk store & update
 - `RentalOwnerResource` untuk response
 - Policy: hanya admin dan superadmin yang bisa akses
 
-### 1.2 — MDM: Pemilik Rental (Frontend)
+### 1.2 — MDM: Pemilik Rental (Frontend) (SELESAI)
 - Halaman list pemilik rental dengan DataTable PrimeVue
 - Dialog form tambah/edit pemilik
 - Tombol hapus dengan konfirmasi
 - Toast notifikasi sukses/error
 - Integrasi ke API via `src/api/rentalOwner.js`
 
-### 1.3 — MDM: Unit Kendaraan (Backend)
+### 1.3 — MDM: Unit Kendaraan (Backend) (SELESAI)
 - Migration tabel `units` (field: tipe, merk, tahun, no_polisi, pemilik_id, harga_1_hari, harga_1_minggu, harga_1_bulan, modal_1_hari, modal_1_minggu, modal_1_bulan, status, tenant_id, branch_id, soft-delete)
 - CRUD endpoint: `GET/POST /api/v1/units`, `GET/PUT/DELETE /api/v1/units/{id}`
 - Global scope branch per model Unit
 - Upload foto unit: `POST /api/v1/units/{id}/photos`
 - `UnitResource` untuk response
 
-### 1.4 — MDM: Unit Kendaraan (Frontend)
+### 1.4 — MDM: Unit Kendaraan (Frontend) (SELESAI)
 - Halaman list unit dengan DataTable + filter status
 - Dialog form tambah/edit unit (dropdown pemilik dari API)
 - Upload foto unit (multi-file)
