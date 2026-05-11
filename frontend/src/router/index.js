@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import AppLayout from '../components/AppLayout.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -12,9 +13,20 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'dashboard',
-      component: () => import('../views/DashboardView.vue'),
-      meta: { auth: true }
+      component: AppLayout,
+      meta: { auth: true },
+      children: [
+        {
+          path: '',
+          name: 'dashboard',
+          component: () => import('../views/DashboardView.vue'),
+        },
+        {
+          path: '/rental-owners',
+          name: 'rental-owners',
+          component: () => import('../views/rental-owners/RentalOwnerListView.vue'),
+        },
+      ]
     }
   ]
 })

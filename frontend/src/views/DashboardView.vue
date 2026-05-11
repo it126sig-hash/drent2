@@ -1,36 +1,120 @@
 <script setup>
 import { useAuthStore } from '../stores/auth'
-import { useRouter } from 'vue-router'
-import Button from 'primevue/button'
 
 const authStore = useAuthStore()
-const router = useRouter()
-
-const handleLogout = async () => {
-  await authStore.logout()
-  router.push({ name: 'login' })
-}
 </script>
 
 <template>
-  <div class="p-8">
-    <div class="flex justify-between items-center mb-8">
-      <div>
-        <h1 class="text-2xl font-bold">Dashboard</h1>
-        <p class="text-gray-600">Selamat datang, {{ authStore.user?.name }} ({{ authStore.user?.role }})</p>
-        <p class="text-sm text-gray-400">Cabang: {{ authStore.branch?.name || 'Global' }}</p>
-      </div>
-      <Button label="Logout" icon="pi pi-sign-out" severity="danger" @click="handleLogout" />
+  <div class="dashboard-container">
+    <div class="welcome-section">
+      <h2>Selamat Datang, {{ authStore.user?.name }}</h2>
+      <p class="subtitle">Anda masuk sebagai <span class="role-badge">{{ authStore.user?.role }}</span></p>
     </div>
     
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div class="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-        <h3 class="text-gray-500 text-sm font-medium uppercase mb-2">Status Koneksi</h3>
-        <p class="text-green-500 font-bold flex items-center gap-2">
-          <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-          Terhubung ke Backend
-        </p>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">
+          <i class="pi pi-check-circle"></i>
+        </div>
+        <div class="stat-info">
+          <h3>Status Koneksi</h3>
+          <p class="status-online">Terhubung ke Backend</p>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon info">
+          <i class="pi pi-building"></i>
+        </div>
+        <div class="stat-info">
+          <h3>Cabang Aktif</h3>
+          <p>{{ authStore.branch?.name || 'Global' }}</p>
+        </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.welcome-section h2 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.subtitle {
+  color: #64748b;
+  margin-top: 5px;
+}
+
+.role-badge {
+  background-color: rgba(6, 182, 212, 0.1);
+  color: #06b6d4;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.stat-card {
+  background-color: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  background-color: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 1.5rem;
+}
+
+.stat-icon.info {
+  background-color: rgba(6, 182, 212, 0.1);
+  color: #06b6d4;
+}
+
+.stat-info h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #64748b;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-info p {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 4px 0 0 0;
+}
+
+.status-online {
+  color: #22c55e !important;
+}
+</style>
