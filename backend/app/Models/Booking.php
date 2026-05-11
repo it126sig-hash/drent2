@@ -15,12 +15,18 @@ class Booking extends Model
         'customer_id',
         'kode_booking',
         'status',
+        'lama_sewa',
+        'paket_sewa',
         'harga_dealing',
         'dp',
         'rekening_dp_id',
         'tujuan',
         'alamat_penjemputan',
         'catatan',
+    ];
+
+    protected $casts = [
+        'lama_sewa' => 'integer',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
@@ -44,5 +50,15 @@ class Booking extends Model
     public function branch()
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(BookingPayment::class);
+    }
+
+    public function refunds()
+    {
+        return $this->hasMany(Refund::class);
     }
 }

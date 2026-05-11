@@ -68,29 +68,52 @@ const router = createRouter({
           meta: { roles: ['superadmin', 'admin_branch'] }
         },
         {
+          path: '/master/payment-accounts',
+          name: 'payment-accounts',
+          component: () => import('../views/master/PaymentAccountListView.vue'),
+          meta: { roles: ['superadmin', 'admin_branch'] }
+        },
+        {
+          path: '/master/cost-types',
+          name: 'cost-types',
+          component: () => import('../views/master/CostTypeListView.vue'),
+          meta: { roles: ['superadmin', 'admin_branch'] }
+        },
+        {
+          path: '/master/pricing-packages',
+          name: 'pricing-packages',
+          component: () => import('../views/master/PricingPackageListView.vue'),
+          meta: { roles: ['superadmin', 'admin_branch'] }
+        },
+        {
           path: '/bookings',
           name: 'BookingList',
-          component: () => import('../views/bookings/BookingListView.vue'), // To be created
+          component: () => import('../views/bookings/BookingListView.vue'),
         },
         {
           path: '/bookings/create',
           name: 'BookingCreate',
           component: () => import('../views/bookings/BookingCreateView.vue'),
         },
+        {
+          path: '/bookings/:id',
+          name: 'BookingDetail',
+          component: () => import('../views/bookings/BookingDetailView.vue'),
+        },
       ]
     }
   ]
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, from) => {
   const auth = useAuthStore()
-  
+
   if (to.meta.auth && !auth.isAuthenticated) {
-    next({ name: 'login' })
+    return { name: 'login' }
   } else if (to.meta.guest && auth.isAuthenticated) {
-    next({ name: 'dashboard' })
+    return { name: 'dashboard' }
   } else {
-    next()
+    return true
   }
 })
 

@@ -18,8 +18,18 @@ class BookingDetail extends Model
         'tgl_kembali',
         'harga_mobil',
         'diskon_mobil',
+        'lama_sewa',
+        'paket_sewa',
+        'pricing_mode',
+        'pricing_package_id',
+        'harga_all_in',
         'detail_type',
         'status',
+    ];
+
+    protected $casts = [
+        'lama_sewa' => 'integer',
+        'harga_all_in' => 'integer',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
@@ -43,5 +53,10 @@ class BookingDetail extends Model
     public function costs()
     {
         return $this->hasMany(BookingCost::class);
+    }
+
+    public function pricingPackage()
+    {
+        return $this->belongsTo(PricingPackage::class);
     }
 }

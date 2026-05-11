@@ -5,7 +5,7 @@ import { useToast } from 'primevue/usetoast';
 import { useBooking } from '../../composables/useBooking';
 import { useCustomer } from '../../composables/useCustomer';
 import { useUnit } from '../../composables/useUnit';
-import axios from 'axios';
+import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import RadioButton from 'primevue/radiobutton';
@@ -24,19 +24,29 @@ const { store, loading: bookingLoading } = useBooking();
 const { customers, fetchAll: fetchCustomers, loading: customersLoading } = useCustomer();
 const { units, fetchAll: fetchUnits, loading: unitsLoading } = useUnit();
 
+const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
+
+const paketOptions = [
+  { label: 'Harian', value: 'harian' },
+  { label: 'Mingguan', value: 'mingguan' },
+  { label: 'Bulanan', value: 'bulanan' },
+];
+
 const form = ref({
-  customer_mode: 'existing', // 'existing' or 'new'
+  customer_mode: 'existing',
   customer_id: null,
   customer_name: '',
   customer_phone: '',
   customer_city: '',
-  
-  unit_mode: 'existing', // 'existing' or 'placeholder'
+
+  unit_mode: 'existing',
   unit_id: null,
   unit_placeholder: '',
-  
+
   tgl_sewa: null,
   tgl_kembali: null,
+  lama_sewa: null,
+  paket_sewa: 'harian',
   tujuan: '',
   alamat_penjemputan: '',
   harga_dealing: null,
@@ -44,9 +54,6 @@ const form = ref({
   rekening_dp_id: null,
   catatan: ''
 });
-
-const rekenings = ref([]);
-const loadingRekenings = ref(false);
 
 const selectedCustomer = computed(() => {
   if (form.value.customer_mode === 'existing' && form.value.customer_id) {
@@ -58,27 +65,28 @@ const selectedCustomer = computed(() => {
 const isBlacklisted = computed(() => selectedCustomer.value?.status === 'Blacklist');
 const isRedflag = computed(() => selectedCustomer.value?.status === 'Redflag');
 
-const fetchRekenings = async () => {
-  loadingRekenings.value = true;
-  try {
-    // Attempt to fetch from API, fallback to empty if Phase 3 not yet reached
-    const response = await axios.get('/v1/rekenings');
-    rekenings.value = response.data.data;
-  } catch (err) {
-    console.log('Rekenings API not available yet or error');
-    rekenings.value = [
-        { id: 1, name: 'BCA - 1234567890 (PT DRENT)' },
-        { id: 2, name: 'Mandiri - 0987654321 (PT DRENT)' }
-    ];
-  } finally {
-    loadingRekenings.value = false;
-  }
-};
+const accountOptions = computed(() =>
+  paymentAccounts.value
+    .filter(a => a.is_active)
+    .map(a => ({ id: a.id, name: `${a.nama_bank} — ${a.nomor_rekening} (${a.atas_nama})` }))
+);
 
 onMounted(() => {
   fetchCustomers();
-  fetchUnits({ status: 'aktif' });
-  fetchRekenings();
+  fetchUnits({ status: 'Aktif' });
+  fetchAccounts({ per_page: 100 });
+
+  // Pre-fill from query parameters (from Calendar)
+  if (router.currentRoute.value.query.unit_id) {
+    form.value.unit_id = parseInt(router.currentRoute.value.query.unit_id);
+    form.value.unit_mode = 'existing';
+  }
+  if (router.currentRoute.value.query.tgl_sewa) {
+    const date = new Date(router.currentRoute.value.query.tgl_sewa);
+    // Set to 07:00 as per project rule for start time
+    date.setHours(7, 0, 0);
+    form.value.tgl_sewa = date;
+  }
 });
 
 const handleSubmit = async () => {
@@ -116,6 +124,10 @@ const handleSubmit = async () => {
     // Format dates to YYYY-MM-DD HH:mm:ss
     if (payload.tgl_sewa) payload.tgl_sewa = formatDateTime(payload.tgl_sewa);
     if (payload.tgl_kembali) payload.tgl_kembali = formatDateTime(payload.tgl_kembali);
+
+    // Hapus field tidak relevan
+    delete payload.customer_mode;
+    delete payload.unit_mode;
 
     const booking = await store(payload);
     toast.add({ severity: 'success', summary: 'Sukses', detail: `Booking ${booking.kode_booking} berhasil dibuat`, life: 3000 });
@@ -171,6 +183,8 @@ const resetForm = () => {
     unit_placeholder: '',
     tgl_sewa: null,
     tgl_kembali: null,
+    lama_sewa: null,
+    paket_sewa: 'harian',
     tujuan: '',
     alamat_penjemputan: '',
     harga_dealing: null,
@@ -393,6 +407,21 @@ const customerOptions = computed(() => {
                   </div>
                 </div>
 
+                <!-- Durasi Sewa -->
+                <div class="form-field-horizontal">
+                  <label class="horizontal-label">Lama Sewa *</label>
+                  <div class="horizontal-input">
+                    <InputNumber v-model="form.lama_sewa" :min="1" placeholder="Jumlah hari/minggu/bulan" class="w-full premium-input" />
+                  </div>
+                </div>
+
+                <div class="form-field-horizontal">
+                  <label class="horizontal-label">Paket Sewa *</label>
+                  <div class="horizontal-input">
+                    <Dropdown v-model="form.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" placeholder="Pilih paket" class="w-full premium-input" />
+                  </div>
+                </div>
+
                 <!-- Usage Info -->
                 <div class="form-field-horizontal md:col-span-2">
                   <label class="horizontal-label">Tujuan</label>
@@ -431,11 +460,12 @@ const customerOptions = computed(() => {
                       <div class="horizontal-input">
                         <Dropdown 
                           v-model="form.rekening_dp_id" 
-                          :options="rekenings" 
+                          :options="accountOptions" 
                           optionLabel="name" 
                           optionValue="id" 
-                          placeholder="Pilih Rekening Tujuan" 
+                          placeholder="Pilih Akun Pembayaran" 
                           class="w-full premium-input !border-tosca"
+                          :empty-message="'Belum ada akun pembayaran aktif'"
                         />
                       </div>
                     </div>

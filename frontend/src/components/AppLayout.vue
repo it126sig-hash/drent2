@@ -33,6 +33,9 @@ const menuItems = [
   { label: 'Pelanggan', icon: 'pi pi-users', route: '/customers' },
   { label: 'Member', icon: 'pi pi-id-card', route: '/mdm/members' },
   { label: 'Manajemen User', icon: 'pi pi-user-plus', route: '/users', roles: ['superadmin', 'admin_branch'] },
+  { label: 'Akun Pembayaran', icon: 'pi pi-credit-card', route: '/master/payment-accounts', roles: ['superadmin', 'admin_branch'] },
+  { label: 'Tipe Biaya', icon: 'pi pi-list', route: '/master/cost-types', roles: ['superadmin', 'admin_branch'] },
+  { label: 'Paket Harga', icon: 'pi pi-tag', route: '/master/pricing-packages', roles: ['superadmin', 'admin_branch'] },
 ]
 
 const filteredMenuItems = computed(() => {

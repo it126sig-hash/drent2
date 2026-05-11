@@ -5,7 +5,11 @@ namespace App\Http\Requests;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-    use App\Traits\PhoneNormalizer;
+use App\Traits\PhoneNormalizer;
+
+class StoreBookingRequest extends FormRequest
+{
+    use PhoneNormalizer;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -45,11 +49,14 @@ use Illuminate\Foundation\Http\FormRequest;
             'unit_placeholder' => 'required_without:unit_id|string|max:255',
             'tgl_sewa' => 'required|date|after_or_equal:today',
             'tgl_kembali' => 'required|date|after:tgl_sewa',
+            'lama_sewa' => 'nullable|integer|min:1',
+            'paket_sewa' => 'nullable|in:harian,mingguan,bulanan',
             'tujuan' => 'nullable|string|max:255',
             'alamat_penjemputan' => 'nullable|string',
             'harga_dealing' => 'nullable|integer|min:0',
-            'dp' => 'nullable|integer|min:0|lte:harga_dealing',
-            'rekening_dp_id' => 'required_with:dp|nullable|integer',
+            'dp' => 'nullable|integer|min:0',
+            'rekening_dp_id' => 'required_with:dp|nullable|exists:payment_accounts,id',
             'catatan' => 'nullable|string',
         ];
     }
+}
