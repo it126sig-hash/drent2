@@ -22,12 +22,18 @@ class BookingResource extends JsonResource
             'paket_sewa'          => $this->paket_sewa,
             'harga_dealing'       => (int) $this->harga_dealing,
             'dp'                  => (int) $this->dp,
+            'rekening_dp_id'      => $this->rekening_dp_id,
             'tujuan'              => $this->tujuan,
             'alamat_penjemputan'  => $this->alamat_penjemputan,
             'catatan'             => $this->catatan,
             'catatan_status'      => $this->catatan_status,
             'branch_id'           => $this->branch_id,
             'created_at'          => $this->created_at?->toISOString(),
+            'created_by_user'     => $this->whenLoaded('createdBy', fn() => $this->createdBy ? [
+                'id'   => $this->createdBy->id,
+                'name' => $this->createdBy->name,
+                'role' => $this->createdBy->role,
+            ] : null),
 
             // C8: Computed financial fields
             'total_payments'      => $this->whenLoaded('payments', fn() =>
@@ -73,11 +79,16 @@ class BookingResource extends JsonResource
                     'detail_type'        => $d->detail_type,
                     'status'             => $d->status,
                     'unit'               => $d->unit ? [
-                        'id'        => $d->unit->id,
-                        'no_polisi' => $d->unit->no_polisi,
-                        'merk'      => $d->unit->merk,
-                        'tipe'      => $d->unit->tipe,
-                        'status'    => $d->unit->status,
+                        'id'           => $d->unit->id,
+                        'no_polisi'    => $d->unit->no_polisi,
+                        'merk'         => $d->unit->merk,
+                        'tipe'         => $d->unit->tipe,
+                        'status'       => $d->unit->status,
+                        'rental_owner' => $d->unit->relationLoaded('rentalOwner') && $d->unit->rentalOwner ? [
+                            'id'       => $d->unit->rentalOwner->id,
+                            'nama'     => $d->unit->rentalOwner->nama,
+                            'is_owner' => (bool) $d->unit->rentalOwner->is_owner,
+                        ] : null,
                     ] : null,
                     'driver'             => $d->driver ? [
                         'id'   => $d->driver->id,
@@ -143,7 +154,7 @@ class BookingResource extends JsonResource
         }
 
         if ($activeDetail->pricing_mode === 'all_in') {
-            return (int) ($activeDetail->harga_all_in ?? 0);
+            return (int) (($activeDetail->harga_all_in ?? 0) * ($activeDetail->lama_sewa ?? 1));
         }
 
         // non_all_in: hitung dari semua details yang bukan batal

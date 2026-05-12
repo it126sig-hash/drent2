@@ -25,11 +25,9 @@ export function useBooking() {
     error.value = null
     try {
       const response = await bookingApi.createBooking(data)
-      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Booking berhasil dibuat', life: 3000 })
       return response.data.data
     } catch (err) {
       error.value = err.response?.data?.message || 'Gagal membuat booking'
-      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
       throw err
     } finally {
       loading.value = false
@@ -100,6 +98,22 @@ export function useBooking() {
       return response.data.data
     } catch (err) {
       error.value = err.response?.data?.message || 'Gagal mengambil detail booking'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const updateBooking = async (id, data) => {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await bookingApi.updateBooking(id, data)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Data booking diperbarui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal memperbarui booking'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
       throw err
     } finally {
       loading.value = false
@@ -312,6 +326,7 @@ export function useBooking() {
     fetchForCalendar,
     changeStatus,
     fetchOne,
+    updateBooking,
     handle,
     checkout,
     complete,

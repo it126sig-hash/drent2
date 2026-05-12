@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
 import { useUnit } from '../../composables/useUnit';
@@ -11,7 +11,6 @@ import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue
 import { useToast } from 'primevue/usetoast';
 
 import Button from 'primevue/button';
-import Card from 'primevue/card';
 import Skeleton from 'primevue/skeleton';
 import Tag from 'primevue/tag';
 import DataTable from 'primevue/datatable';
@@ -23,12 +22,11 @@ import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import SelectButton from 'primevue/selectbutton';
-import ToggleButton from 'primevue/togglebutton';
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const { fetchOne, handle, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, loading } = useBooking();
+const { fetchOne, updateBooking, changeStatus, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, loading } = useBooking();
 const { units, fetchAll: fetchUnits } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
@@ -38,6 +36,7 @@ const { packages: pricingPackages, fetchAll: fetchPricingPackages } = usePricing
 const booking = ref(null);
 const showDetailDialog = ref(false);
 const showCostDialog = ref(false);
+const showEditBookingDialog = ref(false);
 const editingDetailId = ref(null);
 const editingCostId = ref(null);
 
@@ -59,6 +58,7 @@ const accountOptions = computed(() =>
 
 // Handle booking dialog (E3)
 const showHandleDialog = ref(false);
+const showHandleConfirmDialog = ref(false);
 const handleFormErrors = ref({});
 const handleForm = ref({
   unit_id: null,
@@ -75,11 +75,27 @@ const handleForm = ref({
   tujuan: '',
 });
 
+const bookingForm = ref({
+  lama_sewa: 1,
+  paket_sewa: 'harian',
+  harga_dealing: null,
+  dp: null,
+  rekening_dp_id: null,
+  tujuan: '',
+  alamat_penjemputan: '',
+  catatan: '',
+});
+
 const paketOptions = [
   { label: 'Harian', value: 'harian' },
   { label: 'Mingguan', value: 'mingguan' },
   { label: 'Bulanan', value: 'bulanan' },
 ];
+
+const lamaSewaOptions = Array.from({ length: 99 }, (_, index) => ({
+  label: String(index + 1),
+  value: index + 1,
+}));
 
 const pricingModeOptions = [
   { label: 'Non All In', value: 'non_all_in' },
@@ -107,11 +123,12 @@ const grandTotalInternal = computed(() => hargaSewa.value + totalBiayaOps.value)
 
 const tagihanKonsumen = computed(() => {
   if (handleForm.value.pricing_mode === 'all_in') {
+    const lama = handleForm.value.lama_sewa || 1;
     if (handleForm.value.pricing_package_id) {
       const pkg = pricingPackages.value.find(p => p.id === handleForm.value.pricing_package_id);
-      return pkg?.harga || handleForm.value.harga_all_in || 0;
+      return (pkg?.harga || handleForm.value.harga_all_in || 0) * lama;
     }
-    return handleForm.value.harga_all_in || 0;
+    return (handleForm.value.harga_all_in || 0) * lama;
   }
   return grandTotalInternal.value;
 });
@@ -155,13 +172,12 @@ const openHandleDialog = () => {
 };
 
 const submitHandle = async () => {
-  handleFormErrors.value = {};
   try {
-    await handle(booking.value.id, handleForm.value);
-    showHandleDialog.value = false;
+    await changeStatus(booking.value.id, 'waiting_list');
+    showHandleConfirmDialog.value = false;
     loadBooking();
   } catch (err) {
-    if (err.response?.data?.errors) handleFormErrors.value = err.response.data.errors;
+    console.error(err);
   }
 };
 
@@ -180,6 +196,12 @@ const detailForm = ref({
   tgl_kembali: null,
   harga_mobil: 0,
   diskon_mobil: 0,
+  lama_sewa: 1,
+  paket_sewa: 'harian',
+  pricing_mode: 'non_all_in',
+  pricing_package_id: null,
+  harga_all_in: null,
+  costs: [],
   detail_type: 'initial'
 });
 
@@ -261,11 +283,12 @@ const extendTotalBiaya = computed(() => extendForm.value.costs.reduce((s, c) => 
 const extendGrandTotal = computed(() => extendHargaSewa.value + extendTotalBiaya.value);
 const extendTagihan = computed(() => {
   if (extendForm.value.pricing_mode === 'all_in') {
+    const lama = extendForm.value.lama_sewa || 1;
     if (extendForm.value.pricing_package_id) {
       const pkg = pricingPackages.value.find(p => p.id === extendForm.value.pricing_package_id);
-      return pkg?.harga || extendForm.value.harga_all_in || 0;
+      return (pkg?.harga || extendForm.value.harga_all_in || 0) * lama;
     }
-    return extendForm.value.harga_all_in || 0;
+    return (extendForm.value.harga_all_in || 0) * lama;
   }
   return extendGrandTotal.value;
 });
@@ -276,39 +299,182 @@ const rollingTotalBiaya = computed(() => rollingForm.value.costs.reduce((s, c) =
 const rollingGrandTotal = computed(() => rollingHargaSewa.value + rollingTotalBiaya.value);
 const rollingTagihan = computed(() => {
   if (rollingForm.value.pricing_mode === 'all_in') {
+    const lama = rollingForm.value.lama_sewa || 1;
     if (rollingForm.value.pricing_package_id) {
       const pkg = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id);
-      return pkg?.harga || rollingForm.value.harga_all_in || 0;
+      return (pkg?.harga || rollingForm.value.harga_all_in || 0) * lama;
     }
-    return rollingForm.value.harga_all_in || 0;
+    return (rollingForm.value.harga_all_in || 0) * lama;
   }
   return rollingGrandTotal.value;
 });
 
 const validDetails = computed(() => {
   if (!booking.value?.booking_details) return [];
-  return booking.value.booking_details.filter(detail => detail.unit_id !== null);
+  return booking.value.booking_details.filter(detail => detail.unit_id !== null || detail.unit_placeholder);
 });
+
+const primaryUnitDetail = computed(() => {
+  return validDetails.value.find(detail => detail.detail_type === 'initial') || validDetails.value[0] || null;
+});
+
+const hasFixedUnit = computed(() => Boolean(primaryUnitDetail.value?.unit_id));
+const canHandleBooking = computed(() => hasFixedUnit.value);
+const unitActionDetail = computed(() => primaryUnitDetail.value || null);
+const unitActionLabel = computed(() => hasFixedUnit.value ? 'Edit Unit' : 'Tambah Unit');
+const unitActionIcon = computed(() => hasFixedUnit.value ? 'pi pi-pencil' : 'pi pi-plus');
 
 const activeDetails = computed(() => {
-  return validDetails.value.filter(d => d.status === 'active');
-});
-
-const canHandle = computed(() => {
-  return booking.value && 
-         ['follow_up', 'confirm'].includes(booking.value.status) && 
-         validDetails.value.length > 0;
+  return validDetails.value.filter(d => d.status === 'aktif');
 });
 
 const isRentalUnit = computed(() => {
   return booking.value && booking.value.status === 'rental_unit';
 });
 
+const billableDetails = computed(() => {
+  return validDetails.value.filter(detail => detail.status !== 'batal');
+});
+
+const totalDpPayments = computed(() => {
+  return (booking.value?.payments || [])
+    .filter(payment => payment.payment_type === 'dp')
+    .reduce((sum, payment) => sum + (payment.amount || 0), 0);
+});
+
+const hasPricedDetails = computed(() => billableDetails.value.some(detail => detail.unit_id && ((detail.harga_mobil || 0) > 0 || (detail.harga_all_in || 0) > 0)));
+const bookingTotalTagihan = computed(() => hasPricedDetails.value ? (booking.value?.total_tagihan ?? 0) : (booking.value?.harga_dealing ?? 0));
+const bookingTotalPayments = computed(() => booking.value?.total_payments ?? totalDpPayments.value ?? 0);
+const bookingSisaTagihan = computed(() => booking.value?.sisa_tagihan ?? Math.max(0, bookingTotalTagihan.value - bookingTotalPayments.value));
+const isPaidOff = computed(() => bookingTotalTagihan.value > 0 && bookingSisaTagihan.value <= 0);
+
+const selectedDetailUnit = computed(() => units.value.find(unit => unit.id === detailForm.value.unit_id));
+const selectedDetailDriver = computed(() => drivers.value.find(driver => driver.id === detailForm.value.driver_id));
+const detailHargaSewa = computed(() => Math.max(0, ((detailForm.value.harga_mobil || 0) - (detailForm.value.diskon_mobil || 0)) * (detailForm.value.lama_sewa || 0)));
+const detailTotalBiayaOps = computed(() => detailForm.value.costs.reduce((sum, cost) => sum + (cost.amount || 0), 0));
+const detailGrandTotalInternal = computed(() => detailHargaSewa.value + detailTotalBiayaOps.value);
+const detailTagihanKonsumen = computed(() => {
+  if (detailForm.value.pricing_mode === 'all_in') {
+    const lama = detailForm.value.lama_sewa || 1;
+    if (detailForm.value.pricing_package_id) {
+      const pkg = pricingPackages.value.find(p => p.id === detailForm.value.pricing_package_id);
+      return (pkg?.harga || detailForm.value.harga_all_in || 0) * lama;
+    }
+    return (detailForm.value.harga_all_in || 0) * lama;
+  }
+  return detailGrandTotalInternal.value;
+});
+
+const detailRentalSubtotal = (detail) => {
+  return Math.max(0, ((detail.harga_mobil || 0) - (detail.diskon_mobil || 0)) * (detail.lama_sewa || booking.value?.lama_sewa || 1));
+};
+
+const detailCostTotal = (detail) => {
+  return (detail.costs || []).reduce((sum, cost) => sum + (cost.amount || 0), 0);
+};
+
+const detailConsumerBill = (detail) => {
+  if (detail.pricing_mode === 'all_in') {
+    return (detail.harga_all_in || 0) * (detail.lama_sewa || booking.value?.lama_sewa || 1);
+  }
+  return detailRentalSubtotal(detail) + detailCostTotal(detail);
+};
+
+const detailPricingModeLabel = (detail) => detail.pricing_mode === 'all_in' ? 'All In' : 'Non All In';
+
+const formatDateTime = (value) => {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+const formatLocalDateTime = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
+const applyDefaultTime = (value, hour, minute) => {
+  if (!value) return null;
+  const date = new Date(value);
+  date.setHours(hour, minute, 0, 0);
+  return date;
+};
+
+const addRentalDuration = (startDate, duration, packageType) => {
+  if (!startDate || !duration) return null;
+
+  const returnDate = new Date(startDate);
+  const amount = Number(duration);
+
+  if (packageType === 'mingguan') {
+    returnDate.setDate(returnDate.getDate() + (amount * 7) - 1);
+  } else if (packageType === 'bulanan') {
+    returnDate.setMonth(returnDate.getMonth() + amount);
+    returnDate.setDate(returnDate.getDate() - 1);
+  } else {
+    returnDate.setDate(returnDate.getDate() + amount - 1);
+  }
+
+  return applyDefaultTime(returnDate, 23, 59);
+};
+
+const syncDetailReturnDate = () => {
+  const returnDate = addRentalDuration(
+    detailForm.value.tgl_sewa,
+    detailForm.value.lama_sewa,
+    detailForm.value.paket_sewa
+  );
+  if (returnDate) detailForm.value.tgl_kembali = returnDate;
+};
+
+const setDetailStartDate = (date) => {
+  detailForm.value.tgl_sewa = applyDefaultTime(date, 7, 0);
+  syncDetailReturnDate();
+};
+
+const setDetailReturnDate = (date) => {
+  const returnDate = applyDefaultTime(date, 23, 59);
+  if (detailForm.value.tgl_sewa && returnDate < detailForm.value.tgl_sewa) {
+    syncDetailReturnDate();
+    toast.add({
+      severity: 'warn',
+      summary: 'Tanggal tidak valid',
+      detail: 'Tanggal kembali tidak boleh kurang dari tanggal sewa.',
+      life: 3500,
+    });
+    return;
+  }
+  detailForm.value.tgl_kembali = returnDate;
+};
+
+const getInitialBookingDetail = () => {
+  return booking.value?.booking_details?.find(detail => detail.detail_type === 'initial') || booking.value?.booking_details?.[0] || null;
+};
+
+watch(
+  () => [detailForm.value.tgl_sewa, detailForm.value.lama_sewa, detailForm.value.paket_sewa],
+  () => {
+    syncDetailReturnDate();
+  }
+);
+
+const showActionError = (err, fallback) => {
+  const detail = err.response?.data?.message || fallback;
+  toast.add({ severity: 'error', summary: 'Gagal', detail, life: 5000 });
+};
+
 const loadBooking = async () => {
   try {
     booking.value = await fetchOne(route.params.id);
   } catch (err) {
-    console.error(err);
+    showActionError(err, 'Gagal mengambil detail booking');
   }
 };
 
@@ -322,6 +488,7 @@ onMounted(async () => {
 });
 
 const openDetailDialog = (detail = null) => {
+  const initial = getInitialBookingDetail();
   if (detail) {
     editingDetailId.value = detail.id;
     detailForm.value = {
@@ -331,6 +498,12 @@ const openDetailDialog = (detail = null) => {
       tgl_kembali: detail.tgl_kembali ? new Date(detail.tgl_kembali) : null,
       harga_mobil: detail.harga_mobil,
       diskon_mobil: detail.diskon_mobil,
+      lama_sewa: detail.lama_sewa || booking.value?.lama_sewa || 1,
+      paket_sewa: detail.paket_sewa || booking.value?.paket_sewa || 'harian',
+      pricing_mode: detail.pricing_mode || 'non_all_in',
+      pricing_package_id: detail.pricing_package_id || null,
+      harga_all_in: detail.harga_all_in || null,
+      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, label: c.label, amount: c.amount, keterangan: c.keterangan || '' })) || [],
       detail_type: detail.detail_type
     };
   } else {
@@ -338,14 +511,24 @@ const openDetailDialog = (detail = null) => {
     detailForm.value = {
       unit_id: null,
       driver_id: null,
-      tgl_sewa: booking.value.booking_details?.[0]?.tgl_sewa ? new Date(booking.value.booking_details[0].tgl_sewa) : null,
-      tgl_kembali: booking.value.booking_details?.[0]?.tgl_kembali ? new Date(booking.value.booking_details[0].tgl_kembali) : null,
+      tgl_sewa: initial?.tgl_sewa ? applyDefaultTime(initial.tgl_sewa, 7, 0) : null,
+      tgl_kembali: initial?.tgl_kembali ? applyDefaultTime(initial.tgl_kembali, 23, 59) : null,
       harga_mobil: 0,
       diskon_mobil: 0,
+      lama_sewa: booking.value?.lama_sewa || initial?.lama_sewa || 1,
+      paket_sewa: booking.value?.paket_sewa || initial?.paket_sewa || 'harian',
+      pricing_mode: 'non_all_in',
+      pricing_package_id: null,
+      harga_all_in: null,
+      costs: [],
       detail_type: 'initial'
     };
   }
   showDetailDialog.value = true;
+};
+
+const openPrimaryUnitDialog = () => {
+  openDetailDialog(unitActionDetail.value);
 };
 
 const openCostDialog = (detailId, cost = null) => {
@@ -420,6 +603,20 @@ const openBatalDialog = () => {
   showBatalDialog.value = true;
 };
 
+const openEditBookingDialog = () => {
+  bookingForm.value = {
+    lama_sewa: booking.value?.lama_sewa || 1,
+    paket_sewa: booking.value?.paket_sewa || 'harian',
+    harga_dealing: booking.value?.harga_dealing ?? null,
+    dp: booking.value?.dp ?? null,
+    rekening_dp_id: booking.value?.rekening_dp_id ?? null,
+    tujuan: booking.value?.tujuan || '',
+    alamat_penjemputan: booking.value?.alamat_penjemputan || '',
+    catatan: booking.value?.catatan || '',
+  };
+  showEditBookingDialog.value = true;
+};
+
 const openStopEarlyDialog = () => {
   stopEarlyForm.value = {
     booking_detail_id: activeDetails.value[0]?.id || null,
@@ -446,6 +643,19 @@ const onUnitChange = (e) => {
   }
 };
 
+const onDetailCostTypeChange = (idx, typeId) => {
+  const ct = costTypesMaster.value.find(c => c.id === typeId);
+  if (ct) detailForm.value.costs[idx].label = ct.nama;
+};
+
+const addDetailCostRow = () => {
+  detailForm.value.costs.push({ cost_type_id: null, label: '', amount: 0, keterangan: '' });
+};
+
+const removeDetailCostRow = (idx) => {
+  detailForm.value.costs.splice(idx, 1);
+};
+
 const onExtendUnitChange = (e) => {
   const unit = units.value.find(u => u.id === e.value);
   if (unit) {
@@ -455,10 +665,25 @@ const onExtendUnitChange = (e) => {
 
 const submitDetail = async () => {
   try {
+    if (detailForm.value.tgl_sewa && detailForm.value.tgl_kembali && detailForm.value.tgl_kembali < detailForm.value.tgl_sewa) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Tanggal tidak valid',
+        detail: 'Tanggal kembali tidak boleh kurang dari tanggal sewa.',
+        life: 3500,
+      });
+      return;
+    }
+
+    const selectedPackage = pricingPackages.value.find(p => p.id === detailForm.value.pricing_package_id);
     const payload = {
       ...detailForm.value,
-      tgl_sewa: detailForm.value.tgl_sewa?.toISOString(),
-      tgl_kembali: detailForm.value.tgl_kembali?.toISOString()
+      detail_type: detailForm.value.detail_type || 'initial',
+      harga_all_in: detailForm.value.pricing_mode === 'all_in'
+        ? (detailForm.value.harga_all_in || selectedPackage?.harga || null)
+        : null,
+      tgl_sewa: formatLocalDateTime(detailForm.value.tgl_sewa),
+      tgl_kembali: formatLocalDateTime(detailForm.value.tgl_kembali)
     };
     if (editingDetailId.value) {
       await updateDetail(editingDetailId.value, payload);
@@ -467,7 +692,24 @@ const submitDetail = async () => {
     }
     showDetailDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+const submitBookingEdit = async () => {
+  try {
+    const payload = { ...bookingForm.value };
+    if (!payload.dp || payload.dp <= 0) {
+      payload.dp = null;
+      payload.rekening_dp_id = null;
+    }
+    await updateBooking(booking.value.id, payload);
+    showEditBookingDialog.value = false;
+    loadBooking();
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 const submitCost = async () => {
@@ -479,7 +721,9 @@ const submitCost = async () => {
     }
     showCostDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 // Modification Submits
@@ -493,7 +737,9 @@ const submitExtend = async () => {
     await extend(booking.value.id, payload);
     showExtendDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 const submitRolling = async () => {
@@ -506,7 +752,9 @@ const submitRolling = async () => {
     await rolling(booking.value.id, payload);
     showRollingDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 const submitBatal = async () => {
@@ -514,7 +762,9 @@ const submitBatal = async () => {
     await cancel(booking.value.id, batalForm.value);
     showBatalDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 const submitStopEarly = async () => {
@@ -526,7 +776,9 @@ const submitStopEarly = async () => {
     await stopEarly(booking.value.id, payload);
     showStopEarlyDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 const submitAdditionalCost = async () => {
@@ -534,10 +786,23 @@ const submitAdditionalCost = async () => {
     await addAdditionalCost(booking.value.id, additionalCostForm.value);
     showAdditionalCostDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
-const onHandle = () => openHandleDialog();
+const onHandle = () => {
+  if (!canHandleBooking.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Unit belum fix',
+      detail: 'Booking masih memakai placeholder. Isi unit kendaraan dulu sebelum handle.',
+      life: 4000,
+    });
+    return;
+  }
+  showHandleConfirmDialog.value = true;
+};
 
 const openPaymentDialog = () => {
   paymentForm.value = { payment_account_id: null, amount: null, payment_type: 'cicilan', catatan: '' };
@@ -556,7 +821,9 @@ const submitCheckout = async () => {
     await checkout(booking.value.id, { skip_inspection: checkoutSkip.value });
     showCheckoutDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 const submitComplete = async () => {
@@ -564,7 +831,9 @@ const submitComplete = async () => {
     await complete(booking.value.id, { skip_inspection: completeSkip.value });
     showCompleteDialog.value = false;
     loadBooking();
-  } catch (err) {}
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 const submitPayment = async () => {
@@ -575,6 +844,7 @@ const submitPayment = async () => {
     loadBooking();
   } catch (err) {
     if (err.response?.data?.errors) paymentFormErrors.value = err.response.data.errors;
+    console.error(err);
   }
 };
 
@@ -584,7 +854,7 @@ const formatCurrency = (value) => {
 </script>
 
 <template>
-  <div class="booking-detail-container">
+  <div class="booking-detail-container app-page">
     <!-- Header & Action Bar -->
     <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
       <div class="flex items-center gap-3">
@@ -594,7 +864,7 @@ const formatCurrency = (value) => {
             <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Booking #{{ booking?.kode_booking || '...' }}</h1>
             <BookingStatusBadge v-if="booking" :status="booking.status" />
             <span
-              v-if="booking?.is_late"
+              v-if="booking?.is_overdue"
               class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-600 border border-rose-200 animate-pulse"
             >
               <i class="pi pi-exclamation-triangle text-[10px]"></i> Terlambat Kembali
@@ -615,6 +885,8 @@ const formatCurrency = (value) => {
           class="bg-blue-600 hover:bg-blue-700 border-none px-5 py-2.5 rounded-xl font-semibold flex-1 lg:flex-none shadow-md shadow-blue-200 transition-all text-white"
           @click="onHandle"
           :loading="loading"
+          :disabled="!canHandleBooking"
+          :title="canHandleBooking ? 'Handle booking' : 'Isi unit kendaraan terlebih dahulu'"
         />
         <Button
           v-if="booking && booking.status === 'waiting_list'"
@@ -661,12 +933,15 @@ const formatCurrency = (value) => {
       <div class="lg:col-span-8 flex flex-col gap-6">
 
         <!-- Section: Customer & Booking Info -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center gap-3">
-            <div class="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
-              <i class="pi pi-user"></i>
+        <div class="app-card overflow-hidden">
+          <div class="app-section-header px-6 py-4 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                <i class="pi pi-user"></i>
+              </div>
+              <h2 class="text-base font-bold text-slate-800">Informasi Booking</h2>
             </div>
-            <h2 class="text-base font-bold text-slate-800">Informasi Booking</h2>
+            <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold" @click="openEditBookingDialog" v-if="!['selesai','batal','cancelled'].includes(booking.status)" />
           </div>
           <div class="p-6 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
             <div class="flex flex-col gap-1">
@@ -690,9 +965,47 @@ const formatCurrency = (value) => {
           </div>
         </div>
 
+        <!-- Section: Financial Reference -->
+        <div class="app-card overflow-hidden">
+          <div class="app-section-header px-6 py-4 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-cyan-100 flex items-center justify-center text-cyan-700">
+              <i class="pi pi-calculator"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-slate-800">Acuan Biaya Booking</h2>
+              <p class="text-xs text-slate-500 mt-0.5">Breakdown ini dipakai sebagai rujukan saat handle, pembayaran, extend, dan rolling.</p>
+            </div>
+          </div>
+
+          <div class="p-6 flex flex-col gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div class="app-muted-panel p-4">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Harga Dealing Awal</span>
+                <span class="text-lg font-bold text-slate-900">{{ formatCurrency(booking.harga_dealing || 0) }}</span>
+              </div>
+              <div class="app-muted-panel p-4">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DP Tercatat</span>
+                <span class="text-lg font-bold text-emerald-700">{{ formatCurrency(totalDpPayments || booking.dp || 0) }}</span>
+              </div>
+              <div class="app-muted-panel p-4">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Final Backend</span>
+                <span class="text-lg font-bold text-slate-900">{{ formatCurrency(bookingTotalTagihan) }}</span>
+              </div>
+            </div>
+
+            <div v-if="!billableDetails.length" class="app-muted-panel p-5 text-sm text-slate-500">
+              Belum ada detail unit yang bisa dihitung. Gunakan harga dealing awal sebagai acuan sementara.
+            </div>
+
+            <div v-else class="flex flex-col gap-3">
+
+            </div>
+          </div>
+        </div>
+
         <!-- Section: Vehicles & Drivers -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex justify-between items-center">
+        <div class="app-card overflow-hidden">
+          <div class="app-section-header px-6 py-4 flex justify-between items-center">
             <div class="flex items-center gap-3">
               <div class="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
                 <i class="pi pi-car"></i>
@@ -700,11 +1013,11 @@ const formatCurrency = (value) => {
               <h2 class="text-base font-bold text-slate-800">Unit Kendaraan & Driver</h2>
             </div>
             <Button
-              label="Tambah Unit"
-              icon="pi pi-plus"
+              :label="unitActionLabel"
+              :icon="unitActionIcon"
               size="small"
               class="bg-emerald-600 hover:bg-emerald-700 border-none font-semibold rounded-lg px-3.5 py-2 text-white text-xs shadow-sm transition-all"
-              @click="openDetailDialog"
+              @click="openPrimaryUnitDialog"
               v-if="['follow_up', 'confirm'].includes(booking.status)"
             />
           </div>
@@ -726,42 +1039,37 @@ const formatCurrency = (value) => {
                     </div>
                     <div>
                       <div class="flex items-center gap-2">
-                        <h3 class="text-lg font-bold text-slate-800">{{ detail.unit?.merk }} {{ detail.unit?.tipe }}</h3>
-                        <Button
-                          icon="pi pi-pencil"
-                          text
-                          rounded
-                          class="text-blue-500 hover:bg-blue-50 w-7 h-7 p-0 ml-1"
-                          @click="openDetailDialog(detail)"
-                          v-if="!isRentalUnit"
-                          title="Edit Kendaraan"
-                        />
+                        <h3 class="text-lg font-bold text-slate-800">
+                          {{ detail.unit ? `${detail.unit.merk} ${detail.unit.tipe}` : detail.unit_placeholder || 'Placeholder Unit' }}
+                        </h3>
+                       
                       </div>
                       <div class="flex items-center gap-2 mt-1">
-                        <span class="inline-block bg-slate-800 text-white font-mono text-xs font-semibold px-2 py-0.5 rounded tracking-wider">{{ detail.unit?.no_polisi }}</span>
+                        <span class="inline-block bg-slate-800 text-white font-mono text-xs font-semibold px-2 py-0.5 rounded tracking-wider">{{ detail.unit?.no_polisi || 'PLACEHOLDER' }}</span>
                         <span class="text-[11px] font-semibold text-slate-500 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md">
-                          <i class="pi pi-user text-[9px] text-slate-400"></i> {{ detail.unit?.rental_owner?.nama || 'Internal' }}
+                          <i class="pi pi-user text-[9px] text-slate-400"></i> {{ detail.unit?.rental_owner?.nama || detail.unit_placeholder || 'Internal' }}
                         </span>
                       </div>
                       <div class="flex flex-wrap items-center gap-2 mt-3 text-xs font-semibold text-slate-500">
                         <span class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">
                           <i class="pi pi-calendar-plus text-blue-500 text-[10px]"></i>
-                          {{ new Date(detail.tgl_sewa).toLocaleDateString('id-ID', { dateStyle: 'medium' }) }}
-                          <span class="text-slate-400 font-normal ml-0.5">{{ new Date(detail.tgl_sewa).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }}</span>
+                          {{ formatDateTime(detail.tgl_sewa) }}
                         </span>
                         <i class="pi pi-arrow-right text-slate-300 text-[10px]"></i>
                         <span class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">
                           <i class="pi pi-calendar-minus text-rose-500 text-[10px]"></i>
-                          {{ new Date(detail.tgl_kembali).toLocaleDateString('id-ID', { dateStyle: 'medium' }) }}
-                          <span class="text-slate-400 font-normal ml-0.5">{{ new Date(detail.tgl_kembali).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }}</span>
+                          {{ formatDateTime(detail.tgl_kembali) }}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div class="bg-white p-4 rounded-xl border border-slate-100 text-right min-w-[160px]">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Biaya Unit</span>
-                    <span class="text-xl font-bold text-slate-900">{{ formatCurrency(detail.harga_mobil) }}</span>
+                  <div class="bg-white p-4 rounded-xl border border-slate-100 text-right min-w-[180px]">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Subtotal Sewa</span>
+                    <span class="text-xl font-bold text-slate-900">{{ formatCurrency(detailRentalSubtotal(detail)) }}</span>
+                    <div class="text-[11px] font-semibold text-slate-500 mt-0.5">
+                      {{ formatCurrency(detail.harga_mobil || 0) }} x {{ detail.lama_sewa || booking.lama_sewa || 1 }}
+                    </div>
                     <div v-if="detail.diskon_mobil > 0" class="text-[11px] font-semibold text-rose-500 mt-0.5 flex items-center justify-end gap-1">
                       <i class="pi pi-tag text-[9px]"></i>
                       -{{ formatCurrency(detail.diskon_mobil) }}
@@ -782,15 +1090,7 @@ const formatCurrency = (value) => {
                       </div>
                     </div>
 
-                    <Button
-                      label="Tambah Biaya"
-                      icon="pi pi-plus-circle"
-                      size="small"
-                      text
-                      class="text-blue-600 font-semibold hover:bg-blue-50 px-3 py-1.5 rounded-lg text-xs transition-all"
-                      @click="openCostDialog(detail.id)"
-                      v-if="['follow_up', 'confirm'].includes(booking.status)"
-                    />
+                  
                   </div>
 
                   <div v-if="detail.costs?.length" class="mt-4 bg-white rounded-lg border border-slate-100 overflow-hidden">
@@ -810,11 +1110,6 @@ const formatCurrency = (value) => {
                           <span class="text-sm font-bold text-slate-800">{{ formatCurrency(data.amount) }}</span>
                         </template>
                       </Column>
-                      <Column v-if="!isRentalUnit" bodyStyle="text-align: right; width: 40px" header="">
-                        <template #body="{ data }">
-                          <Button icon="pi pi-pencil" text rounded size="small" class="w-7 h-7 p-0 text-slate-400 hover:text-blue-500 hover:bg-blue-50" @click="openCostDialog(detail.id, data)" />
-                        </template>
-                      </Column>
                     </DataTable>
                   </div>
                 </div>
@@ -824,8 +1119,8 @@ const formatCurrency = (value) => {
         </div>
 
         <!-- Section: Modification (Only for Rental Unit) -->
-        <div v-if="isRentalUnit" class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center gap-3">
+        <div v-if="isRentalUnit" class="app-card overflow-hidden">
+          <div class="app-section-header px-6 py-4 flex items-center gap-3">
             <div class="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600">
               <i class="pi pi-cog"></i>
             </div>
@@ -874,8 +1169,7 @@ const formatCurrency = (value) => {
       <div class="lg:col-span-4 flex flex-col gap-6 lg:sticky lg:top-6">
 
         <!-- Financial Summary Card -->
-        <div class="bg-slate-900 rounded-2xl shadow-xl p-6 text-white relative overflow-hidden">
-          <div class="absolute -top-10 -right-10 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl"></div>
+        <div class="financial-summary-card bg-slate-900 rounded-2xl shadow-xl p-6 text-white relative overflow-hidden">
           <div class="flex items-center gap-2.5 mb-5">
             <div class="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
               <i class="pi pi-receipt text-sm text-cyan-300"></i>
@@ -885,27 +1179,31 @@ const formatCurrency = (value) => {
           <div class="flex flex-col gap-3 relative z-10">
             <div class="flex justify-between items-baseline">
               <span class="text-sm text-white/50">Total Tagihan</span>
-              <span class="text-base font-bold text-white">{{ formatCurrency(booking.total_tagihan ?? booking.harga_dealing ?? 0) }}</span>
+              <span class="text-base font-bold text-white">{{ formatCurrency(bookingTotalTagihan) }}</span>
             </div>
             <div class="flex justify-between items-baseline">
               <span class="text-sm text-white/50">Total Dibayar</span>
-              <span class="text-base font-bold text-emerald-400">{{ formatCurrency(booking.total_payments ?? 0) }}</span>
+              <span class="text-base font-bold text-emerald-400">{{ formatCurrency(bookingTotalPayments) }}</span>
             </div>
             <div class="h-px bg-white/10 my-1"></div>
             <div class="p-4 bg-white/5 rounded-xl border border-white/5">
               <span class="text-[10px] font-bold uppercase tracking-widest block mb-1"
-                :class="(booking.sisa_tagihan ?? 0) > 0 ? 'text-rose-300' : 'text-emerald-300'"
+                :class="bookingSisaTagihan > 0 ? 'text-rose-300' : 'text-emerald-300'"
               >Sisa Tagihan</span>
               <span class="text-2xl font-bold tracking-tight"
-                :class="(booking.sisa_tagihan ?? 0) > 0 ? 'text-rose-300' : 'text-emerald-300'"
-              >{{ formatCurrency(booking.sisa_tagihan ?? (booking.harga_dealing - booking.dp) ?? 0) }}</span>
+                :class="bookingSisaTagihan > 0 ? 'text-rose-300' : 'text-emerald-300'"
+              >{{ formatCurrency(bookingSisaTagihan) }}</span>
+            </div>
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-white/50">Status Pembayaran</span>
+              <Tag :value="isPaidOff ? 'Lunas' : 'Belum Lunas'" :severity="isPaidOff ? 'success' : 'warning'" class="rounded-md" />
             </div>
           </div>
         </div>
 
         <!-- Payment List Card -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+        <div class="app-card overflow-hidden">
+          <div class="app-section-header px-5 py-4 flex justify-between items-center">
             <div class="flex items-center gap-2.5">
               <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
                 <i class="pi pi-money-bill text-sm"></i>
@@ -918,7 +1216,7 @@ const formatCurrency = (value) => {
               size="small"
               class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
               @click="openPaymentDialog"
-              v-if="booking.status !== 'cancelled' && booking.status !== 'selesai'"
+              v-if="!['cancelled', 'batal', 'selesai'].includes(booking.status)"
             />
           </div>
 
@@ -948,7 +1246,7 @@ const formatCurrency = (value) => {
         </div>
 
         <!-- Notes Card -->
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div class="app-card p-5">
           <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <i class="pi pi-comments text-blue-500 text-sm"></i>
             Catatan Internal
@@ -959,6 +1257,54 @@ const formatCurrency = (value) => {
         </div>
       </div>
     </div>
+
+    <Dialog v-model:visible="showEditBookingDialog" header="Edit Data Booking" :style="{ width: '620px' }" modal :breakpoints="{ '680px': '95vw' }" class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
+          Konsumen tidak dapat diubah dari halaman ini.
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">Lama Sewa</label>
+            <InputNumber v-model="bookingForm.lama_sewa" :min="1" class="w-full" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">Paket Sewa</label>
+            <Dropdown v-model="bookingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">Harga Dealing</label>
+            <InputNumber v-model="bookingForm.harga_dealing" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">DP</label>
+            <InputNumber v-model="bookingForm.dp" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+          </div>
+          <div v-if="bookingForm.dp > 0" class="flex flex-col gap-1.5 sm:col-span-2">
+            <label class="text-xs font-semibold text-slate-600">Rekening DP</label>
+            <Dropdown v-model="bookingForm.rekening_dp_id" :options="accountOptions" optionLabel="name" optionValue="id" placeholder="Pilih akun pembayaran" class="w-full" />
+          </div>
+          <div class="flex flex-col gap-1.5 sm:col-span-2">
+            <label class="text-xs font-semibold text-slate-600">Tujuan</label>
+            <InputText v-model="bookingForm.tujuan" class="w-full" />
+          </div>
+          <div class="flex flex-col gap-1.5 sm:col-span-2">
+            <label class="text-xs font-semibold text-slate-600">Alamat Penjemputan</label>
+            <Textarea v-model="bookingForm.alamat_penjemputan" rows="2" class="w-full" />
+          </div>
+          <div class="flex flex-col gap-1.5 sm:col-span-2">
+            <label class="text-xs font-semibold text-slate-600">Catatan</label>
+            <Textarea v-model="bookingForm.catatan" rows="3" class="w-full" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showEditBookingDialog = false" />
+          <Button label="Simpan" icon="pi pi-save" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitBookingEdit" :loading="loading" />
+        </div>
+      </template>
+    </Dialog>
 
     <!-- ======= DIALOG: Checkout (E4) ======= -->
     <Dialog v-model:visible="showCheckoutDialog" header="Konfirmasi Checkout" :style="{ width: '420px' }" modal class="custom-dialog">
@@ -1034,6 +1380,26 @@ const formatCurrency = (value) => {
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showCompleteDialog = false" />
           <Button label="Selesaikan Sewa" icon="pi pi-flag-fill" class="bg-violet-600 hover:bg-violet-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitComplete" :loading="loading" />
+        </div>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showHandleConfirmDialog" header="Konfirmasi Handle Booking" :style="{ width: '460px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-4 pt-2">
+        <div class="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+          <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 flex-shrink-0">
+            <i class="pi pi-check-circle"></i>
+          </div>
+          <div>
+            <p class="font-bold text-slate-800 mb-1">Ubah status ke Waiting List?</p>
+            <p class="text-sm text-slate-500">Detail unit, driver, jadwal, dan biaya diisi lewat modal Tambah Unit. Pastikan data kendaraan sudah disimpan.</p>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showHandleConfirmDialog = false" />
+          <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitHandle" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -1203,7 +1569,7 @@ const formatCurrency = (value) => {
     </Dialog>
 
     <!-- ======= DIALOG: Tambah/Edit Unit & Driver ======= -->
-    <Dialog v-model:visible="showDetailDialog" :header="editingDetailId ? 'Edit Unit & Driver' : 'Tambah Unit & Driver'" :style="{ width: '600px' }" modal :breakpoints="{ '640px': '95vw' }" class="custom-dialog">
+    <Dialog v-model:visible="showDetailDialog" :header="editingDetailId && hasFixedUnit ? 'Edit Unit & Driver' : 'Tambah Unit & Driver'" :style="{ width: '600px' }" modal :breakpoints="{ '640px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-6 pt-2">
         <!-- Section: Kendaraan & Driver -->
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
@@ -1213,14 +1579,45 @@ const formatCurrency = (value) => {
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-car text-slate-400 text-[11px]"></i> Unit Kendaraan
               </label>
-              <Dropdown v-model="detailForm.unit_id" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit kendaraan" filter @change="onUnitChange" class="w-full" />
+              <Dropdown v-model="detailForm.unit_id" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit kendaraan" filter @change="onUnitChange" class="w-full">
+                <template #option="{ option }">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex flex-col">
+                      <span class="font-semibold text-slate-800">{{ option.merk }} {{ option.tipe }}</span>
+                      <span class="text-xs text-slate-500">{{ option.no_polisi }} - {{ option.rental_owner?.nama || 'Internal' }}</span>
+                    </div>
+                    <Tag :value="option.status" :severity="option.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+                  </div>
+                </template>
+              </Dropdown>
+              <div v-if="selectedDetailUnit" class="app-muted-panel p-3 text-sm">
+                <div class="grid grid-cols-3 gap-2">
+                  <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{ selectedDetailUnit.no_polisi }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Pemilik</span><strong>{{ selectedDetailUnit.rental_owner?.nama || 'Internal' }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Status</span><Tag :value="selectedDetailUnit.status" :severity="selectedDetailUnit.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" /></div>
+                </div>
+              </div>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-id-card text-slate-400 text-[11px]"></i> Driver
                 <span class="text-slate-300 font-normal">(opsional)</span>
               </label>
-              <Dropdown v-model="detailForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / Pilih driver" filter showClear class="w-full" />
+              <Dropdown v-model="detailForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / Pilih driver" filter showClear class="w-full">
+                <template #option="{ option }">
+                  <div class="flex flex-col">
+                    <span class="font-semibold text-slate-800">{{ option.nama }}</span>
+                    <span class="text-xs text-slate-500">{{ option.kota || '-' }} - {{ option.kontak_1 || '-' }}</span>
+                  </div>
+                </template>
+              </Dropdown>
+              <div v-if="selectedDetailDriver" class="app-muted-panel p-3 text-sm">
+                <div class="grid grid-cols-3 gap-2">
+                  <div><span class="text-slate-400 block text-xs">Driver</span><strong>{{ selectedDetailDriver.nama }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Kota</span><strong>{{ selectedDetailDriver.kota || '-' }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Kontak / SIM</span><strong>{{ selectedDetailDriver.kontak_1 || '-' }} / {{ selectedDetailDriver.no_sim || '-' }}</strong></div>
+                </div>
+              </div>
             </div>
           </div>
         </fieldset>
@@ -1233,13 +1630,43 @@ const formatCurrency = (value) => {
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-calendar-plus text-blue-500 text-[11px]"></i> Mulai Sewa
               </label>
-              <Calendar v-model="detailForm.tgl_sewa" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" />
+              <Calendar
+                v-model="detailForm.tgl_sewa"
+                showTime
+                hourFormat="24"
+                dateFormat="dd M yy"
+                class="w-full"
+                @date-select="setDetailStartDate"
+              />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-calendar-minus text-rose-500 text-[11px]"></i> Selesai Sewa
               </label>
-              <Calendar v-model="detailForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" />
+              <Calendar
+                v-model="detailForm.tgl_kembali"
+                showTime
+                hourFormat="24"
+                dateFormat="dd M yy"
+                :minDate="detailForm.tgl_sewa"
+                class="w-full"
+                @date-select="setDetailReturnDate"
+              />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Lama Sewa</label>
+              <Dropdown
+                v-model="detailForm.lama_sewa"
+                :options="lamaSewaOptions"
+                optionLabel="label"
+                optionValue="value"
+                filter
+                class="w-full"
+              />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Paket Sewa</label>
+              <Dropdown v-model="detailForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
             </div>
           </div>
         </fieldset>
@@ -1261,13 +1688,49 @@ const formatCurrency = (value) => {
               <InputNumber v-model="detailForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
             </div>
           </div>
+          <div class="mt-4 flex flex-col gap-3">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Mode Pricing</label>
+              <SelectButton v-model="detailForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
+            </div>
+            <div v-if="detailForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
+              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" />
+              <InputNumber v-if="!detailForm.pricing_package_id" v-model="detailForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In per paket sewa" class="w-full" />
+              <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
+            </div>
+          </div>
         </fieldset>
+
+        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional</legend>
+          <div class="flex flex-col gap-3 mt-2">
+            <div v-if="!detailForm.costs.length" class="text-center text-sm text-slate-400 py-3">Belum ada biaya operasional.</div>
+            <div v-for="(cost, idx) in detailForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-start">
+              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" showClear class="w-full" @change="onDetailCostTypeChange(idx, cost.cost_type_id)" /></div>
+              <div class="col-span-3"><InputText v-model="cost.label" placeholder="Keterangan" class="w-full" /></div>
+              <div class="col-span-3"><InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" /></div>
+              <div class="col-span-1"><InputText v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" v-model="cost.keterangan" placeholder="Detail" class="w-full text-xs" /></div>
+              <div class="col-span-1 flex items-start pt-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="removeDetailCostRow(idx)" /></div>
+            </div>
+            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="addDetailCostRow" />
+          </div>
+        </fieldset>
+
+        <div class="bg-slate-900 rounded-xl p-4 text-white">
+          <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Kalkulasi Unit</p>
+          <div class="flex flex-col gap-2 text-sm">
+            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(detailHargaSewa) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Biaya Ops</span><span>{{ formatCurrency(detailTotalBiayaOps) }}</span></div>
+            <div class="h-px bg-white/10 my-1"></div>
+            <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span class="text-lg font-bold text-cyan-300">{{ formatCurrency(detailTagihanKonsumen) }}</span></div>
+          </div>
+        </div>
       </div>
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showDetailDialog = false" />
-          <Button :label="editingDetailId ? 'Simpan Perubahan' : 'Simpan Unit'" icon="pi pi-check" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitDetail" :loading="loading" />
+          <Button :label="editingDetailId && hasFixedUnit ? 'Simpan Perubahan' : 'Simpan Unit'" icon="pi pi-check" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitDetail" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -1643,6 +2106,7 @@ const formatCurrency = (value) => {
 <style scoped>
 .booking-detail-container {
   animation: fadeIn 0.35s ease-out;
+  padding: 2px;
 }
 
 @keyframes fadeIn {
@@ -1701,6 +2165,43 @@ fieldset {
 
 fieldset legend {
   margin-left: 0.25rem;
+}
+
+.financial-summary-card {
+  border-radius: 8px;
+  background: #0f172a;
+  box-shadow: 0 18px 34px -22px rgba(15, 23, 42, 0.85);
+}
+
+.cost-reference-card {
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.cost-mini-box {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: 8px;
+  background: #f8fbfe;
+  padding: 12px;
+}
+
+.cost-mini-box span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cost-mini-box strong {
+  color: #0f172a;
+  font-size: 0.92rem;
 }
 </style>
 

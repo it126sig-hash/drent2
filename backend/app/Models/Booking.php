@@ -13,6 +13,7 @@ class Booking extends Model
         'tenant_id',
         'branch_id',
         'customer_id',
+        'created_by',
         'kode_booking',
         'status',
         'lama_sewa',
@@ -35,6 +36,11 @@ class Booking extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function bookingDetails()

@@ -51,6 +51,8 @@ Sistem ini **tidak dapat diakses oleh konsumen**. Seluruh input dilakukan oleh t
 **Dalam scope:**
 Booking, transaksi sewa, cek fisik, piutang, rent-to-rent, operasional driver, pemeliharaan unit, kas, laporan.
 
+Alur booking dalam scope mencakup booking awal dengan unit fix atau placeholder, penentuan unit melalui detail booking, handle status ke waiting list, checkout, complete, pembayaran, refund, dan ringkasan biaya.
+
 **Luar scope (Fase 1):**
 Portal konsumen, online booking publik, integrasi payment gateway eksternal, notifikasi WhatsApp/email.
 
@@ -70,9 +72,10 @@ Portal konsumen, online booking publik, integrasi payment gateway eksternal, not
 | File Storage | Laravel Storage (local/S3-compatible) |
 | Canvas TTD | Signature Pad (JS library) |
 | State Management | Pinia |
-| UI Framework | Tailwind CSS + Headless UI / Shadcn-Vue |
+| UI Framework | Tailwind CSS + PrimeVue |
 
 > **Catatan Frontend:** Proyek menggunakan Vue.js 3 dengan **JavaScript murni** (`.vue` dan `.js`). Tidak ada `.ts`, `tsconfig.json`, atau type annotation. Semua konfigurasi Vite dikonfigurasi tanpa TypeScript plugin.
+> Komponen UI memakai PrimeVue (`DataTable`, `Dialog`, `Toast`, `Dropdown`, `Calendar`, dan komponen form lain) dengan utility styling Tailwind/CSS global.
 
 ### 2.2 Pola Arsitektur
 
@@ -99,13 +102,27 @@ sequenceDiagram
     UI-->>User: Render update
 ```
 
-### 2.4 Pertimbangan SaaS (Fase 2)
+### 2.4 Konvensi Operasional Booking
+
+- Booking awal boleh memakai unit fix atau placeholder unit.
+- Jika unit masih placeholder, booking belum boleh di-handle ke `waiting_list`.
+- Penentuan atau perubahan unit dilakukan dari detail booking melalui modal Tambah Unit / Edit Unit.
+- Tombol Handle hanya konfirmasi perubahan status, bukan form input unit/biaya.
+- Data booking boleh diedit dari detail booking, kecuali konsumen.
+- Setelah detail kendaraan memiliki harga, ringkasan keuangan memakai detail kendaraan sebagai acuan.
+- Jika detail kendaraan belum memiliki harga, ringkasan keuangan fallback ke `harga_dealing` booking.
+- Harga All In dikalikan `lama_sewa`.
+- Tanggal/jam operasional rental dikirim sebagai local datetime (`YYYY-MM-DD HH:mm:ss`) dan tidak dikonversi ke UTC di frontend.
+- Default jam sewa adalah 07:00 dan default jam kembali adalah 23:59.
+- `lama_sewa` dipilih dari 1-99 dan otomatis menghitung tanggal kembali.
+
+### 2.5 Pertimbangan SaaS (Fase 2)
 
 > ⚠️ **Non-negotiable:** Seluruh model harus memiliki kolom `tenant_id` dari Fase 1. Jika kolom ini tidak ada sejak awal, migrasi ke multi-tenant akan memerlukan perubahan skema masif.
 
 **Rekomendasi:** Tambahkan `tenant_id` sejak Fase 1 meski hanya ada satu tenant. Isi default dengan ID perusahaan saat ini.
 
-### 2.5 Database Schema — Gambaran Umum
+### 2.6 Database Schema - Gambaran Umum
 
 ```mermaid
 erDiagram
@@ -139,14 +156,46 @@ erDiagram
         int tenant_id FK
         int branch_id FK
         int customer_id FK
+        int created_by FK
+        int lama_sewa
+        string paket_sewa
+        bigint harga_dealing
+        bigint dp
         string status
         datetime created_at
+    }
+    booking_details {
+        int id PK
+        int booking_id FK
+        int unit_id FK
+        int driver_id FK
+        string unit_placeholder
+        datetime tgl_sewa
+        datetime tgl_kembali
+        int lama_sewa
+        string paket_sewa
+        string pricing_mode
+        bigint harga_mobil
+        bigint diskon_mobil
+        bigint harga_all_in
+        string status
+    }
+    booking_payments {
+        int id PK
+        int booking_id FK
+        int payment_account_id FK
+        bigint amount
+        string payment_type
+        datetime paid_at
     }
 
     tenants ||--o{ branches : "has many"
     tenants ||--o{ users : "has many"
     branches ||--o{ bookings : "has many"
     branches ||--o{ units : "has many"
+    bookings ||--o{ booking_details : "has many"
+    bookings ||--o{ booking_payments : "has many"
+    units ||--o{ booking_details : "assigned to"
 ```
 
 > Detail schema per modul dijelaskan di masing-masing bagian PRD terkait.

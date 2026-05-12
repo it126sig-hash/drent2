@@ -11,10 +11,30 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+  font-size: 16px;
+
+  --content-font-size: 13px;
+  --content-font-size-sm: 12px;
+  --content-font-size-xs: 11px;
+  --content-line-height: 1.35;
+  --content-h1-size: 1.4rem;
+  --content-h2-size: 1.2rem;
+  --content-h3-size: 0.95rem;
+  --content-control-font-size: 0.8125rem;
+  --content-control-height: 2.25rem;
+  --content-padding: 16px;
+  --content-card-padding: 16px;
+  --content-gap: 12px;
+  --surface-page: #eef3f8;
+  --surface-card: #ffffff;
+  --surface-muted: #f7f9fc;
+  --surface-border: #dbe4ee;
+  --surface-border-soft: #e7edf4;
+  --surface-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.55);
 
   color-scheme: light;
   color: #1e293b;
-  background-color: #f8fafc;
+  background-color: var(--surface-page);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -26,5 +46,191 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #f8fafc;
+  background-color: var(--surface-page);
+}
+
+.layout-content {
+  font-size: var(--content-font-size);
+  line-height: var(--content-line-height);
+  background-color: var(--surface-page);
+}
+
+.app-page {
+  min-height: 100%;
+  background-color: var(--surface-page);
+}
+
+.app-card {
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  box-shadow: var(--surface-shadow);
+}
+
+.app-muted-panel {
+  background: var(--surface-muted);
+  border: 1px solid var(--surface-border-soft);
+  border-radius: 8px;
+}
+
+.app-section-header {
+  background: #f8fbfe;
+  border-bottom: 1px solid var(--surface-border-soft);
+}
+
+.app-card :is(.rounded-2xl, .rounded-xl) {
+  border-radius: 8px;
+}
+
+.layout-content :is(p, span, label, small, li, td, th, input, textarea, button) {
+  line-height: var(--content-line-height);
+}
+
+.layout-content :is(h1, .text-3xl, .text-2xl) {
+  font-size: var(--content-h1-size) !important;
+  line-height: 1.2 !important;
+}
+
+.layout-content :is(h2, .text-xl) {
+  font-size: var(--content-h2-size) !important;
+  line-height: 1.25 !important;
+}
+
+.layout-content :is(h3, .text-lg) {
+  font-size: var(--content-h3-size) !important;
+  line-height: 1.25 !important;
+}
+
+.layout-content :is(p, .text-base, .text-sm) {
+  font-size: var(--content-font-size) !important;
+}
+
+.layout-content :is(small, .text-xs) {
+  font-size: var(--content-font-size-sm) !important;
+}
+
+.layout-content .text-\[10px\] {
+  font-size: var(--content-font-size-xs) !important;
+}
+
+.layout-content :is(.p-component, .p-inputtext, .p-button, .p-dropdown, .p-select, .p-datepicker, .p-textarea) {
+  font-size: var(--content-control-font-size);
+}
+
+.layout-content :is(.p-inputtext, .p-dropdown, .p-select, .p-datepicker input) {
+  min-height: var(--content-control-height);
+}
+
+.layout-content .p-button {
+  min-height: var(--content-control-height);
+  padding: 0.45rem 0.75rem;
+}
+
+.layout-content .p-button.p-button-icon-only {
+  width: var(--content-control-height);
+  padding: 0.45rem;
+}
+
+.layout-content .p-button-lg {
+  font-size: 0.875rem;
+  padding: 0.55rem 0.9rem;
+}
+
+.layout-content .p-toolbar {
+  padding: 0.75rem;
+  gap: var(--content-gap);
+}
+
+.layout-content .p-tabview-nav-link,
+.layout-content .p-tablist-tab-list,
+.layout-content .p-tab {
+  font-size: var(--content-control-font-size);
+}
+
+.layout-content .p-datatable {
+  font-size: var(--content-font-size);
+}
+
+.layout-content .p-datatable .p-datatable-thead > tr > th,
+.layout-content .p-datatable .p-datatable-tbody > tr > td {
+  padding: 0.55rem 0.65rem;
+  font-size: var(--content-font-size);
+  line-height: var(--content-line-height);
+}
+
+.layout-content .p-datatable .p-column-title {
+  font-size: var(--content-font-size-sm);
+}
+
+.layout-content .p-paginator {
+  font-size: var(--content-control-font-size);
+  padding: 0.35rem;
+}
+
+.layout-content .p-dialog,
+.layout-content .p-dialog .p-component {
+  font-size: var(--content-font-size);
+}
+
+.layout-content .p-dialog .p-dialog-header,
+.layout-content .p-dialog .p-dialog-content,
+.layout-content .p-dialog .p-dialog-footer {
+  padding: 1rem;
+}
+
+.p-dialog,
+.p-dialog .p-component,
+.p-select-overlay,
+.p-dropdown-panel,
+.p-datepicker-panel,
+.p-tooltip {
+  font-size: var(--content-font-size);
+}
+
+.p-dialog :is(.p-inputtext, .p-dropdown, .p-select, .p-datepicker input, textarea) {
+  min-height: var(--content-control-height);
+  font-size: var(--content-control-font-size);
+}
+
+.p-dialog .p-button {
+  min-height: var(--content-control-height);
+  padding: 0.45rem 0.75rem;
+  font-size: var(--content-control-font-size);
+}
+
+.p-dialog .p-dialog-header,
+.p-dialog .p-dialog-content,
+.p-dialog .p-dialog-footer {
+  padding: 1rem;
+}
+
+.p-select-option,
+.p-dropdown-item,
+.p-datepicker td,
+.p-datepicker th {
+  font-size: var(--content-control-font-size);
+  line-height: var(--content-line-height);
+}
+
+.layout-content :is(.p-8, .p-6, .p-5, .p-4) {
+  padding: var(--content-card-padding) !important;
+}
+
+.layout-content :is(.gap-6, .gap-5, .gap-4) {
+  gap: var(--content-gap) !important;
+}
+
+.layout-content :is(.mb-6, .mb-5, .mb-4) {
+  margin-bottom: var(--content-gap) !important;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --content-font-size: 12.5px;
+    --content-font-size-sm: 11.5px;
+    --content-h1-size: 1.25rem;
+    --content-h2-size: 1.1rem;
+    --content-padding: 12px;
+    --content-card-padding: 12px;
+  }
 }

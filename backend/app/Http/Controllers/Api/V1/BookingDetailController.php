@@ -29,7 +29,7 @@ class BookingDetailController extends Controller
         
         $this->bookingService->assignDetail($booking, $request->validated());
         
-        return new BookingResource($booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs']));
+        return new BookingResource($booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }
 
     public function update(UpdateBookingDetailRequest $request, BookingDetail $bookingDetail)
@@ -38,13 +38,29 @@ class BookingDetailController extends Controller
 
         $bookingDetail->update([
             'unit_id' => $request->unit_id,
+            'unit_placeholder' => null,
             'driver_id' => $request->driver_id,
             'tgl_sewa' => \Carbon\Carbon::parse($request->tgl_sewa)->format('Y-m-d H:i:s'),
             'tgl_kembali' => \Carbon\Carbon::parse($request->tgl_kembali)->format('Y-m-d H:i:s'),
             'harga_mobil' => $request->harga_mobil,
             'diskon_mobil' => $request->diskon_mobil ?? 0,
+            'lama_sewa' => $request->lama_sewa,
+            'paket_sewa' => $request->paket_sewa,
+            'pricing_mode' => $request->pricing_mode,
+            'pricing_package_id' => $request->pricing_package_id,
+            'harga_all_in' => $request->harga_all_in,
         ]);
 
-        return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs']));
+        $bookingDetail->costs()->delete();
+        foreach ($request->input('costs', []) as $costData) {
+            $bookingDetail->costs()->create([
+                'cost_type_id' => $costData['cost_type_id'] ?? null,
+                'label' => $costData['label'],
+                'amount' => $costData['amount'],
+                'keterangan' => $costData['keterangan'] ?? null,
+            ]);
+        }
+
+        return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }
 }

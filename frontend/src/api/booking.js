@@ -18,6 +18,10 @@ export const updateBookingStatus = (id, payload) => {
   return api.patch(`${prefix}/${id}/status`, payload);
 };
 
+export const updateBooking = (id, data) => {
+  return api.put(`${prefix}/${id}`, data);
+};
+
 export const handleBooking = (id, data) => {
   return api.patch(`${prefix}/${id}/handle`, data);
 };
@@ -79,6 +83,7 @@ export default {
   getBookings,
   getBooking,
   updateBookingStatus,
+  updateBooking,
   handleBooking,
   checkoutBooking,
   completeBooking,

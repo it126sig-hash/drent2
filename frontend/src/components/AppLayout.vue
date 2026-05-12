@@ -337,7 +337,7 @@ const filteredMenuItems = computed(() => {
 
 /* Content Area */
 .layout-content {
-  padding: 24px;
+  padding: var(--content-padding, 16px);
   flex: 1;
 }
 

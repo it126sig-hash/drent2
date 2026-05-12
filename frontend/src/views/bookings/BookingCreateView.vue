@@ -8,7 +8,6 @@ import { useUnit } from '../../composables/useUnit';
 import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
-import RadioButton from 'primevue/radiobutton';
 import Dropdown from 'primevue/dropdown';
 import SelectButton from 'primevue/selectbutton';
 import InputText from 'primevue/inputtext';
@@ -32,6 +31,11 @@ const paketOptions = [
   { label: 'Bulanan', value: 'bulanan' },
 ];
 
+const lamaSewaOptions = Array.from({ length: 99 }, (_, index) => ({
+  label: String(index + 1),
+  value: index + 1,
+}));
+
 const form = ref({
   customer_mode: 'existing',
   customer_id: null,
@@ -45,7 +49,7 @@ const form = ref({
 
   tgl_sewa: null,
   tgl_kembali: null,
-  lama_sewa: null,
+  lama_sewa: 1,
   paket_sewa: 'harian',
   tujuan: '',
   alamat_penjemputan: '',
@@ -55,9 +59,19 @@ const form = ref({
   catatan: ''
 });
 
+const selectedStartDateKey = ref(null);
+const selectedReturnDateKey = ref(null);
+
 const selectedCustomer = computed(() => {
   if (form.value.customer_mode === 'existing' && form.value.customer_id) {
     return customers.value.find(c => c.id === form.value.customer_id);
+  }
+  return null;
+});
+
+const selectedUnit = computed(() => {
+  if (form.value.unit_mode === 'existing' && form.value.unit_id) {
+    return unitOptions.value.find(u => u.id === form.value.unit_id);
   }
   return null;
 });
@@ -73,7 +87,7 @@ const accountOptions = computed(() =>
 
 onMounted(() => {
   fetchCustomers();
-  fetchUnits({ status: 'Aktif' });
+  fetchUnits({ per_page: 200 });
   fetchAccounts({ per_page: 100 });
 
   // Pre-fill from query parameters (from Calendar)
@@ -83,9 +97,8 @@ onMounted(() => {
   }
   if (router.currentRoute.value.query.tgl_sewa) {
     const date = new Date(router.currentRoute.value.query.tgl_sewa);
-    // Set to 07:00 as per project rule for start time
-    date.setHours(7, 0, 0);
-    form.value.tgl_sewa = date;
+    form.value.tgl_sewa = applyDefaultTime(date, 7, 0);
+    selectedStartDateKey.value = getDateKey(date);
   }
 });
 
@@ -129,6 +142,11 @@ const handleSubmit = async () => {
     delete payload.customer_mode;
     delete payload.unit_mode;
 
+    if (!payload.dp || payload.dp <= 0) {
+      payload.dp = null;
+      payload.rekening_dp_id = null;
+    }
+
     const booking = await store(payload);
     toast.add({ severity: 'success', summary: 'Sukses', detail: `Booking ${booking.kode_booking} berhasil dibuat`, life: 3000 });
     
@@ -152,24 +170,72 @@ const formatDateTime = (date) => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
-// Default time logic
-watch(() => form.value.tgl_sewa, (newVal) => {
-  if (newVal && newVal instanceof Date) {
-    // If time is 00:00:00 (newly selected from calendar), set to 07:00
-    if (newVal.getHours() === 0 && newVal.getMinutes() === 0 && newVal.getSeconds() === 0) {
-      newVal.setHours(7, 0, 0);
-    }
-  }
-});
+const applyDefaultTime = (date, hour, minute) => {
+  if (!date) return null;
+  const nextDate = new Date(date);
+  nextDate.setHours(hour, minute, 0, 0);
+  return nextDate;
+};
 
-watch(() => form.value.tgl_kembali, (newVal) => {
-  if (newVal && newVal instanceof Date) {
-    // If time is 00:00:00 (newly selected from calendar), set to 23:59
-    if (newVal.getHours() === 0 && newVal.getMinutes() === 0 && newVal.getSeconds() === 0) {
-      newVal.setHours(23, 59, 0);
-    }
+const addRentalDuration = (startDate, duration, packageType) => {
+  if (!startDate || !duration) return null;
+
+  const nextDate = new Date(startDate);
+  const amount = Number(duration);
+
+  if (packageType === 'mingguan') {
+    nextDate.setDate(nextDate.getDate() + (amount * 7) - 1);
+  } else if (packageType === 'bulanan') {
+    nextDate.setMonth(nextDate.getMonth() + amount);
+    nextDate.setDate(nextDate.getDate() - 1);
+  } else {
+    nextDate.setDate(nextDate.getDate() + amount - 1);
   }
-});
+
+  return applyDefaultTime(nextDate, 23, 59);
+};
+
+const syncReturnDateFromDuration = () => {
+  const returnDate = addRentalDuration(form.value.tgl_sewa, form.value.lama_sewa, form.value.paket_sewa);
+  if (!returnDate) return;
+
+  form.value.tgl_kembali = returnDate;
+  selectedReturnDateKey.value = getDateKey(returnDate);
+};
+
+const getDateKey = (date) => {
+  if (!date) return null;
+  const nextDate = new Date(date);
+  return [
+    nextDate.getFullYear(),
+    String(nextDate.getMonth() + 1).padStart(2, '0'),
+    String(nextDate.getDate()).padStart(2, '0'),
+  ].join('-');
+};
+
+const setDefaultStartTime = (date) => {
+  const dateKey = getDateKey(date);
+  if (dateKey && dateKey !== selectedStartDateKey.value) {
+    form.value.tgl_sewa = applyDefaultTime(date, 7, 0);
+    selectedStartDateKey.value = dateKey;
+    syncReturnDateFromDuration();
+  }
+};
+
+const setDefaultReturnTime = (date) => {
+  const dateKey = getDateKey(date);
+  if (dateKey && dateKey !== selectedReturnDateKey.value) {
+    form.value.tgl_kembali = applyDefaultTime(date, 23, 59);
+    selectedReturnDateKey.value = dateKey;
+  }
+};
+
+watch(
+  () => [form.value.tgl_sewa, form.value.lama_sewa, form.value.paket_sewa],
+  () => {
+    syncReturnDateFromDuration();
+  }
+);
 
 const resetForm = () => {
   form.value = {
@@ -183,7 +249,7 @@ const resetForm = () => {
     unit_placeholder: '',
     tgl_sewa: null,
     tgl_kembali: null,
-    lama_sewa: null,
+    lama_sewa: 1,
     paket_sewa: 'harian',
     tujuan: '',
     alamat_penjemputan: '',
@@ -192,6 +258,8 @@ const resetForm = () => {
     rekening_dp_id: null,
     catatan: ''
   };
+  selectedStartDateKey.value = null;
+  selectedReturnDateKey.value = null;
 };
 
 const getStatusSeverity = (status) => {
@@ -204,89 +272,154 @@ const getStatusSeverity = (status) => {
   }
 };
 
+const normalizeSearch = (value) => {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+};
+
+const unitStatusMeta = (status) => {
+  const map = {
+    Aktif: { label: 'Available', severity: 'success' },
+    Out: { label: 'Out', severity: 'warning' },
+    'Dalam Servis': { label: 'Service', severity: 'danger' },
+    'Tidak Aktif': { label: 'Inactive', severity: 'secondary' },
+  };
+  return map[status] || { label: status || '-', severity: 'info' };
+};
+
 const unitOptions = computed(() => {
     return units.value.map(u => ({
         ...u,
         label: `${u.merk} ${u.tipe}`,
         sublabel: `${u.no_polisi} - ${u.rental_owner?.nama || 'N/A'}`,
-        searchableLabel: `${u.merk} ${u.tipe} ${u.no_polisi} ${u.rental_owner?.nama || ''}`
+        disabled: u.status !== 'Aktif',
+        searchableLabel: [
+          u.merk,
+          u.tipe,
+          u.rental_owner?.nama,
+          u.no_polisi,
+          u.no_polisi,
+          u.rental_owner?.nama,
+          u.tipe,
+          u.merk,
+          unitStatusMeta(u.status).label,
+        ].filter(Boolean).join(' '),
+        normalizedSearchableLabel: normalizeSearch([
+          u.merk,
+          u.tipe,
+          u.rental_owner?.nama,
+          u.no_polisi,
+          unitStatusMeta(u.status).label,
+        ].filter(Boolean).join(' '))
     }));
 });
 
 const customerOptions = computed(() => {
     return customers.value.map(c => ({
         id: c.id,
-        name: `${c.nama} - ${c.kota || '-'}`
+        name: `${c.nama} - ${c.kota || '-'}`,
+        nama: c.nama,
+        kota: c.kota || '-',
+        kontak_1: c.kontak_1 || '-',
+        status: c.status || 'Normal',
+        searchableLabel: [c.nama, c.kota, c.kontak_1, c.status].filter(Boolean).join(' ')
     }));
 });
+
+const selectedDurationLabel = computed(() => {
+  const paket = paketOptions.find(option => option.value === form.value.paket_sewa)?.label || '-';
+  return `${form.value.lama_sewa || 0} ${paket}`;
+});
+
+const formatCurrency = (value) => {
+  if (!value) return 'Rp 0';
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value);
+};
 
 </script>
 
 <template>
   <div class="booking-create-container">
-    <div class="page-header mb-8 flex justify-between items-center">
+    <div class="page-header mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div>
-        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Buat Booking Baru</h1>
-        <p class="text-slate-500 mt-1">Input data pelanggan, unit, dan detail penyewaan</p>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Buat Booking Baru</h1>
+        <p class="text-slate-500 mt-1">Input awal transaksi sebelum masuk proses handle booking.</p>
       </div>
-      <Button label="Batal" icon="pi pi-times" class="p-button-text p-button-secondary" @click="router.back()" />
+      <Button label="Batal" icon="pi pi-times" class="p-button-text p-button-secondary self-start md:self-auto" @click="router.back()" />
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-12 gap-8">
-      <!-- Left Column: Customer & Unit -->
-      <div class="xl:col-span-4 flex flex-col gap-8">
-        <!-- Section 1: Pelanggan -->
-        <Card class="premium-card overflow-hidden">
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      <div class="xl:col-span-8 flex flex-col gap-6">
+        <Card class="premium-card">
           <template #title>
-            <div class="card-header-accent bg-slate-900 px-6 py-4 -mx-6 -mt-6 mb-6">
-              <div class="flex items-center gap-3">
-                <div class="icon-circle bg-tosca">
-                  <i class="pi pi-user text-white"></i>
-                </div>
-                <h2 class="text-white font-bold m-0 text-lg">Informasi Pelanggan</h2>
-              </div>
+            <div class="section-title">
+              <i class="pi pi-user text-tosca"></i>
+              <span>Pelanggan</span>
             </div>
           </template>
           <template #content>
-            <div class="flex flex-col gap-6">
-              <SelectButton 
-                v-model="form.customer_mode" 
-                :options="[{label: 'Pelanggan Lama', value: 'existing'}, {label: 'Pelanggan Baru', value: 'new'}]" 
-                optionLabel="label" 
-                optionValue="value" 
+            <div class="flex flex-col gap-5">
+              <SelectButton
+                v-model="form.customer_mode"
+                :options="[{label: 'Pelanggan Lama', value: 'existing'}, {label: 'Pelanggan Baru', value: 'new'}]"
+                optionLabel="label"
+                optionValue="value"
                 class="w-full custom-selectbutton"
               />
 
-              <div v-if="form.customer_mode === 'existing'" class="flex flex-col gap-3">
-                <div class="form-field-vertical">
-                  <label class="field-label">Cari Nama Pelanggan</label>
-                  <Dropdown 
-                    v-model="form.customer_id" 
-                    :options="customerOptions" 
-                    optionLabel="name" 
-                    optionValue="id" 
-                    placeholder="Pilih dari database..." 
-                    filter 
-                    :loading="customersLoading"
-                    class="w-full premium-input"
-                  />
-                </div>
-                
+              <div v-if="form.customer_mode === 'existing'" class="form-field-vertical">
+                <label class="field-label">Cari pelanggan</label>
+                <Dropdown
+                  v-model="form.customer_id"
+                  :options="customerOptions"
+                  optionLabel="searchableLabel"
+                  optionValue="id"
+                  placeholder="Nama, kota, nomor, atau status..."
+                  filter
+                  :filterFields="['searchableLabel']"
+                  :loading="customersLoading"
+                  class="w-full premium-input"
+                >
+                  <template #value="slotProps">
+                    <div v-if="slotProps.value" class="selected-inline">
+                      <span class="font-semibold text-slate-800">{{ customerOptions.find(c => c.id === slotProps.value)?.nama }}</span>
+                      <Tag
+                        v-if="customerOptions.find(c => c.id === slotProps.value)"
+                        :value="customerOptions.find(c => c.id === slotProps.value)?.status"
+                        :severity="getStatusSeverity(customerOptions.find(c => c.id === slotProps.value)?.status)"
+                        class="premium-tag"
+                      />
+                    </div>
+                    <span v-else>{{ slotProps.placeholder }}</span>
+                  </template>
+                  <template #option="slotProps">
+                    <div class="option-row">
+                      <div class="flex min-w-0 flex-col">
+                        <span class="font-semibold text-slate-800 truncate">{{ slotProps.option.nama }}</span>
+                        <span class="text-xs text-slate-500 truncate">{{ slotProps.option.kontak_1 }} - {{ slotProps.option.kota }}</span>
+                      </div>
+                      <Tag :value="slotProps.option.status" :severity="getStatusSeverity(slotProps.option.status)" class="premium-tag shrink-0" />
+                    </div>
+                  </template>
+                </Dropdown>
+
                 <transition name="fade">
-                  <div v-if="selectedCustomer" class="customer-preview mt-2">
-                    <div class="flex justify-between items-start mb-3">
-                      <span class="font-bold text-slate-900">{{ selectedCustomer.nama }}</span>
+                  <div v-if="selectedCustomer" class="preview-panel">
+                    <div class="preview-heading">
+                      <span>{{ selectedCustomer.nama }}</span>
                       <Tag :value="selectedCustomer.status" :severity="getStatusSeverity(selectedCustomer.status)" class="premium-tag" />
                     </div>
-                    <div class="contact-rows space-y-2 text-sm">
-                      <div class="flex items-center text-slate-600">
-                        <i class="pi pi-phone mr-3 text-tosca text-xs"></i>
-                        <span>{{ selectedCustomer.kontak_1 }}</span>
-                      </div>
-                      <div class="flex items-center text-slate-600">
-                        <i class="pi pi-map-marker mr-3 text-tosca text-xs"></i>
-                        <span>{{ selectedCustomer.kota || '-' }}</span>
-                      </div>
+                    <div class="info-grid">
+                      <span>Kontak</span>
+                      <strong>{{ selectedCustomer.kontak_1 || '-' }}</strong>
+                      <span>Kota</span>
+                      <strong>{{ selectedCustomer.kota || '-' }}</strong>
                     </div>
 
                     <Message v-if="isBlacklisted" severity="error" icon="pi pi-ban" class="mt-4 !m-0">
@@ -299,202 +432,282 @@ const customerOptions = computed(() => {
                 </transition>
               </div>
 
-              <div v-else class="new-customer-form grid gap-4 animate-fade-in">
+              <div v-else class="new-customer-form grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in">
                 <div class="form-field-vertical">
-                  <label class="field-label">Nama Lengkap *</label>
-                  <InputText v-model="form.customer_name" placeholder="Input nama" class="w-full premium-input" />
+                  <label class="field-label">Nama lengkap *</label>
+                  <InputText v-model="form.customer_name" placeholder="Nama pelanggan" class="w-full premium-input" />
                 </div>
                 <div class="form-field-vertical">
                   <label class="field-label">Nomor WhatsApp *</label>
                   <InputText v-model="form.customer_phone" placeholder="08xxxxxxxxxx" class="w-full premium-input" />
                 </div>
                 <div class="form-field-vertical">
-                  <label class="field-label">Asal Kota *</label>
-                  <InputText v-model="form.customer_city" placeholder="Input kota" class="w-full premium-input" />
+                  <label class="field-label">Asal kota *</label>
+                  <InputText v-model="form.customer_city" placeholder="Kota" class="w-full premium-input" />
                 </div>
               </div>
             </div>
           </template>
         </Card>
 
-        <!-- Section 2: Unit -->
-        <Card class="premium-card overflow-hidden">
+        <Card class="premium-card">
           <template #title>
-            <div class="card-header-accent bg-slate-900 px-6 py-4 -mx-6 -mt-6 mb-6">
-              <div class="flex items-center gap-3">
-                <div class="icon-circle bg-tosca">
-                  <i class="pi pi-car text-white"></i>
-                </div>
-                <h2 class="text-white font-bold m-0 text-lg">Unit Kendaraan</h2>
-              </div>
+            <div class="section-title">
+              <i class="pi pi-car text-tosca"></i>
+              <span>Unit Kendaraan</span>
             </div>
           </template>
           <template #content>
-            <div class="flex flex-col gap-6">
-              <SelectButton 
-                v-model="form.unit_mode" 
-                :options="[{label: 'Unit Ready', value: 'existing'}, {label: 'Placeholder', value: 'placeholder'}]" 
-                optionLabel="label" 
-                optionValue="value" 
+            <div class="flex flex-col gap-5">
+              <SelectButton
+                v-model="form.unit_mode"
+                :options="[{label: 'Unit Ready', value: 'existing'}, {label: 'Placeholder', value: 'placeholder'}]"
+                optionLabel="label"
+                optionValue="value"
                 class="w-full custom-selectbutton"
               />
 
               <div v-if="form.unit_mode === 'existing'" class="form-field-vertical">
-                <label class="field-label">Cari Unit / Nopol</label>
-                <Dropdown 
-                  v-model="form.unit_id" 
-                  :options="unitOptions" 
-                  optionLabel="searchableLabel" 
-                  optionValue="id" 
-                  placeholder="Cari Mobil/Nopol/Pemilik..." 
-                  filter 
+                <label class="field-label">Cari unit ready</label>
+                <Dropdown
+                  v-model="form.unit_id"
+                  :options="unitOptions"
+                  optionLabel="searchableLabel"
+                  optionValue="id"
+                  optionDisabled="disabled"
+                  placeholder="Cari mobil, nopol, pemilik, atau status..."
+                  filter
+                  :filterFields="['searchableLabel', 'normalizedSearchableLabel']"
                   :loading="unitsLoading"
                   class="w-full premium-input"
                 >
-                    <template #value="slotProps">
-                        <div v-if="slotProps.value" class="flex items-center">
-                            <span class="font-bold">{{ unitOptions.find(u => u.id === slotProps.value)?.label }}</span>
-                        </div>
-                        <span v-else>{{ slotProps.placeholder }}</span>
-                    </template>
-                    <template #option="slotProps">
-                        <div class="flex flex-col py-1">
-                            <span class="font-bold text-slate-800">{{ slotProps.option.label }}</span>
-                            <span class="text-xs text-slate-500">{{ slotProps.option.sublabel }}</span>
-                        </div>
-                    </template>
+                  <template #value="slotProps">
+                    <div v-if="slotProps.value" class="selected-inline">
+                      <span class="font-semibold text-slate-800">{{ unitOptions.find(u => u.id === slotProps.value)?.label }}</span>
+                      <Tag
+                        v-if="unitOptions.find(u => u.id === slotProps.value)"
+                        :value="unitStatusMeta(unitOptions.find(u => u.id === slotProps.value)?.status).label"
+                        :severity="unitStatusMeta(unitOptions.find(u => u.id === slotProps.value)?.status).severity"
+                        class="premium-tag"
+                      />
+                    </div>
+                    <span v-else>{{ slotProps.placeholder }}</span>
+                  </template>
+                  <template #option="slotProps">
+                    <div class="option-row">
+                      <div class="flex min-w-0 flex-col">
+                        <span class="font-semibold text-slate-800 truncate">{{ slotProps.option.label }}</span>
+                        <span class="text-xs text-slate-500 truncate">{{ slotProps.option.sublabel }}</span>
+                      </div>
+                      <Tag
+                        :value="unitStatusMeta(slotProps.option.status).label"
+                        :severity="unitStatusMeta(slotProps.option.status).severity"
+                        class="premium-tag shrink-0"
+                      />
+                    </div>
+                  </template>
                 </Dropdown>
+
+                <transition name="fade">
+                  <div v-if="selectedUnit" class="preview-panel">
+                    <div class="preview-heading">
+                      <span>{{ selectedUnit.label }}</span>
+                      <Tag
+                        :value="unitStatusMeta(selectedUnit.status).label"
+                        :severity="unitStatusMeta(selectedUnit.status).severity"
+                        class="premium-tag"
+                      />
+                    </div>
+                    <div class="info-grid">
+                      <span>No polisi</span>
+                      <strong>{{ selectedUnit.no_polisi || '-' }}</strong>
+                      <span>Pemilik</span>
+                      <strong>{{ selectedUnit.rental_owner?.nama || 'N/A' }}</strong>
+                      <span>Status</span>
+                      <strong>{{ selectedUnit.status || '-' }}</strong>
+                    </div>
+                  </div>
+                </transition>
               </div>
 
               <div v-else class="form-field-vertical animate-fade-in">
-                <label class="field-label">Deskripsi Unit Sementara *</label>
+                <label class="field-label">Deskripsi unit sementara *</label>
                 <InputText v-model="form.unit_placeholder" placeholder="Misal: Avanza Hitam Pak Budi" class="w-full premium-input" />
               </div>
             </div>
           </template>
         </Card>
-      </div>
 
-      <!-- Right Column: Details -->
-      <div class="xl:col-span-8">
-        <Card class="premium-card h-full flex flex-col">
+        <Card class="premium-card">
           <template #title>
-            <div class="card-header-accent bg-slate-900 px-6 py-4 -mx-6 -mt-6 mb-8">
-              <div class="flex items-center gap-3">
-                <div class="icon-circle bg-tosca">
-                  <i class="pi pi-calendar text-white"></i>
-                </div>
-                <h2 class="text-white font-bold m-0 text-lg">Detail Jadwal & Biaya</h2>
-              </div>
+            <div class="section-title">
+              <i class="pi pi-calendar text-tosca"></i>
+              <span>Jadwal & Biaya</span>
             </div>
           </template>
           <template #content>
-            <div class="flex flex-col gap-8">
-              <!-- Grid Layout for tidier Label-Input pairs -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                <!-- Date Rows -->
-                <div class="form-field-horizontal">
-                  <label class="horizontal-label">Mulai Sewa *</label>
-                  <div class="horizontal-input">
-                    <Calendar v-model="form.tgl_sewa" showIcon showTime hourFormat="24" iconDisplay="input" placeholder="Pilih Tanggal & Jam" class="w-full premium-calendar" />
-                  </div>
-                </div>
-                
-                <div class="form-field-horizontal">
-                  <label class="horizontal-label">Selesai Sewa *</label>
-                  <div class="horizontal-input">
-                    <Calendar v-model="form.tgl_kembali" showIcon showTime hourFormat="24" iconDisplay="input" placeholder="Pilih Tanggal & Jam" :minDate="form.tgl_sewa" class="w-full premium-calendar" />
-                  </div>
-                </div>
-
-                <!-- Durasi Sewa -->
-                <div class="form-field-horizontal">
-                  <label class="horizontal-label">Lama Sewa *</label>
-                  <div class="horizontal-input">
-                    <InputNumber v-model="form.lama_sewa" :min="1" placeholder="Jumlah hari/minggu/bulan" class="w-full premium-input" />
-                  </div>
-                </div>
-
-                <div class="form-field-horizontal">
-                  <label class="horizontal-label">Paket Sewa *</label>
-                  <div class="horizontal-input">
-                    <Dropdown v-model="form.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" placeholder="Pilih paket" class="w-full premium-input" />
-                  </div>
-                </div>
-
-                <!-- Usage Info -->
-                <div class="form-field-horizontal md:col-span-2">
-                  <label class="horizontal-label">Tujuan</label>
-                  <div class="horizontal-input">
-                    <InputText v-model="form.tujuan" placeholder="Ke luar kota / wisata / kantor..." class="w-full premium-input" />
-                  </div>
-                </div>
-
-                <div class="form-field-horizontal md:col-span-2">
-                  <label class="horizontal-label">Alamat Jemput</label>
-                  <div class="horizontal-input">
-                    <Textarea v-model="form.alamat_penjemputan" rows="2" placeholder="Input alamat lengkap penjemputan..." class="w-full premium-input" />
-                  </div>
-                </div>
-
-                <!-- Financials -->
-                <div class="form-field-horizontal">
-                  <label class="horizontal-label">Harga Dealing</label>
-                  <div class="horizontal-input">
-                    <InputNumber v-model="form.harga_dealing" mode="currency" currency="IDR" locale="id-ID" placeholder="Rp 0" class="w-full premium-input" />
-                  </div>
-                </div>
-
-                <div class="form-field-horizontal">
-                  <label class="horizontal-label">Uang Muka (DP)</label>
-                  <div class="horizontal-input">
-                    <InputNumber v-model="form.dp" mode="currency" currency="IDR" locale="id-ID" placeholder="Rp 0" class="w-full premium-input" />
-                  </div>
-                </div>
-
-                <!-- Account Section -->
-                <transition name="slide-up">
-                  <div v-if="form.dp > 0" class="md:col-span-2 bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-up">
-                    <div class="form-field-horizontal">
-                      <label class="horizontal-label text-tosca-dark font-bold">Rekening DP *</label>
-                      <div class="horizontal-input">
-                        <Dropdown 
-                          v-model="form.rekening_dp_id" 
-                          :options="accountOptions" 
-                          optionLabel="name" 
-                          optionValue="id" 
-                          placeholder="Pilih Akun Pembayaran" 
-                          class="w-full premium-input !border-tosca"
-                          :empty-message="'Belum ada akun pembayaran aktif'"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </transition>
-
-                <div class="form-field-horizontal md:col-span-2">
-                  <label class="horizontal-label">Catatan</label>
-                  <div class="horizontal-input">
-                    <Textarea v-model="form.catatan" rows="3" placeholder="Informasi tambahan jika ada..." class="w-full premium-input" />
-                  </div>
-                </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+              <div class="form-field-vertical">
+                <label class="field-label">Mulai sewa *</label>
+                <Calendar
+                  v-model="form.tgl_sewa"
+                  showIcon
+                  showTime
+                  hourFormat="24"
+                  iconDisplay="input"
+                  dateFormat="dd M yy"
+                  :manualInput="true"
+                  placeholder="Pilih tanggal & jam"
+                  class="w-full premium-calendar"
+                  @date-select="setDefaultStartTime"
+                />
               </div>
 
-              <div class="mt-8 flex justify-end gap-4 border-t border-slate-100 pt-8">
-                <Button label="Reset" class="p-button-text p-button-secondary px-6" @click="resetForm" />
-                <Button 
-                  label="Simpan Booking" 
-                  icon="pi pi-check" 
-                  :loading="bookingLoading" 
-                  @click="handleSubmit" 
-                  :disabled="isBlacklisted"
-                  class="p-button-tosca px-10 py-4 font-bold rounded-xl shadow-lg shadow-tosca/20"
+              <div class="form-field-vertical">
+                <label class="field-label">Selesai sewa *</label>
+                <Calendar
+                  v-model="form.tgl_kembali"
+                  showIcon
+                  showTime
+                  hourFormat="24"
+                  iconDisplay="input"
+                  dateFormat="dd M yy"
+                  :manualInput="true"
+                  placeholder="Pilih tanggal & jam"
+                  :minDate="form.tgl_sewa"
+                  class="w-full premium-calendar"
+                  @date-select="setDefaultReturnTime"
                 />
+              </div>
+
+              <div class="form-field-vertical">
+                <label class="field-label">Lama sewa *</label>
+                <Dropdown
+                  v-model="form.lama_sewa"
+                  :options="lamaSewaOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Pilih lama sewa"
+                  filter
+                  class="w-full premium-input"
+                />
+              </div>
+
+              <div class="form-field-vertical">
+                <label class="field-label">Paket sewa *</label>
+                <Dropdown v-model="form.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" placeholder="Pilih paket" class="w-full premium-input" />
+              </div>
+
+              <div class="form-field-vertical md:col-span-2">
+                <label class="field-label">Tujuan</label>
+                <InputText v-model="form.tujuan" placeholder="Ke luar kota / wisata / kantor..." class="w-full premium-input" />
+              </div>
+
+              <div class="form-field-vertical md:col-span-2">
+                <label class="field-label">Alamat jemput</label>
+                <Textarea v-model="form.alamat_penjemputan" rows="2" placeholder="Input alamat lengkap penjemputan..." class="w-full premium-input" />
+              </div>
+
+              <div class="form-field-vertical">
+                <label class="field-label">Harga dealing</label>
+                <InputNumber v-model="form.harga_dealing" mode="currency" currency="IDR" locale="id-ID" placeholder="Rp 0" class="w-full premium-input" />
+              </div>
+
+              <div class="form-field-vertical">
+                <label class="field-label">Uang muka (DP)</label>
+                <InputNumber v-model="form.dp" mode="currency" currency="IDR" locale="id-ID" placeholder="Rp 0" class="w-full premium-input" />
+              </div>
+
+              <transition name="slide-up">
+                <div v-if="form.dp > 0" class="form-field-vertical md:col-span-2 payment-account-panel animate-slide-up">
+                  <label class="field-label">Rekening DP *</label>
+                  <Dropdown
+                    v-model="form.rekening_dp_id"
+                    :options="accountOptions"
+                    optionLabel="name"
+                    optionValue="id"
+                    placeholder="Pilih akun pembayaran"
+                    class="w-full premium-input"
+                    :empty-message="'Belum ada akun pembayaran aktif'"
+                  />
+                </div>
+              </transition>
+
+              <div class="form-field-vertical md:col-span-2">
+                <label class="field-label">Catatan</label>
+                <Textarea v-model="form.catatan" rows="3" placeholder="Informasi tambahan jika ada..." class="w-full premium-input" />
               </div>
             </div>
           </template>
         </Card>
       </div>
+
+      <aside class="xl:col-span-4">
+        <div class="summary-panel">
+          <div class="section-title mb-4">
+            <i class="pi pi-clipboard text-tosca"></i>
+            <span>Ringkasan</span>
+          </div>
+
+          <div class="summary-list">
+            <div>
+              <span>Pelanggan</span>
+              <strong>{{ selectedCustomer?.nama || form.customer_name || '-' }}</strong>
+            </div>
+            <div>
+              <span>Status pelanggan</span>
+              <Tag v-if="selectedCustomer" :value="selectedCustomer.status" :severity="getStatusSeverity(selectedCustomer.status)" class="premium-tag" />
+              <strong v-else>-</strong>
+            </div>
+            <div>
+              <span>Unit</span>
+              <strong>{{ selectedUnit?.label || form.unit_placeholder || '-' }}</strong>
+            </div>
+            <div>
+              <span>No polisi</span>
+              <strong>{{ selectedUnit?.no_polisi || '-' }}</strong>
+            </div>
+            <div>
+              <span>Pemilik</span>
+              <strong>{{ selectedUnit?.rental_owner?.nama || '-' }}</strong>
+            </div>
+            <div>
+              <span>Status unit</span>
+              <Tag
+                v-if="selectedUnit"
+                :value="unitStatusMeta(selectedUnit.status).label"
+                :severity="unitStatusMeta(selectedUnit.status).severity"
+                class="premium-tag"
+              />
+              <strong v-else>-</strong>
+            </div>
+            <div>
+              <span>Durasi</span>
+              <strong>{{ selectedDurationLabel }}</strong>
+            </div>
+            <div>
+              <span>Harga dealing</span>
+              <strong>{{ formatCurrency(form.harga_dealing) }}</strong>
+            </div>
+            <div>
+              <span>DP</span>
+              <strong>{{ formatCurrency(form.dp) }}</strong>
+            </div>
+          </div>
+
+          <div class="summary-actions">
+            <Button label="Reset" class="p-button-text p-button-secondary" @click="resetForm" />
+            <Button
+              label="Simpan Booking"
+              icon="pi pi-check"
+              :loading="bookingLoading"
+              @click="handleSubmit"
+              :disabled="isBlacklisted"
+              class="p-button-tosca"
+            />
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
 </template>
@@ -505,43 +718,26 @@ const customerOptions = computed(() => {
   margin: 0 auto;
 }
 
-/* Premium Card & Header */
 .premium-card {
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8px 18px -14px rgba(15, 23, 42, 0.45);
   background: white;
 }
 
-.icon-circle {
-  width: 36px;
-  height: 36px;
+.section-title {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(6, 182, 212, 0.2);
+  gap: 10px;
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 800;
 }
 
-/* Field Layouts for Tidiness */
 .form-field-vertical {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.form-field-horizontal {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-@media (min-width: 768px) {
-  .form-field-horizontal {
-    flex-direction: row;
-    align-items: center;
-    gap: 20px;
-  }
 }
 
 .field-label {
@@ -552,28 +748,12 @@ const customerOptions = computed(() => {
   letter-spacing: 0.05em;
 }
 
-.horizontal-label {
-  min-width: 140px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #334155;
-  white-space: nowrap;
-}
-
-.horizontal-input {
-  flex: 1;
-}
-
-/* Colors & Accents */
-.bg-tosca { background-color: #06b6d4; }
 .text-tosca { color: #06b6d4; }
-.text-tosca-dark { color: #0891b2; }
 
-/* Inputs Refinement */
 :deep(.premium-input .p-inputtext), 
 :deep(.premium-calendar .p-inputtext),
 :deep(.premium-input.p-dropdown) {
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 10px 14px;
   border: 1.5px solid #e2e8f0;
   background: #fff;
@@ -587,13 +767,12 @@ const customerOptions = computed(() => {
   box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
 }
 
-/* SelectButton Customization */
 :deep(.custom-selectbutton .p-button) {
   flex: 1;
   background: #f1f5f9;
   border: none;
   color: #475569;
-  border-radius: 10px !important;
+  border-radius: 8px !important;
   font-weight: 700;
   font-size: 0.85rem;
   padding: 10px;
@@ -604,12 +783,90 @@ const customerOptions = computed(() => {
   color: white;
 }
 
-/* Customer Preview */
-.customer-preview {
+.selected-inline,
+.option-row,
+.preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.preview-panel {
   background: #f8fafc;
   padding: 16px;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
+}
+
+.preview-heading {
+  margin-bottom: 14px;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.info-grid,
+.summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.info-grid {
+  grid-template-columns: minmax(92px, 0.42fr) 1fr;
+  font-size: 0.875rem;
+}
+
+.info-grid span,
+.summary-list span {
+  color: #64748b;
+}
+
+.info-grid strong,
+.summary-list strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.payment-account-panel {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.summary-panel {
+  position: sticky;
+  top: 18px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px -14px rgba(15, 23, 42, 0.45);
+}
+
+.summary-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 10px;
+  font-size: 0.875rem;
+}
+
+.summary-list > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.summary-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
 }
 
 .premium-tag {
@@ -618,18 +875,26 @@ const customerOptions = computed(() => {
   font-size: 0.65rem;
 }
 
-/* Animations */
 .animate-fade-in { animation: fadeIn 0.3s ease-out; }
 .animate-slide-up { animation: slideUp 0.3s ease-out; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Button Action */
 .p-button-tosca {
   background-color: #06b6d4 !important;
   border-color: #06b6d4 !important;
   color: white !important;
+}
+
+@media (max-width: 767px) {
+  .summary-panel {
+    position: static;
+  }
+
+  .summary-actions {
+    flex-direction: column-reverse;
+  }
 }
 </style>
 

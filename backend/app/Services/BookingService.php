@@ -72,6 +72,7 @@ class BookingService
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
                 'customer_id' => $customerId,
+                'created_by' => auth()->id(),
                 'kode_booking' => $kodeBooking,
                 'status' => $status,
                 'lama_sewa' => $data['lama_sewa'] ?? null,
@@ -113,7 +114,7 @@ class BookingService
                 ]);
             }
 
-            return $booking->load(['customer', 'bookingDetails', 'payments']);
+            return $booking->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'payments']);
         });
     }
 
@@ -130,9 +131,23 @@ class BookingService
                 'tgl_kembali' => Carbon::parse($data['tgl_kembali'])->format('Y-m-d H:i:s'),
                 'harga_mobil' => $data['harga_mobil'],
                 'diskon_mobil' => $data['diskon_mobil'] ?? 0,
-                'detail_type' => $data['detail_type'],
-                'status' => 'aktif',
+                'lama_sewa' => $data['lama_sewa'] ?? $booking->lama_sewa,
+                'paket_sewa' => $data['paket_sewa'] ?? $booking->paket_sewa,
+                'pricing_mode' => $data['pricing_mode'] ?? 'non_all_in',
+                'pricing_package_id' => $data['pricing_package_id'] ?? null,
+                'harga_all_in' => $data['harga_all_in'] ?? null,
+                'detail_type' => $data['detail_type'] ?? 'initial',
+                'status' => 'draft',
             ]);
+
+            foreach ($data['costs'] ?? [] as $costData) {
+                $detail->costs()->create([
+                    'cost_type_id' => $costData['cost_type_id'] ?? null,
+                    'label' => $costData['label'],
+                    'amount' => $costData['amount'],
+                    'keterangan' => $costData['keterangan'] ?? null,
+                ]);
+            }
 
             // TODO: Rent-to-Rent logic
             // Otomatis catat hutang rent-to-rent jika unit bukan milik sendiri
@@ -312,7 +327,7 @@ class BookingService
     private function getAllowedTransitions(string $current): array
     {
         return match ($current) {
-            'follow_up'    => ['confirm', 'batal'],
+            'follow_up'    => ['confirm', 'waiting_list', 'batal'],
             'confirm'      => ['waiting_list', 'batal'],
             'waiting_list' => ['rental_unit', 'batal'],
             'rental_unit'  => ['selesai', 'batal'],
