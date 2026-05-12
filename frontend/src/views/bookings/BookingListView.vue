@@ -201,7 +201,7 @@ const getVehicleInfo = (booking) => {
 
   return {
     title: detail?.unit_placeholder || 'Belum ditentukan',
-    subtitle: 'Placeholder booking',
+    subtitle: '',
     ownerName: null,
     ownerType: null,
     ownerBadge: null,
@@ -363,20 +363,19 @@ const rowClass = (data) => {
                 </span>
                 <div class="flex flex-wrap items-center gap-1.5">
                   <span v-if="getVehicleInfo(data).ownerName" class="text-xs text-gray-600">
-                    {{ getVehicleInfo(data).ownerName }}
-                  </span>
-                  <Tag
+                    <Tag
                     v-if="getVehicleInfo(data).ownerBadge"
                     :severity="getVehicleInfo(data).ownerSeverity"
                     :value="getVehicleInfo(data).ownerBadge"
                     class="text-[10px]"
-                  />
+                  > {{ getVehicleInfo(data).ownerName }} </Tag>
+                  </span>
                   <Tag
                     v-if="getVehicleInfo(data).placeholder"
-                    severity="warning"
-                    value="Placeholder"
+                    severity="danger"
+                    value="Unit belum ditentukan"
                     icon="pi pi-exclamation-triangle"
-                    class="text-[10px]"
+                    class="!text-[10px]"
                   />
                 </div>
                 <span v-if="getExtraDetailCount(data)" class="text-[10px] font-semibold text-blue-600 mt-1">

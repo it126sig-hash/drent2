@@ -34,7 +34,7 @@ class BookingCostController extends Controller
         
         $this->bookingService->addCost($bookingDetail, $request->validated());
         
-        return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs']));
+        return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType']));
     }
 
     public function update(UpdateBookingCostRequest $request, BookingCost $bookingCost)
@@ -43,7 +43,7 @@ class BookingCostController extends Controller
 
         $bookingCost->update($request->validated());
 
-        return new BookingResource($bookingCost->bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs']));
+        return new BookingResource($bookingCost->bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType']));
     }
 
     public function storeAdditionalCost(StoreAdditionalCostRequest $request, Booking $booking)
@@ -52,6 +52,6 @@ class BookingCostController extends Controller
         
         $this->modificationService->addAdditionalCost($booking, $request->validated());
         
-        return new BookingResource($booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs']));
+        return new BookingResource($booking->fresh()->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }
 }

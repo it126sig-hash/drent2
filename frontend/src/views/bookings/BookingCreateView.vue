@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useBooking } from '../../composables/useBooking';
 import { useCustomer } from '../../composables/useCustomer';
@@ -18,12 +18,16 @@ import Tag from 'primevue/tag';
 import Message from 'primevue/message';
 
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
-const { store, loading: bookingLoading } = useBooking();
+const { store, fetchOne, updateBooking, loading: bookingLoading } = useBooking();
 const { customers, fetchAll: fetchCustomers, loading: customersLoading } = useCustomer();
 const { units, fetchAll: fetchUnits, loading: unitsLoading } = useUnit();
 
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
+const isEditMode = computed(() => route.name === 'BookingEdit');
+const editingBooking = ref(null);
+const suppressDurationSync = ref(false);
 
 const paketOptions = [
   { label: 'Harian', value: 'harian' },
@@ -90,17 +94,68 @@ onMounted(() => {
   fetchUnits({ per_page: 200 });
   fetchAccounts({ per_page: 100 });
 
+  if (isEditMode.value) {
+    loadBookingForEdit();
+    return;
+  }
+
   // Pre-fill from query parameters (from Calendar)
-  if (router.currentRoute.value.query.unit_id) {
-    form.value.unit_id = parseInt(router.currentRoute.value.query.unit_id);
+  if (route.query.unit_id) {
+    form.value.unit_id = parseInt(route.query.unit_id);
     form.value.unit_mode = 'existing';
   }
-  if (router.currentRoute.value.query.tgl_sewa) {
-    const date = new Date(router.currentRoute.value.query.tgl_sewa);
+  if (route.query.tgl_sewa) {
+    const date = new Date(route.query.tgl_sewa);
     form.value.tgl_sewa = applyDefaultTime(date, 7, 0);
     selectedStartDateKey.value = getDateKey(date);
   }
 });
+
+const getPrimaryDetail = (booking) => {
+  const details = booking?.booking_details || [];
+  return details.find(detail => detail.detail_type === 'initial')
+    || details.find(detail => detail.status === 'aktif')
+    || details[0]
+    || null;
+};
+
+const loadBookingForEdit = async () => {
+  try {
+    const booking = await fetchOne(route.params.id);
+    const detail = getPrimaryDetail(booking);
+
+    editingBooking.value = booking;
+    suppressDurationSync.value = true;
+    form.value = {
+      customer_mode: 'existing',
+      customer_id: booking.customer?.id || null,
+      customer_name: booking.customer?.nama || '',
+      customer_phone: '',
+      customer_city: booking.customer?.kota || '',
+
+      unit_mode: detail?.unit_id ? 'existing' : 'placeholder',
+      unit_id: detail?.unit_id || null,
+      unit_placeholder: detail?.unit_placeholder || '',
+
+      tgl_sewa: detail?.tgl_sewa ? new Date(detail.tgl_sewa) : null,
+      tgl_kembali: detail?.tgl_kembali ? new Date(detail.tgl_kembali) : null,
+      lama_sewa: detail?.lama_sewa || booking.lama_sewa || 1,
+      paket_sewa: detail?.paket_sewa || booking.paket_sewa || 'harian',
+      tujuan: booking.tujuan || '',
+      alamat_penjemputan: booking.alamat_penjemputan || '',
+      harga_dealing: booking.harga_dealing ?? null,
+      dp: booking.dp ?? null,
+      rekening_dp_id: booking.rekening_dp_id ?? null,
+      catatan: booking.catatan || ''
+    };
+    selectedStartDateKey.value = getDateKey(form.value.tgl_sewa);
+    selectedReturnDateKey.value = getDateKey(form.value.tgl_kembali);
+    suppressDurationSync.value = false;
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Gagal', detail: 'Gagal mengambil data booking', life: 5000 });
+    router.push({ name: 'BookingList' });
+  }
+};
 
 const handleSubmit = async () => {
   if (isBlacklisted.value) {
@@ -142,6 +197,16 @@ const handleSubmit = async () => {
     delete payload.customer_mode;
     delete payload.unit_mode;
 
+    if (isEditMode.value) {
+      delete payload.dp;
+      delete payload.rekening_dp_id;
+
+      const booking = await updateBooking(route.params.id, payload);
+      toast.add({ severity: 'success', summary: 'Sukses', detail: `Booking ${booking.kode_booking} berhasil diperbarui`, life: 3000 });
+      router.push({ name: 'BookingDetail', params: { id: route.params.id } });
+      return;
+    }
+
     if (!payload.dp || payload.dp <= 0) {
       payload.dp = null;
       payload.rekening_dp_id = null;
@@ -149,11 +214,9 @@ const handleSubmit = async () => {
 
     const booking = await store(payload);
     toast.add({ severity: 'success', summary: 'Sukses', detail: `Booking ${booking.kode_booking} berhasil dibuat`, life: 3000 });
-    
-    // Redirect to list for now as detail view might not be ready
     router.push({ name: 'BookingList' });
   } catch (err) {
-    toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || 'Gagal membuat booking', life: 5000 });
+    toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || `Gagal ${isEditMode.value ? 'memperbarui' : 'membuat'} booking`, life: 5000 });
   }
 };
 
@@ -233,6 +296,7 @@ const setDefaultReturnTime = (date) => {
 watch(
   () => [form.value.tgl_sewa, form.value.lama_sewa, form.value.paket_sewa],
   () => {
+    if (suppressDurationSync.value) return;
     syncReturnDateFromDuration();
   }
 );
@@ -348,8 +412,10 @@ const formatCurrency = (value) => {
   <div class="booking-create-container">
     <div class="page-header mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Buat Booking Baru</h1>
-        <p class="text-slate-500 mt-1">Input awal transaksi sebelum masuk proses handle booking.</p>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">{{ isEditMode ? 'Edit Booking' : 'Buat Booking Baru' }}</h1>
+        <p class="text-slate-500 mt-1">
+          {{ isEditMode ? 'Perbarui data transaksi tanpa mengubah konsumen.' : 'Input awal transaksi sebelum masuk proses handle booking.' }}
+        </p>
       </div>
       <Button label="Batal" icon="pi pi-times" class="p-button-text p-button-secondary self-start md:self-auto" @click="router.back()" />
     </div>
@@ -365,7 +431,12 @@ const formatCurrency = (value) => {
           </template>
           <template #content>
             <div class="flex flex-col gap-5">
+              <Message v-if="isEditMode" severity="info" icon="pi pi-lock" class="!m-0">
+                Konsumen dikunci saat edit booking.
+              </Message>
+
               <SelectButton
+                v-if="!isEditMode"
                 v-model="form.customer_mode"
                 :options="[{label: 'Pelanggan Lama', value: 'existing'}, {label: 'Pelanggan Baru', value: 'new'}]"
                 optionLabel="label"
@@ -384,6 +455,7 @@ const formatCurrency = (value) => {
                   filter
                   :filterFields="['searchableLabel']"
                   :loading="customersLoading"
+                  :disabled="isEditMode"
                   class="w-full premium-input"
                 >
                   <template #value="slotProps">
@@ -432,7 +504,7 @@ const formatCurrency = (value) => {
                 </transition>
               </div>
 
-              <div v-else class="new-customer-form grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in">
+              <div v-else-if="!isEditMode" class="new-customer-form grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in">
                 <div class="form-field-vertical">
                   <label class="field-label">Nama lengkap *</label>
                   <InputText v-model="form.customer_name" placeholder="Nama pelanggan" class="w-full premium-input" />
@@ -615,7 +687,7 @@ const formatCurrency = (value) => {
 
               <div class="form-field-vertical">
                 <label class="field-label">Uang muka (DP)</label>
-                <InputNumber v-model="form.dp" mode="currency" currency="IDR" locale="id-ID" placeholder="Rp 0" class="w-full premium-input" />
+                <InputNumber v-model="form.dp" mode="currency" currency="IDR" locale="id-ID" placeholder="Rp 0" class="w-full premium-input" :disabled="isEditMode" />
               </div>
 
               <transition name="slide-up">
@@ -628,8 +700,12 @@ const formatCurrency = (value) => {
                     optionValue="id"
                     placeholder="Pilih akun pembayaran"
                     class="w-full premium-input"
+                    :disabled="isEditMode"
                     :empty-message="'Belum ada akun pembayaran aktif'"
                   />
+                  <Message v-if="isEditMode" severity="info" icon="pi pi-lock" class="!m-0">
+                    DP dan pembayaran dikunci saat edit booking. Perubahan pembayaran dilakukan dari menu pembayaran di detail booking.
+                  </Message>
                 </div>
               </transition>
 
@@ -696,9 +772,9 @@ const formatCurrency = (value) => {
           </div>
 
           <div class="summary-actions">
-            <Button label="Reset" class="p-button-text p-button-secondary" @click="resetForm" />
+            <Button v-if="!isEditMode" label="Reset" class="p-button-text p-button-secondary" @click="resetForm" />
             <Button
-              label="Simpan Booking"
+              :label="isEditMode ? 'Simpan Perubahan' : 'Simpan Booking'"
               icon="pi pi-check"
               :loading="bookingLoading"
               @click="handleSubmit"

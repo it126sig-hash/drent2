@@ -25,6 +25,7 @@ class HandleBookingRequest extends FormRequest
             'harga_all_in'          => ['nullable', 'integer', 'min:0'],
             'costs'                 => ['nullable', 'array'],
             'costs.*.cost_type_id'  => ['nullable', 'exists:cost_types,id'],
+            'costs.*.type'          => ['nullable', 'string', 'in:biaya,diskon'],
             'costs.*.label'         => ['required_with:costs', 'string', 'max:255'],
             'costs.*.amount'        => ['required_with:costs', 'integer', 'min:0'],
             'costs.*.keterangan'    => ['nullable', 'string'],

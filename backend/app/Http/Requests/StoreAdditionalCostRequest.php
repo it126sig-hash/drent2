@@ -14,9 +14,11 @@ class StoreAdditionalCostRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type' => 'required|string|in:driver,bbm,tol,parkir,lainnya,diskon',
-            'label' => 'required|string',
-            'amount' => 'required|integer',
+            'cost_type_id' => 'required|exists:cost_types,id',
+            'type' => 'required|string|in:biaya,diskon',
+            'label' => 'nullable|string|max:255',
+            'amount' => 'required|integer|min:0',
+            'keterangan' => 'nullable|string',
             'is_discount' => 'boolean',
         ];
     }

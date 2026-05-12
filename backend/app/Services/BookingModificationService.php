@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Booking;
 use App\Models\BookingDetail;
 use App\Models\BookingCost;
+use App\Models\CostType;
 use App\Models\Refund;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ class BookingModificationService
             foreach ($data['costs'] ?? [] as $costData) {
                 $detail->costs()->create([
                     'cost_type_id' => $costData['cost_type_id'] ?? null,
+                    'type'         => $costData['type'] ?? 'biaya',
                     'label'        => $costData['label'],
                     'amount'       => $costData['amount'],
                     'keterangan'   => $costData['keterangan'] ?? null,
@@ -95,6 +97,7 @@ class BookingModificationService
             foreach ($data['costs'] ?? [] as $costData) {
                 $newDetail->costs()->create([
                     'cost_type_id' => $costData['cost_type_id'] ?? null,
+                    'type'         => $costData['type'] ?? 'biaya',
                     'label'        => $costData['label'],
                     'amount'       => $costData['amount'],
                     'keterangan'   => $costData['keterangan'] ?? null,
@@ -187,12 +190,15 @@ class BookingModificationService
             throw new UnprocessableEntityHttpException('Tidak ada detail booking untuk menambah biaya.');
         }
 
+        $costType = CostType::find($data['cost_type_id']);
+
         return $detail->costs()->create([
             'cost_type_id' => $data['cost_type_id'] ?? null,
-            'type'         => $data['type'] ?? null,
-            'label'        => $data['label'],
+            'type'         => $data['type'] ?? (($data['is_discount'] ?? false) ? 'diskon' : 'biaya'),
+            'label'        => $data['label'] ?? $costType?->nama ?? 'Biaya tambahan',
             'amount'       => $data['amount'],
             'keterangan'   => $data['keterangan'] ?? null,
+            'is_additional' => true,
         ]);
     }
 

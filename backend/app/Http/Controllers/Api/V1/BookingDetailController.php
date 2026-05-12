@@ -55,6 +55,7 @@ class BookingDetailController extends Controller
         foreach ($request->input('costs', []) as $costData) {
             $bookingDetail->costs()->create([
                 'cost_type_id' => $costData['cost_type_id'] ?? null,
+                'type' => $costData['type'] ?? 'biaya',
                 'label' => $costData['label'],
                 'amount' => $costData['amount'],
                 'keterangan' => $costData['keterangan'] ?? null,

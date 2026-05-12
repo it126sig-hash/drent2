@@ -9,10 +9,12 @@ import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import { useToast } from 'primevue/usetoast';
+import { useConfirm } from 'primevue/useconfirm';
 
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import Tag from 'primevue/tag';
+import ConfirmDialog from 'primevue/confirmdialog';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Dialog from 'primevue/dialog';
@@ -26,6 +28,7 @@ import SelectButton from 'primevue/selectbutton';
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const confirm = useConfirm();
 const { fetchOne, updateBooking, changeStatus, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, loading } = useBooking();
 const { units, fetchAll: fetchUnits } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
@@ -134,7 +137,7 @@ const tagihanKonsumen = computed(() => {
 });
 
 const addCostRow = () => {
-  handleForm.value.costs.push({ cost_type_id: null, label: '', amount: 0, keterangan: '' });
+  handleForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' });
 };
 
 const removeCostRow = (idx) => {
@@ -164,7 +167,7 @@ const openHandleDialog = () => {
     pricing_mode: detail?.pricing_mode || 'non_all_in',
     pricing_package_id: detail?.pricing_package_id || null,
     harga_all_in: detail?.harga_all_in || null,
-    costs: detail?.costs?.map(c => ({ cost_type_id: c.cost_type_id, label: c.label, amount: c.amount, keterangan: c.keterangan || '' })) || [],
+    costs: detail?.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '' })) || [],
     alamat_penjemputan: booking.value?.alamat_penjemputan || '',
     tujuan: booking.value?.tujuan || '',
   };
@@ -175,7 +178,8 @@ const submitHandle = async () => {
   try {
     await changeStatus(booking.value.id, 'waiting_list');
     showHandleConfirmDialog.value = false;
-    loadBooking();
+    showHandleDialog.value = false;
+    router.push({ name: 'BookingList' });
   } catch (err) {
     console.error(err);
   }
@@ -262,11 +266,17 @@ const stopEarlyForm = ref({
 });
 
 const additionalCostForm = ref({
-  type: 'lainnya',
+  cost_type_id: null,
+  type: 'biaya',
   label: '',
   amount: 0,
-  is_discount: false
+  keterangan: '',
 });
+
+const additionalTypeOptions = [
+  { label: 'Biaya', value: 'biaya' },
+  { label: 'Diskon', value: 'diskon' },
+];
 
 const costTypes = [
   { label: 'Driver', value: 'driver' },
@@ -274,7 +284,6 @@ const costTypes = [
   { label: 'Tol', value: 'tol' },
   { label: 'Parkir', value: 'parkir' },
   { label: 'Lainnya', value: 'lainnya' },
-  { label: 'Diskon', value: 'diskon' }
 ];
 
 // Extend computed
@@ -351,7 +360,7 @@ const isPaidOff = computed(() => bookingTotalTagihan.value > 0 && bookingSisaTag
 const selectedDetailUnit = computed(() => units.value.find(unit => unit.id === detailForm.value.unit_id));
 const selectedDetailDriver = computed(() => drivers.value.find(driver => driver.id === detailForm.value.driver_id));
 const detailHargaSewa = computed(() => Math.max(0, ((detailForm.value.harga_mobil || 0) - (detailForm.value.diskon_mobil || 0)) * (detailForm.value.lama_sewa || 0)));
-const detailTotalBiayaOps = computed(() => detailForm.value.costs.reduce((sum, cost) => sum + (cost.amount || 0), 0));
+const detailTotalBiayaOps = computed(() => detailForm.value.costs.reduce((sum, cost) => sum + getSignedCostAmount(cost), 0));
 const detailGrandTotalInternal = computed(() => detailHargaSewa.value + detailTotalBiayaOps.value);
 const detailTagihanKonsumen = computed(() => {
   if (detailForm.value.pricing_mode === 'all_in') {
@@ -370,7 +379,7 @@ const detailRentalSubtotal = (detail) => {
 };
 
 const detailCostTotal = (detail) => {
-  return (detail.costs || []).reduce((sum, cost) => sum + (cost.amount || 0), 0);
+  return (detail.costs || []).reduce((sum, cost) => sum + getSignedCostAmount(cost), 0);
 };
 
 const detailConsumerBill = (detail) => {
@@ -381,6 +390,16 @@ const detailConsumerBill = (detail) => {
 };
 
 const detailPricingModeLabel = (detail) => detail.pricing_mode === 'all_in' ? 'All In' : 'Non All In';
+
+const getSignedCostAmount = (cost) => {
+  const amount = cost?.amount || 0;
+  return cost?.type === 'diskon' ? -amount : amount;
+};
+
+const formatSignedCostAmount = (cost) => {
+  const amount = getSignedCostAmount(cost);
+  return amount < 0 ? `-${formatCurrency(Math.abs(amount))}` : formatCurrency(amount);
+};
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -503,7 +522,7 @@ const openDetailDialog = (detail = null) => {
       pricing_mode: detail.pricing_mode || 'non_all_in',
       pricing_package_id: detail.pricing_package_id || null,
       harga_all_in: detail.harga_all_in || null,
-      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, label: c.label, amount: c.amount, keterangan: c.keterangan || '' })) || [],
+      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '' })) || [],
       detail_type: detail.detail_type
     };
   } else {
@@ -604,17 +623,8 @@ const openBatalDialog = () => {
 };
 
 const openEditBookingDialog = () => {
-  bookingForm.value = {
-    lama_sewa: booking.value?.lama_sewa || 1,
-    paket_sewa: booking.value?.paket_sewa || 'harian',
-    harga_dealing: booking.value?.harga_dealing ?? null,
-    dp: booking.value?.dp ?? null,
-    rekening_dp_id: booking.value?.rekening_dp_id ?? null,
-    tujuan: booking.value?.tujuan || '',
-    alamat_penjemputan: booking.value?.alamat_penjemputan || '',
-    catatan: booking.value?.catatan || '',
-  };
-  showEditBookingDialog.value = true;
+  if (!booking.value?.id) return;
+  router.push({ name: 'BookingEdit', params: { id: booking.value.id } });
 };
 
 const openStopEarlyDialog = () => {
@@ -628,12 +638,18 @@ const openStopEarlyDialog = () => {
 
 const openAdditionalCostDialog = () => {
   additionalCostForm.value = {
-    type: 'lainnya',
+    cost_type_id: null,
+    type: 'biaya',
     label: '',
     amount: 0,
-    is_discount: false
+    keterangan: '',
   };
   showAdditionalCostDialog.value = true;
+};
+
+const onAdditionalCostTypeChange = (costTypeId) => {
+  const ct = costTypesMaster.value.find(c => c.id === costTypeId);
+  additionalCostForm.value.label = ct?.nama || '';
 };
 
 const onUnitChange = (e) => {
@@ -649,7 +665,7 @@ const onDetailCostTypeChange = (idx, typeId) => {
 };
 
 const addDetailCostRow = () => {
-  detailForm.value.costs.push({ cost_type_id: null, label: '', amount: 0, keterangan: '' });
+  detailForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' });
 };
 
 const removeDetailCostRow = (idx) => {
@@ -783,7 +799,12 @@ const submitStopEarly = async () => {
 
 const submitAdditionalCost = async () => {
   try {
-    await addAdditionalCost(booking.value.id, additionalCostForm.value);
+    const selectedCostType = costTypesMaster.value.find(c => c.id === additionalCostForm.value.cost_type_id);
+    await addAdditionalCost(booking.value.id, {
+      ...additionalCostForm.value,
+      label: additionalCostForm.value.label || selectedCostType?.nama || '',
+      is_discount: additionalCostForm.value.type === 'diskon',
+    });
     showAdditionalCostDialog.value = false;
     loadBooking();
   } catch (err) {
@@ -820,7 +841,7 @@ const submitCheckout = async () => {
   try {
     await checkout(booking.value.id, { skip_inspection: checkoutSkip.value });
     showCheckoutDialog.value = false;
-    loadBooking();
+    router.push({ name: 'BookingList' });
   } catch (err) {
     console.error(err);
   }
@@ -848,6 +869,61 @@ const submitPayment = async () => {
   }
 };
 
+const getDialogStateMap = () => ({
+  showEditBookingDialog,
+  showCheckoutDialog,
+  showCompleteDialog,
+  showHandleConfirmDialog,
+  showHandleDialog,
+  showDetailDialog,
+  showCostDialog,
+  showExtendDialog,
+  showRollingDialog,
+  showStopEarlyDialog,
+  showBatalDialog,
+  showPaymentDialog,
+  showAdditionalCostDialog,
+});
+
+const dialogTitles = {
+  showEditBookingDialog: 'Edit Data Booking',
+  showCheckoutDialog: 'Konfirmasi Checkout',
+  showCompleteDialog: 'Konfirmasi Selesai Sewa',
+  showHandleConfirmDialog: 'Konfirmasi Handle Booking',
+  showHandleDialog: 'Handle Booking',
+  showDetailDialog: 'Tambah/Edit Unit & Driver',
+  showCostDialog: 'Biaya Operasional',
+  showExtendDialog: 'Perpanjang Sewa',
+  showRollingDialog: 'Ganti Unit',
+  showStopEarlyDialog: 'Stop Early',
+  showBatalDialog: 'Batalkan Booking',
+  showPaymentDialog: 'Tambah Pembayaran',
+  showAdditionalCostDialog: 'Tambah Biaya/Diskon Tambahan',
+};
+
+const closeDialogSilently = (dialogKey) => {
+  const dialog = getDialogStateMap()[dialogKey];
+  if (dialog) dialog.value = false;
+};
+
+const requestCloseDialog = (dialogKey) => {
+  confirm.require({
+    message: `Tutup modal ${dialogTitles[dialogKey] || 'ini'}? Perubahan yang belum disimpan akan hilang.`,
+    header: 'Konfirmasi Tutup',
+    icon: 'pi pi-exclamation-triangle',
+    acceptClass: 'p-button-danger',
+    acceptLabel: 'Tutup',
+    rejectLabel: 'Tetap Edit',
+    accept: () => closeDialogSilently(dialogKey),
+  });
+};
+
+const onDialogVisibleChange = (dialogKey, visible) => {
+  if (!visible && getDialogStateMap()[dialogKey]?.value) {
+    requestCloseDialog(dialogKey);
+  }
+};
+
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
 };
@@ -855,10 +931,12 @@ const formatCurrency = (value) => {
 
 <template>
   <div class="booking-detail-container app-page">
+    <ConfirmDialog />
+
     <!-- Header & Action Bar -->
     <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
       <div class="flex items-center gap-3">
-        <Button icon="pi pi-arrow-left" text rounded @click="router.back()" class="bg-white shadow-sm hover:shadow-md transition-all" />
+        <Button icon="pi pi-arrow-left" text rounded @click="router.push({ name: 'BookingList' })" class="bg-white shadow-sm hover:shadow-md transition-all" />
         <div>
           <div class="flex flex-wrap items-center gap-3 mb-1">
             <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Booking #{{ booking?.kode_booking || '...' }}</h1>
@@ -941,7 +1019,7 @@ const formatCurrency = (value) => {
               </div>
               <h2 class="text-base font-bold text-slate-800">Informasi Booking</h2>
             </div>
-            <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold" @click="openEditBookingDialog" v-if="!['selesai','batal','cancelled'].includes(booking.status)" />
+            <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold" @click="openEditBookingDialog" v-if="!['selesai','batal','cancelled', 'rental_unit', 'waiting list'].includes(booking.status)" />
           </div>
           <div class="p-6 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
             <div class="flex flex-col gap-1">
@@ -1097,17 +1175,33 @@ const formatCurrency = (value) => {
                     <DataTable :value="detail.costs" class="p-datatable-sm custom-mini-table">
                       <Column field="type" header="TIPE">
                         <template #body="{ data }">
-                          <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold uppercase">{{ data.type }}</span>
+                          <div class="flex items-center gap-1.5">
+                            <span
+                              class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                              :class="data.type === 'diskon' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'"
+                            >
+                              {{ data.type || 'biaya' }}
+                            </span>
+                            <Tag v-if="data.is_additional" value="Di luar deal" severity="warning" class="text-[10px]" />
+                          </div>
                         </template>
                       </Column>
                       <Column field="label" header="KETERANGAN">
                         <template #body="{ data }">
-                          <span class="text-sm text-slate-600">{{ data.label }}</span>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-slate-600">{{ data.cost_type?.nama || data.label }}</span>
+                            <span v-if="data.keterangan" class="text-xs text-slate-400">{{ data.keterangan }}</span>
+                          </div>
                         </template>
                       </Column>
                       <Column field="amount" header="JUMLAH" class="text-right">
                         <template #body="{ data }">
-                          <span class="text-sm font-bold text-slate-800">{{ formatCurrency(data.amount) }}</span>
+                          <span
+                            class="text-sm font-bold"
+                            :class="data.type === 'diskon' ? 'text-rose-600' : 'text-slate-800'"
+                          >
+                            {{ formatSignedCostAmount(data) }}
+                          </span>
                         </template>
                       </Column>
                     </DataTable>
@@ -1258,7 +1352,7 @@ const formatCurrency = (value) => {
       </div>
     </div>
 
-    <Dialog v-model:visible="showEditBookingDialog" header="Edit Data Booking" :style="{ width: '620px' }" modal :breakpoints="{ '680px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showEditBookingDialog" @update:visible="onDialogVisibleChange('showEditBookingDialog', $event)" header="Edit Data Booking" :style="{ width: '620px' }" modal :breakpoints="{ '680px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
           Konsumen tidak dapat diubah dari halaman ini.
@@ -1300,14 +1394,14 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showEditBookingDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showEditBookingDialog')" />
           <Button label="Simpan" icon="pi pi-save" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitBookingEdit" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Checkout (E4) ======= -->
-    <Dialog v-model:visible="showCheckoutDialog" header="Konfirmasi Checkout" :style="{ width: '420px' }" modal class="custom-dialog">
+    <Dialog :visible="showCheckoutDialog" @update:visible="onDialogVisibleChange('showCheckoutDialog', $event)" header="Konfirmasi Checkout" :style="{ width: '420px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex items-start gap-4 p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
           <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
@@ -1339,14 +1433,14 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showCheckoutDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCheckoutDialog')" />
           <Button label="Proses Checkout" icon="pi pi-sign-out" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitCheckout" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Selesai / Complete (E4) ======= -->
-    <Dialog v-model:visible="showCompleteDialog" header="Konfirmasi Selesai Sewa" :style="{ width: '420px' }" modal class="custom-dialog">
+    <Dialog :visible="showCompleteDialog" @update:visible="onDialogVisibleChange('showCompleteDialog', $event)" header="Konfirmasi Selesai Sewa" :style="{ width: '420px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex items-start gap-4 p-4 bg-violet-50 border border-violet-100 rounded-xl">
           <div class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 flex-shrink-0">
@@ -1378,13 +1472,13 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showCompleteDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCompleteDialog')" />
           <Button label="Selesaikan Sewa" icon="pi pi-flag-fill" class="bg-violet-600 hover:bg-violet-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitComplete" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
-    <Dialog v-model:visible="showHandleConfirmDialog" header="Konfirmasi Handle Booking" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showHandleConfirmDialog" @update:visible="onDialogVisibleChange('showHandleConfirmDialog', $event)" header="Konfirmasi Handle Booking" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-4 pt-2">
         <div class="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl">
           <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 flex-shrink-0">
@@ -1398,14 +1492,14 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showHandleConfirmDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showHandleConfirmDialog')" />
           <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitHandle" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Handle Booking (E3) ======= -->
-    <Dialog v-model:visible="showHandleDialog" header="Handle Booking" :style="{ width: '760px' }" modal :breakpoints="{ '800px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showHandleDialog" @update:visible="onDialogVisibleChange('showHandleDialog', $event)" header="Handle Booking" :style="{ width: '760px' }" modal :breakpoints="{ '800px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-6 pt-2">
 
         <!-- Unit & Driver -->
@@ -1562,14 +1656,14 @@ const formatCurrency = (value) => {
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showHandleDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showHandleDialog')" />
           <Button label="Proses Handle" icon="pi pi-check-circle" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitHandle" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Tambah/Edit Unit & Driver ======= -->
-    <Dialog v-model:visible="showDetailDialog" :header="editingDetailId && hasFixedUnit ? 'Edit Unit & Driver' : 'Tambah Unit & Driver'" :style="{ width: '600px' }" modal :breakpoints="{ '640px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showDetailDialog" @update:visible="onDialogVisibleChange('showDetailDialog', $event)" :header="editingDetailId && hasFixedUnit ? 'Edit Unit & Driver' : 'Tambah Unit & Driver'" :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-6 pt-2">
         <!-- Section: Kendaraan & Driver -->
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
@@ -1703,14 +1797,41 @@ const formatCurrency = (value) => {
 
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional</legend>
-          <div class="flex flex-col gap-3 mt-2">
-            <div v-if="!detailForm.costs.length" class="text-center text-sm text-slate-400 py-3">Belum ada biaya operasional.</div>
-            <div v-for="(cost, idx) in detailForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-start">
-              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" showClear class="w-full" @change="onDetailCostTypeChange(idx, cost.cost_type_id)" /></div>
-              <div class="col-span-3"><InputText v-model="cost.label" placeholder="Keterangan" class="w-full" /></div>
-              <div class="col-span-3"><InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" /></div>
-              <div class="col-span-1"><InputText v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" v-model="cost.keterangan" placeholder="Detail" class="w-full text-xs" /></div>
-              <div class="col-span-1 flex items-start pt-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="removeDetailCostRow(idx)" /></div>
+          <div class="flex flex-col gap-3 mt-3">
+            <div v-if="!detailForm.costs.length" class="text-center text-sm text-slate-400 py-5 border border-dashed border-slate-200 rounded-lg bg-white">
+              Belum ada biaya operasional.
+            </div>
+            <div
+              v-for="(cost, idx) in detailForm.costs"
+              :key="idx"
+              class="rounded-lg border border-slate-200 bg-white p-3"
+            >
+              <div class="flex items-center justify-between gap-3 mb-3">
+                <span class="text-xs font-bold text-slate-500">Item {{ idx + 1 }}</span>
+                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="removeDetailCostRow(idx)" />
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Tipe Master</label>
+                  <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Pilih tipe" showClear class="w-full" @change="onDetailCostTypeChange(idx, cost.cost_type_id)" />
+                </div>
+                <div class="md:col-span-3 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Biaya / Diskon</label>
+                  <Dropdown v-model="cost.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                </div>
+                <div class="md:col-span-5 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Keterangan</label>
+                  <InputText v-model="cost.label" placeholder="Misal: Fee driver luar kota" class="w-full" />
+                </div>
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Nominal</label>
+                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                </div>
+                <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" class="md:col-span-8 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Detail Tambahan</label>
+                  <InputText v-model="cost.keterangan" placeholder="Detail sesuai tipe biaya" class="w-full" />
+                </div>
+              </div>
             </div>
             <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="addDetailCostRow" />
           </div>
@@ -1720,7 +1841,12 @@ const formatCurrency = (value) => {
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Kalkulasi Unit</p>
           <div class="flex flex-col gap-2 text-sm">
             <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(detailHargaSewa) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">Biaya Ops</span><span>{{ formatCurrency(detailTotalBiayaOps) }}</span></div>
+            <div class="flex justify-between">
+              <span class="text-white/60">Biaya/Diskon Ops</span>
+              <span :class="detailTotalBiayaOps < 0 ? 'text-rose-300' : ''">
+                {{ detailTotalBiayaOps < 0 ? '-' : '' }}{{ formatCurrency(Math.abs(detailTotalBiayaOps)) }}
+              </span>
+            </div>
             <div class="h-px bg-white/10 my-1"></div>
             <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span class="text-lg font-bold text-cyan-300">{{ formatCurrency(detailTagihanKonsumen) }}</span></div>
           </div>
@@ -1729,14 +1855,14 @@ const formatCurrency = (value) => {
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showDetailDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showDetailDialog')" />
           <Button :label="editingDetailId && hasFixedUnit ? 'Simpan Perubahan' : 'Simpan Unit'" icon="pi pi-check" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitDetail" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Biaya Operasional ======= -->
-    <Dialog v-model:visible="showCostDialog" :header="editingCostId ? 'Edit Biaya Operasional' : 'Tambah Biaya Operasional'" :style="{ width: '460px' }" modal :breakpoints="{ '640px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showCostDialog" @update:visible="onDialogVisibleChange('showCostDialog', $event)" :header="editingCostId ? 'Edit Biaya Operasional' : 'Tambah Biaya Operasional'" :style="{ width: '460px' }" modal :breakpoints="{ '640px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
@@ -1760,14 +1886,14 @@ const formatCurrency = (value) => {
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showCostDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCostDialog')" />
           <Button :label="editingCostId ? 'Simpan Perubahan' : 'Tambahkan'" icon="pi pi-check" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitCost" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Perpanjang (Extend) — E5 Revamp ======= -->
-    <Dialog v-model:visible="showExtendDialog" header="Perpanjang Sewa (Extend)" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showExtendDialog" @update:visible="onDialogVisibleChange('showExtendDialog', $event)" header="Perpanjang Sewa (Extend)" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Unit & Driver</legend>
@@ -1848,14 +1974,14 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text @click="showExtendDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showExtendDialog')" />
           <Button label="Proses Extend" icon="pi pi-check" class="bg-amber-600 border-none text-white px-6 rounded-lg font-semibold" @click="submitExtend" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Ganti Unit (Rolling) — E5 Revamp ======= -->
-    <Dialog v-model:visible="showRollingDialog" :header="rollingStep === 1 ? 'Ganti Unit (Rolling) — Step 1: Adjust Unit Lama' : 'Ganti Unit (Rolling) — Step 2: Detail Unit Baru'" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showRollingDialog" @update:visible="onDialogVisibleChange('showRollingDialog', $event)" :header="rollingStep === 1 ? 'Ganti Unit (Rolling) — Step 1: Adjust Unit Lama' : 'Ganti Unit (Rolling) — Step 2: Detail Unit Baru'" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
       <!-- Step indicator -->
       <div class="flex items-center gap-2 mb-4">
         <div class="flex items-center gap-1.5">
@@ -1965,7 +2091,7 @@ const formatCurrency = (value) => {
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text @click="showRollingDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showRollingDialog')" />
           <Button v-if="rollingStep === 1" label="Lanjut →" icon="pi pi-arrow-right" iconPos="right" class="bg-amber-500 border-none text-white px-6 rounded-lg font-semibold" @click="rollingStep = 2" />
           <Button v-if="rollingStep === 2" label="← Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
           <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="bg-amber-600 border-none text-white px-6 rounded-lg font-semibold" @click="submitRolling" :loading="loading" />
@@ -1974,7 +2100,7 @@ const formatCurrency = (value) => {
     </Dialog>
 
     <!-- ======= DIALOG: Stop Early ======= -->
-    <Dialog v-model:visible="showStopEarlyDialog" header="Hentikan Sewa Awal (Stop Early)" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showStopEarlyDialog" @update:visible="onDialogVisibleChange('showStopEarlyDialog', $event)" header="Hentikan Sewa Awal (Stop Early)" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Pilih Unit</label>
@@ -1991,14 +2117,14 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text @click="showStopEarlyDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showStopEarlyDialog')" />
           <Button label="Proses Stop" icon="pi pi-check" severity="danger" class="px-6" @click="submitStopEarly" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Batalkan Booking (E5) ======= -->
-    <Dialog v-model:visible="showBatalDialog" header="Batalkan Booking" :style="{ width: '440px' }" modal class="custom-dialog">
+    <Dialog :visible="showBatalDialog" @update:visible="onDialogVisibleChange('showBatalDialog', $event)" header="Batalkan Booking" :style="{ width: '440px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-xl">
           <div class="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0">
@@ -2024,14 +2150,14 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showBatalDialog = false" />
+          <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showBatalDialog')" />
           <Button label="Ya, Batalkan Booking" icon="pi pi-ban" severity="danger" class="px-6 py-2.5 rounded-lg font-semibold" @click="submitBatal" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Tambah Pembayaran ======= -->
-    <Dialog v-model:visible="showPaymentDialog" header="Tambah Pembayaran" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showPaymentDialog" @update:visible="onDialogVisibleChange('showPaymentDialog', $event)" header="Tambah Pembayaran" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Tipe Pembayaran *</label>
@@ -2067,36 +2193,56 @@ const formatCurrency = (value) => {
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showPaymentDialog = false" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showPaymentDialog')" />
           <Button label="Simpan Pembayaran" icon="pi pi-check" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitPayment" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Additional Cost/Discount ======= -->
-    <Dialog v-model:visible="showAdditionalCostDialog" header="Tambah Biaya/Diskon Tambahan" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showAdditionalCostDialog" @update:visible="onDialogVisibleChange('showAdditionalCostDialog', $event)" header="Tambah Biaya/Diskon Tambahan" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Tipe</label>
-          <Dropdown v-model="additionalCostForm.type" :options="costTypes" optionLabel="label" optionValue="value" class="w-full" />
+          <label class="text-xs font-semibold text-slate-600">Tipe Biaya/Diskon *</label>
+          <Dropdown
+            v-model="additionalCostForm.cost_type_id"
+            :options="costTypeOptions"
+            optionLabel="label"
+            optionValue="id"
+            placeholder="Pilih dari master cost type"
+            filter
+            class="w-full"
+            @change="onAdditionalCostTypeChange(additionalCostForm.cost_type_id)"
+          />
         </div>
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Keterangan</label>
-          <InputText v-model="additionalCostForm.label" placeholder="Misal: Denda Keterlambatan" class="w-full" />
+          <label class="text-xs font-semibold text-slate-600">Jenis Transaksi *</label>
+          <Dropdown v-model="additionalCostForm.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Catatan</label>
+          <InputText v-model="additionalCostForm.keterangan" placeholder="Misal: Denda keterlambatan di luar kesepakatan awal" class="w-full" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Nominal</label>
           <InputNumber v-model="additionalCostForm.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
         </div>
-        <div class="flex items-center gap-2">
-          <input type="checkbox" v-model="additionalCostForm.is_discount" id="is_discount" class="w-4 h-4" />
-          <label for="is_discount" class="text-sm font-semibold text-slate-600">Ini adalah Diskon (Mengurangi Tagihan)</label>
+        <div class="p-3 rounded-lg bg-amber-50 border border-amber-100 text-sm text-amber-800">
+          <span class="font-semibold">Di luar kesepakatan awal.</span>
+          Item ini akan disimpan dengan flag tambahan dan ditandai di rincian biaya.
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text @click="showAdditionalCostDialog = false" />
-          <Button label="Simpan" icon="pi pi-check" class="bg-blue-600 border-none text-white px-6" @click="submitAdditionalCost" :loading="loading" />
+          <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showAdditionalCostDialog')" />
+          <Button
+            label="Simpan"
+            icon="pi pi-check"
+            class="bg-blue-600 border-none text-white px-6"
+            @click="submitAdditionalCost"
+            :loading="loading"
+            :disabled="!additionalCostForm.cost_type_id || !additionalCostForm.amount"
+          />
         </div>
       </template>
     </Dialog>

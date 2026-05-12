@@ -13,6 +13,11 @@ class BookingCost extends Model
         'label',
         'amount',
         'keterangan',
+        'is_additional',
+    ];
+
+    protected $casts = [
+        'is_additional' => 'boolean',
     ];
 
     public function bookingDetail()

@@ -79,7 +79,36 @@ class BookingController extends Controller
     {
         $this->authorize('update', $booking);
 
-        $booking->update($request->validated());
+        $data = $request->validated();
+
+        $booking->update(collect($data)->only([
+            'lama_sewa',
+            'paket_sewa',
+            'harga_dealing',
+            'dp',
+            'rekening_dp_id',
+            'tujuan',
+            'alamat_penjemputan',
+            'catatan',
+        ])->all());
+
+        if ($request->hasAny(['unit_id', 'unit_placeholder', 'tgl_sewa', 'tgl_kembali'])) {
+            $detail = $booking->bookingDetails()
+                ->where('detail_type', 'initial')
+                ->latest()
+                ->first() ?? $booking->bookingDetails()->latest()->first();
+
+            if ($detail) {
+                $detail->update([
+                    'unit_id'          => $data['unit_id'] ?? null,
+                    'unit_placeholder' => empty($data['unit_id']) ? ($data['unit_placeholder'] ?? null) : null,
+                    'tgl_sewa'         => isset($data['tgl_sewa']) ? \Carbon\Carbon::parse($data['tgl_sewa'])->format('Y-m-d H:i:s') : $detail->tgl_sewa,
+                    'tgl_kembali'      => isset($data['tgl_kembali']) ? \Carbon\Carbon::parse($data['tgl_kembali'])->format('Y-m-d H:i:s') : $detail->tgl_kembali,
+                    'lama_sewa'        => $data['lama_sewa'] ?? $detail->lama_sewa,
+                    'paket_sewa'       => $data['paket_sewa'] ?? $detail->paket_sewa,
+                ]);
+            }
+        }
 
         return new BookingResource($booking->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }

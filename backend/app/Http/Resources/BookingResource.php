@@ -102,6 +102,7 @@ class BookingResource extends JsonResource
                             'label'        => $c->label,
                             'amount'       => (int) $c->amount,
                             'keterangan'   => $c->keterangan,
+                            'is_additional' => (bool) $c->is_additional,
                             'cost_type'    => $c->relationLoaded('costType') && $c->costType ? [
                                 'id'   => $c->costType->id,
                                 'nama' => $c->costType->nama,
@@ -165,7 +166,9 @@ class BookingResource extends JsonResource
         $totalCosts = 0;
         foreach ($this->bookingDetails->whereNotIn('status', ['batal']) as $d) {
             if ($d->relationLoaded('costs')) {
-                $totalCosts += $d->costs->sum('amount');
+                $totalCosts += $d->costs->sum(fn($cost) =>
+                    $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount
+                );
             }
         }
 

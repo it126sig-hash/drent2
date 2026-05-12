@@ -143,6 +143,7 @@ class BookingService
             foreach ($data['costs'] ?? [] as $costData) {
                 $detail->costs()->create([
                     'cost_type_id' => $costData['cost_type_id'] ?? null,
+                    'type' => $costData['type'] ?? 'biaya',
                     'label' => $costData['label'],
                     'amount' => $costData['amount'],
                     'keterangan' => $costData['keterangan'] ?? null,
@@ -226,6 +227,7 @@ class BookingService
             foreach ($data['costs'] ?? [] as $costData) {
                 $detail->costs()->create([
                     'cost_type_id' => $costData['cost_type_id'] ?? null,
+                    'type'         => $costData['type'] ?? 'biaya',
                     'label'        => $costData['label'],
                     'amount'       => $costData['amount'],
                     'keterangan'   => $costData['keterangan'] ?? null,
