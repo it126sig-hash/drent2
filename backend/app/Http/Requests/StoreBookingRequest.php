@@ -28,9 +28,10 @@ class StoreBookingRequest extends FormRequest
     {
         return [
             'customer_id' => 'nullable|exists:customers,id',
-            'customer_name' => 'required_without:customer_id|string|max:255',
+            'rental_owner_id' => 'nullable|exists:rental_owners,id',
+            'customer_name' => 'required_without_all:customer_id,rental_owner_id|string|max:255',
             'customer_phone' => [
-                'required_without:customer_id',
+                'required_without_all:customer_id,rental_owner_id',
                 'string',
                 'min:9',
                 'max:15',

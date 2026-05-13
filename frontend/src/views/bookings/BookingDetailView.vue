@@ -42,6 +42,7 @@ const showCostDialog = ref(false);
 const showEditBookingDialog = ref(false);
 const editingDetailId = ref(null);
 const editingCostId = ref(null);
+const detailDialogMode = ref('detail');
 
 // Payment dialog
 const showPaymentDialog = ref(false);
@@ -176,6 +177,17 @@ const openHandleDialog = () => {
 
 const submitHandle = async () => {
   try {
+    if (hasZeroReadyUnitPrice.value) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Harga unit belum diisi',
+        detail: 'Unit sudah ready, tetapi harga masih Rp0. Edit unit dan isi harga sebelum handle.',
+        life: 5000,
+      });
+      showHandleConfirmDialog.value = false;
+      return;
+    }
+
     await changeStatus(booking.value.id, 'waiting_list');
     showHandleConfirmDialog.value = false;
     showHandleDialog.value = false;
@@ -216,7 +228,6 @@ const costForm = ref({
   amount: 0
 });
 
-// Extend form (revamp)
 const extendForm = ref({
   unit_id: null,
   driver_id: null,
@@ -286,9 +297,8 @@ const costTypes = [
   { label: 'Lainnya', value: 'lainnya' },
 ];
 
-// Extend computed
-const extendHargaSewa = computed(() => Math.max(0, ((extendForm.value.harga_mobil||0) - (extendForm.value.diskon_mobil||0)) * (extendForm.value.lama_sewa||0)));
-const extendTotalBiaya = computed(() => extendForm.value.costs.reduce((s, c) => s + (c.amount||0), 0));
+const extendHargaSewa = computed(() => Math.max(0, ((extendForm.value.harga_mobil || 0) - (extendForm.value.diskon_mobil || 0)) * (extendForm.value.lama_sewa || 0)));
+const extendTotalBiaya = computed(() => extendForm.value.costs.reduce((s, c) => s + (c.amount || 0), 0));
 const extendGrandTotal = computed(() => extendHargaSewa.value + extendTotalBiaya.value);
 const extendTagihan = computed(() => {
   if (extendForm.value.pricing_mode === 'all_in') {
@@ -332,6 +342,14 @@ const canHandleBooking = computed(() => hasFixedUnit.value);
 const unitActionDetail = computed(() => primaryUnitDetail.value || null);
 const unitActionLabel = computed(() => hasFixedUnit.value ? 'Edit Unit' : 'Tambah Unit');
 const unitActionIcon = computed(() => hasFixedUnit.value ? 'pi pi-pencil' : 'pi pi-plus');
+const hasZeroReadyUnitPrice = computed(() => {
+  const detail = primaryUnitDetail.value;
+  if (!detail?.unit_id) return false;
+  if (detail.pricing_mode === 'all_in') {
+    return !detail.pricing_package_id && (detail.harga_all_in || 0) <= 0;
+  }
+  return (detail.harga_mobil || 0) <= 0;
+});
 
 const activeDetails = computed(() => {
   return validDetails.value.filter(d => d.status === 'aktif');
@@ -351,10 +369,27 @@ const totalDpPayments = computed(() => {
     .reduce((sum, payment) => sum + (payment.amount || 0), 0);
 });
 
+const totalRecordedPayments = computed(() => {
+  const paymentTotal = (booking.value?.payments || [])
+    .reduce((sum, payment) => sum + (payment.amount || 0), 0);
+
+  return paymentTotal || booking.value?.dp || 0;
+});
+
 const hasPricedDetails = computed(() => billableDetails.value.some(detail => detail.unit_id && ((detail.harga_mobil || 0) > 0 || (detail.harga_all_in || 0) > 0)));
 const bookingTotalTagihan = computed(() => hasPricedDetails.value ? (booking.value?.total_tagihan ?? 0) : (booking.value?.harga_dealing ?? 0));
-const bookingTotalPayments = computed(() => booking.value?.total_payments ?? totalDpPayments.value ?? 0);
-const bookingSisaTagihan = computed(() => booking.value?.sisa_tagihan ?? Math.max(0, bookingTotalTagihan.value - bookingTotalPayments.value));
+const bookingTotalPayments = computed(() => {
+  const backendTotalPayments = booking.value?.total_payments;
+  if (backendTotalPayments != null && backendTotalPayments > 0) return backendTotalPayments;
+  return totalRecordedPayments.value;
+});
+const bookingSisaTagihan = computed(() => {
+  if (!hasPricedDetails.value) {
+    return Math.max(0, bookingTotalTagihan.value - bookingTotalPayments.value);
+  }
+
+  return Math.max(0, booking.value?.sisa_tagihan ?? (bookingTotalTagihan.value - bookingTotalPayments.value));
+});
 const isPaidOff = computed(() => bookingTotalTagihan.value > 0 && bookingSisaTagihan.value <= 0);
 
 const selectedDetailUnit = computed(() => units.value.find(unit => unit.id === detailForm.value.unit_id));
@@ -374,6 +409,32 @@ const detailTagihanKonsumen = computed(() => {
   return detailGrandTotalInternal.value;
 });
 
+const detailDialogHeader = computed(() => {
+  if (detailDialogMode.value === 'extend') return 'Perpanjang Sewa (Extend)';
+  if (detailDialogMode.value === 'edit_extend') return 'Edit Transaksi Extend';
+  return editingDetailId.value && hasFixedUnit.value ? 'Edit Unit & Driver' : 'Tambah Unit & Driver';
+});
+
+const detailSubmitLabel = computed(() => {
+  if (detailDialogMode.value === 'extend') return 'Proses Extend';
+  if (detailDialogMode.value === 'edit_extend') return 'Simpan Extend';
+  return editingDetailId.value && hasFixedUnit.value ? 'Simpan Perubahan' : 'Simpan Unit';
+});
+
+const detailSubmitButtonClass = computed(() => {
+  if (['extend', 'edit_extend'].includes(detailDialogMode.value)) return 'bg-amber-600 hover:bg-amber-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
+  return 'bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
+});
+
+const extendMinStartDate = computed(() => {
+  if (!['extend', 'edit_extend'].includes(detailDialogMode.value)) return null;
+  if (detailDialogMode.value === 'edit_extend' && editingDetailId.value) {
+    const currentIndex = validDetails.value.findIndex(detail => detail.id === editingDetailId.value);
+    return getExtendStartDate(validDetails.value[currentIndex - 1]);
+  }
+  return getExtendStartDate(validDetails.value[validDetails.value.length - 1]);
+});
+
 const detailRentalSubtotal = (detail) => {
   return Math.max(0, ((detail.harga_mobil || 0) - (detail.diskon_mobil || 0)) * (detail.lama_sewa || booking.value?.lama_sewa || 1));
 };
@@ -390,6 +451,22 @@ const detailConsumerBill = (detail) => {
 };
 
 const detailPricingModeLabel = (detail) => detail.pricing_mode === 'all_in' ? 'All In' : 'Non All In';
+
+const detailTransactionLabel = (detail) => {
+  if (detail.detail_type === 'extend') return 'Transaksi Extend';
+  if (detail.detail_type === 'rolling') return 'Transaksi Rolling';
+  return 'Transaksi Awal';
+};
+
+const detailTransactionSeverity = (detail) => {
+  if (detail.detail_type === 'extend') return 'warning';
+  if (detail.detail_type === 'rolling') return 'info';
+  return 'success';
+};
+
+const canEditDetailTransaction = (detail) => {
+  return detail.detail_type === 'extend' && !['selesai', 'batal'].includes(detail.status);
+};
 
 const getSignedCostAmount = (cost) => {
   const amount = cost?.amount || 0;
@@ -426,6 +503,14 @@ const applyDefaultTime = (value, hour, minute) => {
   return date;
 };
 
+const getExtendStartDate = (detail) => {
+  if (!detail?.tgl_kembali) return applyDefaultTime(new Date(), 7, 0);
+  const startDate = new Date(detail.tgl_kembali);
+  startDate.setDate(startDate.getDate() + 1);
+  startDate.setHours(7, 0, 0, 0);
+  return startDate;
+};
+
 const addRentalDuration = (startDate, duration, packageType) => {
   if (!startDate || !duration) return null;
 
@@ -454,7 +539,23 @@ const syncDetailReturnDate = () => {
 };
 
 const setDetailStartDate = (date) => {
-  detailForm.value.tgl_sewa = applyDefaultTime(date, 7, 0);
+  const startDate = detailDialogMode.value === 'extend'
+    ? applyDefaultTime(date, 7, 0)
+    : applyDefaultTime(date, 7, 0);
+
+  if (extendMinStartDate.value && startDate < extendMinStartDate.value) {
+    detailForm.value.tgl_sewa = new Date(extendMinStartDate.value);
+    toast.add({
+      severity: 'warn',
+      summary: 'Tanggal tidak valid',
+      detail: 'Tanggal sewa extend minimal H+1 dari tanggal kembali terakhir.',
+      life: 3500,
+    });
+    syncDetailReturnDate();
+    return;
+  }
+
+  detailForm.value.tgl_sewa = startDate;
   syncDetailReturnDate();
 };
 
@@ -507,6 +608,7 @@ onMounted(async () => {
 });
 
 const openDetailDialog = (detail = null) => {
+  detailDialogMode.value = detail?.detail_type === 'extend' ? 'edit_extend' : 'detail';
   const initial = getInitialBookingDetail();
   if (detail) {
     editingDetailId.value = detail.id;
@@ -574,14 +676,15 @@ const openCostDialog = (detailId, cost = null) => {
 // Modification Dialog Openers
 const openExtendDialog = () => {
   const last = validDetails.value[validDetails.value.length - 1];
-  const tglSewa = last?.tgl_kembali ? new Date(last.tgl_kembali) : new Date();
-  tglSewa.setHours(7, 0, 0);
-  extendForm.value = {
+  const tglSewa = getExtendStartDate(last);
+  detailDialogMode.value = 'extend';
+  editingDetailId.value = null;
+  detailForm.value = {
     unit_id: last?.unit_id || null,
     driver_id: last?.driver_id || null,
     tgl_sewa: tglSewa,
     tgl_kembali: null,
-    lama_sewa: null,
+    lama_sewa: last?.lama_sewa || booking.value?.lama_sewa || 1,
     paket_sewa: last?.paket_sewa || 'harian',
     harga_mobil: last?.harga_mobil || 0,
     diskon_mobil: last?.diskon_mobil || 0,
@@ -589,8 +692,9 @@ const openExtendDialog = () => {
     pricing_package_id: last?.pricing_package_id || null,
     harga_all_in: null,
     costs: [],
+    detail_type: 'extend',
   };
-  showExtendDialog.value = true;
+  showDetailDialog.value = true;
 };
 
 const openRollingDialog = () => {
@@ -672,13 +776,6 @@ const removeDetailCostRow = (idx) => {
   detailForm.value.costs.splice(idx, 1);
 };
 
-const onExtendUnitChange = (e) => {
-  const unit = units.value.find(u => u.id === e.value);
-  if (unit) {
-    extendForm.value.harga_mobil = unit.harga_1_hari || 0;
-  }
-};
-
 const submitDetail = async () => {
   try {
     if (detailForm.value.tgl_sewa && detailForm.value.tgl_kembali && detailForm.value.tgl_kembali < detailForm.value.tgl_sewa) {
@@ -686,6 +783,16 @@ const submitDetail = async () => {
         severity: 'warn',
         summary: 'Tanggal tidak valid',
         detail: 'Tanggal kembali tidak boleh kurang dari tanggal sewa.',
+        life: 3500,
+      });
+      return;
+    }
+
+    if (['extend', 'edit_extend'].includes(detailDialogMode.value) && extendMinStartDate.value && detailForm.value.tgl_sewa < extendMinStartDate.value) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Tanggal tidak valid',
+        detail: 'Tanggal sewa extend minimal H+1 dari tanggal kembali terakhir.',
         life: 3500,
       });
       return;
@@ -701,7 +808,9 @@ const submitDetail = async () => {
       tgl_sewa: formatLocalDateTime(detailForm.value.tgl_sewa),
       tgl_kembali: formatLocalDateTime(detailForm.value.tgl_kembali)
     };
-    if (editingDetailId.value) {
+    if (detailDialogMode.value === 'extend') {
+      await extend(booking.value.id, payload);
+    } else if (editingDetailId.value) {
       await updateDetail(editingDetailId.value, payload);
     } else {
       await addDetail(booking.value.id, payload);
@@ -747,8 +856,8 @@ const submitExtend = async () => {
   try {
     const payload = {
       ...extendForm.value,
-      tgl_sewa: extendForm.value.tgl_sewa instanceof Date ? extendForm.value.tgl_sewa.toISOString() : extendForm.value.tgl_sewa,
-      tgl_kembali: extendForm.value.tgl_kembali instanceof Date ? extendForm.value.tgl_kembali.toISOString() : extendForm.value.tgl_kembali,
+      tgl_sewa: formatLocalDateTime(extendForm.value.tgl_sewa),
+      tgl_kembali: formatLocalDateTime(extendForm.value.tgl_kembali),
     };
     await extend(booking.value.id, payload);
     showExtendDialog.value = false;
@@ -822,6 +931,15 @@ const onHandle = () => {
     });
     return;
   }
+  if (hasZeroReadyUnitPrice.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Harga unit belum diisi',
+      detail: 'Unit sudah ready, tetapi harga masih Rp0. Edit unit dan isi harga sebelum handle.',
+      life: 5000,
+    });
+    return;
+  }
   showHandleConfirmDialog.value = true;
 };
 
@@ -891,7 +1009,7 @@ const dialogTitles = {
   showCompleteDialog: 'Konfirmasi Selesai Sewa',
   showHandleConfirmDialog: 'Konfirmasi Handle Booking',
   showHandleDialog: 'Handle Booking',
-  showDetailDialog: 'Tambah/Edit Unit & Driver',
+  showDetailDialog: 'Unit & Driver',
   showCostDialog: 'Biaya Operasional',
   showExtendDialog: 'Perpanjang Sewa',
   showRollingDialog: 'Ganti Unit',
@@ -1019,7 +1137,7 @@ const formatCurrency = (value) => {
               </div>
               <h2 class="text-base font-bold text-slate-800">Informasi Booking</h2>
             </div>
-            <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold" @click="openEditBookingDialog" v-if="!['selesai','batal','cancelled', 'rental_unit', 'waiting list'].includes(booking.status)" />
+            <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold" @click="openEditBookingDialog" v-if="!['selesai','batal','cancelled', 'rental_unit', 'waiting_list'].includes(booking.status)" />
           </div>
           <div class="p-6 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
             <div class="flex flex-col gap-1">
@@ -1108,7 +1226,31 @@ const formatCurrency = (value) => {
             </div>
 
             <div v-else class="flex flex-col gap-5">
-              <div v-for="detail in validDetails" :key="detail.id" class="rounded-xl border border-slate-100 overflow-hidden hover:border-slate-200 transition-colors">
+              <div
+                v-if="hasZeroReadyUnitPrice"
+                class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 flex items-start gap-3"
+              >
+                <i class="pi pi-exclamation-triangle mt-0.5 text-amber-600"></i>
+                <div>
+                  <p class="font-bold">Harga unit ready masih Rp0</p>
+                  <p class="mt-0.5">Isi harga unit terlebih dahulu sebelum booking di-handle.</p>
+                </div>
+              </div>
+              <div
+                v-for="detail in validDetails"
+                :key="detail.id"
+                class="rounded-xl border overflow-hidden transition-colors"
+                :class="detail.detail_type === 'extend'
+                  ? 'border-amber-200 hover:border-amber-300 bg-amber-50/20'
+                  : 'border-slate-100 hover:border-slate-200'"
+              >
+                <div
+                  v-if="detail.detail_type === 'extend'"
+                  class="px-5 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700"
+                >
+                  <i class="pi pi-calendar-plus text-[11px]"></i>
+                  Ada Transaksi Extend
+                </div>
                 <!-- Unit Header -->
                 <div class="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-5 bg-slate-50/40">
                   <div class="flex gap-4 items-center">
@@ -1120,7 +1262,11 @@ const formatCurrency = (value) => {
                         <h3 class="text-lg font-bold text-slate-800">
                           {{ detail.unit ? `${detail.unit.merk} ${detail.unit.tipe}` : detail.unit_placeholder || 'Placeholder Unit' }}
                         </h3>
-                       
+                        <Tag
+                          :value="detailTransactionLabel(detail)"
+                          :severity="detailTransactionSeverity(detail)"
+                          class="rounded-md text-[10px] font-bold"
+                        />
                       </div>
                       <div class="flex items-center gap-2 mt-1">
                         <span class="inline-block bg-slate-800 text-white font-mono text-xs font-semibold px-2 py-0.5 rounded tracking-wider">{{ detail.unit?.no_polisi || 'PLACEHOLDER' }}</span>
@@ -1152,6 +1298,16 @@ const formatCurrency = (value) => {
                       <i class="pi pi-tag text-[9px]"></i>
                       -{{ formatCurrency(detail.diskon_mobil) }}
                     </div>
+                    <Button
+                      v-if="canEditDetailTransaction(detail)"
+                      label="Edit Extend"
+                      icon="pi pi-pencil"
+                      size="small"
+                      outlined
+                      severity="warning"
+                      class="mt-3 rounded-lg font-semibold text-xs px-3 py-1.5"
+                      @click="openDetailDialog(detail)"
+                    />
                   </div>
                 </div>
 
@@ -1663,7 +1819,7 @@ const formatCurrency = (value) => {
     </Dialog>
 
     <!-- ======= DIALOG: Tambah/Edit Unit & Driver ======= -->
-    <Dialog :visible="showDetailDialog" @update:visible="onDialogVisibleChange('showDetailDialog', $event)" :header="editingDetailId && hasFixedUnit ? 'Edit Unit & Driver' : 'Tambah Unit & Driver'" :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showDetailDialog" @update:visible="onDialogVisibleChange('showDetailDialog', $event)" :header="detailDialogHeader" :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-6 pt-2">
         <!-- Section: Kendaraan & Driver -->
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
@@ -1729,6 +1885,7 @@ const formatCurrency = (value) => {
                 showTime
                 hourFormat="24"
                 dateFormat="dd M yy"
+                :minDate="extendMinStartDate"
                 class="w-full"
                 @date-select="setDetailStartDate"
               />
@@ -1856,7 +2013,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showDetailDialog')" />
-          <Button :label="editingDetailId && hasFixedUnit ? 'Simpan Perubahan' : 'Simpan Unit'" icon="pi pi-check" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitDetail" :loading="loading" />
+          <Button :label="detailSubmitLabel" icon="pi pi-check" :class="detailSubmitButtonClass" @click="submitDetail" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -1893,7 +2050,7 @@ const formatCurrency = (value) => {
     </Dialog>
 
     <!-- ======= DIALOG: Perpanjang (Extend) — E5 Revamp ======= -->
-    <Dialog :visible="showExtendDialog" @update:visible="onDialogVisibleChange('showExtendDialog', $event)" header="Perpanjang Sewa (Extend)" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
+    <Dialog v-if="false" :visible="showExtendDialog" @update:visible="onDialogVisibleChange('showExtendDialog', $event)" header="Perpanjang Sewa (Extend)" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Unit & Driver</legend>

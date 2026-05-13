@@ -37,6 +37,8 @@ const selectedCustomer = ref(null)
 const statusOptions = [
   { label: 'Semua Status', value: null },
   { label: 'Normal', value: 'Normal' },
+  { label: 'Member', value: 'Member' },
+  { label: 'Rent to Rent', value: 'Rent to Rent' },
   { label: 'Corporate', value: 'Corporate' },
   { label: 'Redflag', value: 'Redflag' },
   { label: 'Blacklist', value: 'Blacklist' }
@@ -123,6 +125,8 @@ const confirmDelete = (customer) => {
 
 const getStatusSeverity = (status) => {
   if (status === 'Normal') return 'success'
+  if (status === 'Member') return 'info'
+  if (status === 'Rent to Rent') return 'secondary'
   if (status === 'Corporate') return 'help'
   if (status === 'Redflag') return 'warning'
   if (status === 'Blacklist') return 'danger'

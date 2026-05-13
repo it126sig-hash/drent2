@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useBooking } from '../../composables/useBooking';
 import { useCustomer } from '../../composables/useCustomer';
+import { useRentalOwner } from '../../composables/useRentalOwner';
 import { useUnit } from '../../composables/useUnit';
 import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import Button from 'primevue/button';
@@ -22,6 +23,7 @@ const route = useRoute();
 const toast = useToast();
 const { store, fetchOne, updateBooking, loading: bookingLoading } = useBooking();
 const { customers, fetchAll: fetchCustomers, loading: customersLoading } = useCustomer();
+const { rentalOwners, fetchAll: fetchRentalOwners, loading: rentalOwnersLoading } = useRentalOwner();
 const { units, fetchAll: fetchUnits, loading: unitsLoading } = useUnit();
 
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
@@ -68,7 +70,7 @@ const selectedReturnDateKey = ref(null);
 
 const selectedCustomer = computed(() => {
   if (form.value.customer_mode === 'existing' && form.value.customer_id) {
-    return customers.value.find(c => c.id === form.value.customer_id);
+    return customerOptions.value.find(c => c.value === form.value.customer_id);
   }
   return null;
 });
@@ -90,7 +92,8 @@ const accountOptions = computed(() =>
 );
 
 onMounted(() => {
-  fetchCustomers();
+  fetchCustomers({ per_page: 200 });
+  fetchRentalOwners({ per_page: 200 });
   fetchUnits({ per_page: 200 });
   fetchAccounts({ per_page: 100 });
 
@@ -128,7 +131,7 @@ const loadBookingForEdit = async () => {
     suppressDurationSync.value = true;
     form.value = {
       customer_mode: 'existing',
-      customer_id: booking.customer?.id || null,
+      customer_id: booking.customer?.id ? `customer:${booking.customer.id}` : null,
       customer_name: booking.customer?.nama || '',
       customer_phone: '',
       customer_city: booking.customer?.kota || '',
@@ -176,11 +179,22 @@ const handleSubmit = async () => {
     
     // Cleanup payload based on modes
     if (payload.customer_mode === 'existing') {
+      const selectedOption = customerOptions.value.find(c => c.value === payload.customer_id);
+
+      if (selectedOption?.source === 'rental_owner') {
+        payload.rental_owner_id = selectedOption.rental_owner_id;
+        delete payload.customer_id;
+      } else if (selectedOption?.source === 'customer') {
+        payload.customer_id = selectedOption.id;
+        delete payload.rental_owner_id;
+      }
+
       delete payload.customer_name;
       delete payload.customer_phone;
       delete payload.customer_city;
     } else {
       delete payload.customer_id;
+      delete payload.rental_owner_id;
     }
     
     if (payload.unit_mode === 'existing') {
@@ -331,6 +345,8 @@ const getStatusSeverity = (status) => {
     case 'Blacklist': return 'danger';
     case 'Redflag': return 'warning';
     case 'Corporate': return 'help';
+    case 'Rent to Rent': return 'secondary';
+    case 'Member': return 'info';
     case 'Normal': return 'success';
     default: return 'info';
   }
@@ -381,15 +397,53 @@ const unitOptions = computed(() => {
 });
 
 const customerOptions = computed(() => {
-    return customers.value.map(c => ({
+    const customerItems = customers.value.map(c => ({
         id: c.id,
+        value: `customer:${c.id}`,
+        source: 'customer',
+        sourceLabel: 'Pelanggan',
         name: `${c.nama} - ${c.kota || '-'}`,
         nama: c.nama,
         kota: c.kota || '-',
         kontak_1: c.kontak_1 || '-',
         status: c.status || 'Normal',
-        searchableLabel: [c.nama, c.kota, c.kontak_1, c.status].filter(Boolean).join(' ')
+        catatan: c.catatan || '',
+        member_expired_at: c.member_expired_at || null,
+        searchableLabel: [
+          c.nama,
+          c.kota,
+          c.kontak_1,
+          c.status,
+          c.catatan,
+          c.member_expired_at,
+          'pelanggan',
+        ].filter(Boolean).join(' ')
     }));
+
+    const rentalOwnerItems = rentalOwners.value.map(owner => ({
+        id: `owner-${owner.id}`,
+        value: `rental-owner:${owner.id}`,
+        source: 'rental_owner',
+        sourceLabel: 'Pemilik Rental',
+        rental_owner_id: owner.id,
+        name: `${owner.nama} - ${owner.kota || '-'}`,
+        nama: owner.nama,
+        kota: owner.kota || '-',
+        kontak_1: owner.kontak_1 || '-',
+        status: 'Rent to Rent',
+        catatan: owner.alamat || '',
+        member_expired_at: null,
+        searchableLabel: [
+          owner.nama,
+          owner.kota,
+          owner.kontak_1,
+          owner.alamat,
+          'Rent to Rent',
+          'pemilik rental',
+        ].filter(Boolean).join(' ')
+    }));
+
+    return [...customerItems, ...rentalOwnerItems];
 });
 
 const selectedDurationLabel = computed(() => {
@@ -404,6 +458,15 @@ const formatCurrency = (value) => {
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value);
+};
+
+const formatDate = (value) => {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
 };
 
 </script>
@@ -450,21 +513,21 @@ const formatCurrency = (value) => {
                   v-model="form.customer_id"
                   :options="customerOptions"
                   optionLabel="searchableLabel"
-                  optionValue="id"
+                  optionValue="value"
                   placeholder="Nama, kota, nomor, atau status..."
                   filter
                   :filterFields="['searchableLabel']"
-                  :loading="customersLoading"
+                  :loading="customersLoading || rentalOwnersLoading"
                   :disabled="isEditMode"
                   class="w-full premium-input"
                 >
                   <template #value="slotProps">
                     <div v-if="slotProps.value" class="selected-inline">
-                      <span class="font-semibold text-slate-800">{{ customerOptions.find(c => c.id === slotProps.value)?.nama }}</span>
+                      <span class="font-semibold text-slate-800">{{ customerOptions.find(c => c.value === slotProps.value)?.nama }}</span>
                       <Tag
-                        v-if="customerOptions.find(c => c.id === slotProps.value)"
-                        :value="customerOptions.find(c => c.id === slotProps.value)?.status"
-                        :severity="getStatusSeverity(customerOptions.find(c => c.id === slotProps.value)?.status)"
+                        v-if="customerOptions.find(c => c.value === slotProps.value)"
+                        :value="customerOptions.find(c => c.value === slotProps.value)?.status"
+                        :severity="getStatusSeverity(customerOptions.find(c => c.value === slotProps.value)?.status)"
                         class="premium-tag"
                       />
                     </div>
@@ -475,8 +538,17 @@ const formatCurrency = (value) => {
                       <div class="flex min-w-0 flex-col">
                         <span class="font-semibold text-slate-800 truncate">{{ slotProps.option.nama }}</span>
                         <span class="text-xs text-slate-500 truncate">{{ slotProps.option.kontak_1 }} - {{ slotProps.option.kota }}</span>
+                        <span v-if="slotProps.option.status === 'Member' && slotProps.option.member_expired_at" class="text-xs text-emerald-700 truncate">
+                          Exp {{ formatDate(slotProps.option.member_expired_at) }}
+                        </span>
+                        <span v-if="slotProps.option.status === 'Redflag' && slotProps.option.catatan" class="text-xs text-amber-700 truncate">
+                          {{ slotProps.option.catatan }}
+                        </span>
                       </div>
-                      <Tag :value="slotProps.option.status" :severity="getStatusSeverity(slotProps.option.status)" class="premium-tag shrink-0" />
+                      <div class="flex shrink-0 flex-col items-end gap-1">
+                        <Tag :value="slotProps.option.status" :severity="getStatusSeverity(slotProps.option.status)" class="premium-tag" />
+                        <span class="option-source">{{ slotProps.option.sourceLabel }}</span>
+                      </div>
                     </div>
                   </template>
                 </Dropdown>
@@ -492,13 +564,23 @@ const formatCurrency = (value) => {
                       <strong>{{ selectedCustomer.kontak_1 || '-' }}</strong>
                       <span>Kota</span>
                       <strong>{{ selectedCustomer.kota || '-' }}</strong>
+                      <span>Sumber</span>
+                      <strong>{{ selectedCustomer.sourceLabel || '-' }}</strong>
+                      <template v-if="selectedCustomer.status === 'Member'">
+                        <span>Exp member</span>
+                        <strong>{{ formatDate(selectedCustomer.member_expired_at) }}</strong>
+                      </template>
+                      <template v-if="isRedflag && selectedCustomer.catatan">
+                        <span>Catatan</span>
+                        <strong>{{ selectedCustomer.catatan }}</strong>
+                      </template>
                     </div>
 
                     <Message v-if="isBlacklisted" severity="error" icon="pi pi-ban" class="mt-4 !m-0">
                       Blokir: Pelanggan terdaftar dalam Blacklist.
                     </Message>
                     <Message v-if="isRedflag" severity="warn" icon="pi pi-exclamation-triangle" class="mt-4 !m-0">
-                      Peringatan: Pelanggan memiliki catatan Redflag.
+                      Peringatan: Pelanggan memiliki catatan Redflag<span v-if="selectedCustomer.catatan"> - {{ selectedCustomer.catatan }}</span>.
                     </Message>
                   </div>
                 </transition>
@@ -949,6 +1031,14 @@ const formatCurrency = (value) => {
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 0.65rem;
+}
+
+.option-source {
+  color: #94a3b8;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .animate-fade-in { animation: fadeIn 0.3s ease-out; }

@@ -8,6 +8,7 @@ use App\Models\BookingDetail;
 use App\Models\BookingCost;
 use App\Models\BookingPayment;
 use App\Models\Customer;
+use App\Models\RentalOwner;
 use App\Traits\PhoneNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +22,34 @@ class BookingService
         return DB::transaction(function () use ($data, $branchId, $tenantId) {
             $customerId = $data['customer_id'] ?? null;
 
-            // 1. If new customer, create one
+            // 1. If rental owner is selected as renter, mirror it into customers.
+            if (!$customerId && isset($data['rental_owner_id'])) {
+                $rentalOwner = RentalOwner::where('tenant_id', $tenantId)
+                    ->findOrFail($data['rental_owner_id']);
+                $normalizedPhone = $this->normalizePhone($rentalOwner->kontak_1);
+
+                $customer = Customer::where('tenant_id', $tenantId)
+                    ->where('kontak_1', $normalizedPhone)
+                    ->first();
+
+                if (!$customer) {
+                    $customer = Customer::create([
+                        'tenant_id' => $tenantId,
+                        'nama' => $rentalOwner->nama,
+                        'kontak_1' => $normalizedPhone,
+                        'kontak_2' => $rentalOwner->kontak_2,
+                        'alamat' => $rentalOwner->alamat,
+                        'kota' => $rentalOwner->kota ?? '-',
+                        'status' => 'Rent to Rent',
+                    ]);
+                } elseif (!in_array($customer->status, ['Redflag', 'Blacklist'], true)) {
+                    $customer->update(['status' => 'Rent to Rent']);
+                }
+
+                $customerId = $customer->id;
+            }
+
+            // 2. If new customer, create one
             if (!$customerId) {
                 $normalizedPhone = $this->normalizePhone($data['customer_phone']);
                 
@@ -43,17 +71,17 @@ class BookingService
                 }
             }
 
-            // 2. Check if customer is blacklisted
+            // 3. Check if customer is blacklisted
             $customer = Customer::findOrFail($customerId);
             if ($customer->status === 'Blacklist') {
                 throw new BookingBlacklistException("Pelanggan diblacklist. Booking tidak bisa dilanjutkan.");
             }
 
-            // 3. Set status based on DP
+            // 4. Set status based on DP
             $hasDp = isset($data['dp']) && $data['dp'] > 0;
             $status = $hasDp ? 'confirm' : 'follow_up';
 
-            // 4. Generate booking code: BK-YYYYMM-XXXXX
+            // 5. Generate booking code: BK-YYYYMM-XXXXX
             $prefix = 'BK-' . date('Ym') . '-';
             $lastBooking = Booking::where('branch_id', $branchId)
                 ->where('kode_booking', 'like', $prefix . '%')
@@ -67,7 +95,7 @@ class BookingService
             }
             $kodeBooking = $prefix . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
 
-            // 5. Create Booking
+            // 6. Create Booking
             $booking = Booking::create([
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
@@ -85,7 +113,7 @@ class BookingService
                 'catatan' => $data['catatan'] ?? null,
             ]);
 
-            // 6. Create Booking Detail
+            // 7. Create Booking Detail
             BookingDetail::create([
                 'booking_id' => $booking->id,
                 'unit_id' => $data['unit_id'] ?? null,
@@ -101,7 +129,7 @@ class BookingService
                 'status' => 'draft',
             ]);
 
-            // 7. Create BookingPayment record for DP
+            // 8. Create BookingPayment record for DP
             if ($hasDp) {
                 BookingPayment::create([
                     'booking_id' => $booking->id,

@@ -10,6 +10,7 @@ class CustomerService
     public function getAll(array $filters = [])
     {
         $query = Customer::query()
+            ->with('member')
             ->where('tenant_id', Auth::user()->tenant_id);
 
         if (isset($filters['status'])) {

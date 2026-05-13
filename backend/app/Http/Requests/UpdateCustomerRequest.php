@@ -28,7 +28,7 @@ class UpdateCustomerRequest extends FormRequest
             'kontak_2'         => 'nullable|string|max:20',
             'alamat'           => 'nullable|string',
             'kota'             => 'nullable|string|max:100',
-            'status'           => 'required|in:Normal,Redflag,Blacklist,Corporate',
+            'status'           => 'required|in:Normal,Member,Redflag,Blacklist,Corporate,Rent to Rent',
             'has_apply_member' => 'boolean',
             'catatan'          => 'nullable|string',
         ];

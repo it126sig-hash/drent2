@@ -35,6 +35,8 @@ const formData = ref({
 
 const statusOptions = [
   { label: 'Normal', value: 'Normal' },
+  { label: 'Member', value: 'Member' },
+  { label: 'Rent to Rent', value: 'Rent to Rent' },
   { label: 'Corporate', value: 'Corporate' },
   { label: 'Redflag', value: 'Redflag' },
   { label: 'Blacklist', value: 'Blacklist' }

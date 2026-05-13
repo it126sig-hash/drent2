@@ -23,6 +23,8 @@ class CustomerResource extends JsonResource
             'kota'             => $this->kota,
             'status'           => $this->status,
             'has_apply_member' => $this->has_apply_member,
+            'member_status'    => $this->whenLoaded('member', fn() => $this->member?->status_member),
+            'member_expired_at' => $this->whenLoaded('member', fn() => $this->member?->tanggal_exp?->format('Y-m-d')),
             'catatan'          => $this->catatan,
             'created_at'       => $this->created_at?->toIso8601String(),
         ];

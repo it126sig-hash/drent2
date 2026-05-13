@@ -27,4 +27,9 @@ class Customer extends Model
     protected $casts = [
         'has_apply_member' => 'boolean'
     ];
+
+    public function member()
+    {
+        return $this->hasOne(Member::class);
+    }
 }
