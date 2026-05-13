@@ -60,9 +60,14 @@ class BookingModificationService
 
         return DB::transaction(function () use ($booking, $data) {
             $oldDetail = BookingDetail::findOrFail($data['booking_detail_id']);
+            if ((int) $oldDetail->booking_id !== (int) $booking->id) {
+                throw new UnprocessableEntityHttpException('Detail booking tidak sesuai dengan booking rolling.');
+            }
 
-            // Step 1: adjust old detail — close it at tgl_rolling, optionally update lama_sewa/harga
+            // Step 1: koreksi detail lama dan tutup di tanggal kembali hasil durasi koreksi.
             $oldDetailUpdate = [
+                'unit_id'     => $data['unit_id_lama'] ?? $oldDetail->unit_id,
+                'driver_id'   => $data['driver_id_lama'] ?? null,
                 'tgl_kembali' => Carbon::parse($data['tgl_rolling'])->format('Y-m-d H:i:s'),
                 'status'      => 'selesai',
             ];
@@ -75,13 +80,38 @@ class BookingModificationService
             if (isset($data['diskon_mobil_lama'])) {
                 $oldDetailUpdate['diskon_mobil'] = $data['diskon_mobil_lama'];
             }
+            if (isset($data['paket_sewa_lama'])) {
+                $oldDetailUpdate['paket_sewa'] = $data['paket_sewa_lama'];
+            }
+            if (isset($data['pricing_mode_lama'])) {
+                $oldDetailUpdate['pricing_mode'] = $data['pricing_mode_lama'];
+            }
+            if (array_key_exists('pricing_package_id_lama', $data)) {
+                $oldDetailUpdate['pricing_package_id'] = $data['pricing_package_id_lama'];
+            }
+            if (array_key_exists('harga_all_in_lama', $data)) {
+                $oldDetailUpdate['harga_all_in'] = $data['harga_all_in_lama'];
+            }
             $oldDetail->update($oldDetailUpdate);
+
+            if (array_key_exists('costs_lama', $data)) {
+                $oldDetail->costs()->delete();
+                foreach ($data['costs_lama'] ?? [] as $costData) {
+                    $oldDetail->costs()->create([
+                        'cost_type_id' => $costData['cost_type_id'] ?? null,
+                        'type'         => $costData['type'] ?? 'biaya',
+                        'label'        => $costData['label'],
+                        'amount'       => $costData['amount'],
+                        'keterangan'   => $costData['keterangan'] ?? null,
+                    ]);
+                }
+            }
 
             // Step 2: buat detail baru type=rolling dengan form lengkap
             $newDetail = $booking->bookingDetails()->create([
                 'unit_id'            => $data['unit_id'],
                 'driver_id'          => $data['driver_id'] ?? null,
-                'tgl_sewa'           => Carbon::parse($data['tgl_rolling'])->format('Y-m-d H:i:s'),
+                'tgl_sewa'           => Carbon::parse($data['tgl_sewa'])->format('Y-m-d H:i:s'),
                 'tgl_kembali'        => Carbon::parse($data['tgl_kembali'])->format('Y-m-d H:i:s'),
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],

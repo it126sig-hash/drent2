@@ -247,11 +247,21 @@ const extendForm = ref({
 const rollingForm = ref({
   booking_detail_id: null,
   tgl_rolling: null,
+  unit_id_lama: null,
+  driver_id_lama: null,
+  tgl_sewa_lama: null,
+  tgl_kembali_lama: null,
   lama_sewa_lama: null,
+  paket_sewa_lama: 'harian',
   harga_mobil_lama: 0,
   diskon_mobil_lama: 0,
+  pricing_mode_lama: 'non_all_in',
+  pricing_package_id_lama: null,
+  harga_all_in_lama: null,
+  costs_lama: [],
   unit_id: null,
   driver_id: null,
+  tgl_sewa: null,
   tgl_kembali: null,
   lama_sewa: null,
   paket_sewa: 'harian',
@@ -328,6 +338,21 @@ const rollingTagihan = computed(() => {
   return rollingGrandTotal.value;
 });
 
+const rollingOldHargaSewa = computed(() => Math.max(0, ((rollingForm.value.harga_mobil_lama || 0) - (rollingForm.value.diskon_mobil_lama || 0)) * (rollingForm.value.lama_sewa_lama || 0)));
+const rollingOldTotalBiaya = computed(() => rollingForm.value.costs_lama.reduce((s, c) => s + getSignedCostAmount(c), 0));
+const rollingOldGrandTotal = computed(() => rollingOldHargaSewa.value + rollingOldTotalBiaya.value);
+const rollingOldTagihan = computed(() => {
+  if (rollingForm.value.pricing_mode_lama === 'all_in') {
+    const lama = rollingForm.value.lama_sewa_lama || 1;
+    if (rollingForm.value.pricing_package_id_lama) {
+      const pkg = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id_lama);
+      return (pkg?.harga || rollingForm.value.harga_all_in_lama || 0) * lama;
+    }
+    return (rollingForm.value.harga_all_in_lama || 0) * lama;
+  }
+  return rollingOldGrandTotal.value;
+});
+
 const validDetails = computed(() => {
   if (!booking.value?.booking_details) return [];
   return booking.value.booking_details.filter(detail => detail.unit_id !== null || detail.unit_placeholder);
@@ -377,18 +402,18 @@ const totalRecordedPayments = computed(() => {
 });
 
 const hasPricedDetails = computed(() => billableDetails.value.some(detail => detail.unit_id && ((detail.harga_mobil || 0) > 0 || (detail.harga_all_in || 0) > 0)));
-const bookingTotalTagihan = computed(() => hasPricedDetails.value ? (booking.value?.total_tagihan ?? 0) : (booking.value?.harga_dealing ?? 0));
+const bookingCalculatedTagihan = computed(() => billableDetails.value.reduce((sum, detail) => sum + detailConsumerBill(detail), 0));
+const bookingTotalTagihan = computed(() => {
+  if (!hasPricedDetails.value) return booking.value?.harga_dealing ?? 0;
+  return bookingCalculatedTagihan.value || booking.value?.total_tagihan || 0;
+});
 const bookingTotalPayments = computed(() => {
   const backendTotalPayments = booking.value?.total_payments;
   if (backendTotalPayments != null && backendTotalPayments > 0) return backendTotalPayments;
   return totalRecordedPayments.value;
 });
 const bookingSisaTagihan = computed(() => {
-  if (!hasPricedDetails.value) {
-    return Math.max(0, bookingTotalTagihan.value - bookingTotalPayments.value);
-  }
-
-  return Math.max(0, booking.value?.sisa_tagihan ?? (bookingTotalTagihan.value - bookingTotalPayments.value));
+  return Math.max(0, bookingTotalTagihan.value - bookingTotalPayments.value);
 });
 const isPaidOff = computed(() => bookingTotalTagihan.value > 0 && bookingSisaTagihan.value <= 0);
 
@@ -412,17 +437,20 @@ const detailTagihanKonsumen = computed(() => {
 const detailDialogHeader = computed(() => {
   if (detailDialogMode.value === 'extend') return 'Perpanjang Sewa (Extend)';
   if (detailDialogMode.value === 'edit_extend') return 'Edit Transaksi Extend';
+  if (detailDialogMode.value === 'edit_rolling') return 'Edit Transaksi Rolling';
   return editingDetailId.value && hasFixedUnit.value ? 'Edit Unit & Driver' : 'Tambah Unit & Driver';
 });
 
 const detailSubmitLabel = computed(() => {
   if (detailDialogMode.value === 'extend') return 'Proses Extend';
   if (detailDialogMode.value === 'edit_extend') return 'Simpan Extend';
+  if (detailDialogMode.value === 'edit_rolling') return 'Simpan Rolling';
   return editingDetailId.value && hasFixedUnit.value ? 'Simpan Perubahan' : 'Simpan Unit';
 });
 
 const detailSubmitButtonClass = computed(() => {
   if (['extend', 'edit_extend'].includes(detailDialogMode.value)) return 'bg-amber-600 hover:bg-amber-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
+  if (detailDialogMode.value === 'edit_rolling') return 'bg-sky-700 hover:bg-sky-800 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
   return 'bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
 });
 
@@ -452,6 +480,27 @@ const detailConsumerBill = (detail) => {
 
 const detailPricingModeLabel = (detail) => detail.pricing_mode === 'all_in' ? 'All In' : 'Non All In';
 
+const detailUnitPriceTotal = (detail) => {
+  const lama = detail.lama_sewa || booking.value?.lama_sewa || 1;
+  if (detail.pricing_mode === 'all_in') {
+    return (detail.harga_all_in || 0) * lama;
+  }
+  return detailRentalSubtotal(detail);
+};
+
+const detailUnitTotalWithCosts = (detail) => {
+  return detailUnitPriceTotal(detail) + detailCostTotal(detail);
+};
+
+const detailUnitPriceDescription = (detail) => {
+  const lama = detail.lama_sewa || booking.value?.lama_sewa || 1;
+  const price = detail.pricing_mode === 'all_in'
+    ? (detail.harga_all_in || 0)
+    : Math.max(0, (detail.harga_mobil || 0) - (detail.diskon_mobil || 0));
+
+  return `${detailPricingModeLabel(detail)} - ${formatCurrency(price)} x ${lama}`;
+};
+
 const detailTransactionLabel = (detail) => {
   if (detail.detail_type === 'extend') return 'Transaksi Extend';
   if (detail.detail_type === 'rolling') return 'Transaksi Rolling';
@@ -465,7 +514,11 @@ const detailTransactionSeverity = (detail) => {
 };
 
 const canEditDetailTransaction = (detail) => {
-  return detail.detail_type === 'extend' && !['selesai', 'batal'].includes(detail.status);
+  const finalDetailStatuses = ['selesai', 'batal', 'cancelled', 'completed'];
+  const finalBookingStatuses = ['selesai', 'batal', 'cancelled', 'completed'];
+  return ['extend', 'rolling'].includes(detail.detail_type)
+    && !finalDetailStatuses.includes(detail.status)
+    && !finalBookingStatuses.includes(booking.value?.status);
 };
 
 const getSignedCostAmount = (cost) => {
@@ -529,6 +582,72 @@ const addRentalDuration = (startDate, duration, packageType) => {
   return applyDefaultTime(returnDate, 23, 59);
 };
 
+const getNextRentalStartDate = (returnDate) => {
+  if (!returnDate) return null;
+  const startDate = new Date(returnDate);
+  startDate.setDate(startDate.getDate() + 1);
+  return applyDefaultTime(startDate, 7, 0);
+};
+
+const cloneDetailCosts = (detail) => {
+  return detail?.costs?.map(c => ({
+    cost_type_id: c.cost_type_id,
+    type: c.type || 'biaya',
+    label: c.label,
+    amount: c.amount,
+    keterangan: c.keterangan || '',
+  })) || [];
+};
+
+const syncRollingOldReturnDate = () => {
+  const returnDate = addRentalDuration(
+    rollingForm.value.tgl_sewa_lama,
+    rollingForm.value.lama_sewa_lama,
+    rollingForm.value.paket_sewa_lama
+  );
+  if (!returnDate) return;
+
+  rollingForm.value.tgl_kembali_lama = returnDate;
+  rollingForm.value.tgl_rolling = returnDate;
+};
+
+const syncRollingNewSchedule = () => {
+  const originalDuration = Number(rollingForm.value.lama_sewa_original || 0);
+  const adjustedDuration = Number(rollingForm.value.lama_sewa_lama || 0);
+  const remainingDuration = Math.max(0, originalDuration - adjustedDuration);
+  rollingForm.value.lama_sewa = remainingDuration;
+
+  const startDate = getNextRentalStartDate(rollingForm.value.tgl_kembali_lama);
+  rollingForm.value.tgl_sewa = startDate;
+  rollingForm.value.tgl_kembali = remainingDuration > 0
+    ? addRentalDuration(startDate, remainingDuration, rollingForm.value.paket_sewa)
+    : null;
+};
+
+const applyRollingOldDetail = (detail) => {
+  const oldStartDate = detail?.tgl_sewa ? new Date(detail.tgl_sewa) : null;
+  const oldReturnDate = detail?.tgl_kembali ? new Date(detail.tgl_kembali) : null;
+  const oldDuration = detail?.lama_sewa || booking.value?.lama_sewa || 1;
+
+  rollingForm.value.booking_detail_id = detail?.id || null;
+  rollingForm.value.tgl_rolling = oldReturnDate;
+  rollingForm.value.unit_id_lama = detail?.unit_id || null;
+  rollingForm.value.driver_id_lama = detail?.driver_id || null;
+  rollingForm.value.tgl_sewa_lama = oldStartDate;
+  rollingForm.value.tgl_kembali_lama = oldReturnDate;
+  rollingForm.value.lama_sewa_lama = oldDuration;
+  rollingForm.value.lama_sewa_original = oldDuration;
+  rollingForm.value.paket_sewa_lama = detail?.paket_sewa || booking.value?.paket_sewa || 'harian';
+  rollingForm.value.harga_mobil_lama = detail?.harga_mobil || 0;
+  rollingForm.value.diskon_mobil_lama = detail?.diskon_mobil || 0;
+  rollingForm.value.pricing_mode_lama = detail?.pricing_mode || 'non_all_in';
+  rollingForm.value.pricing_package_id_lama = detail?.pricing_package_id || null;
+  rollingForm.value.harga_all_in_lama = detail?.harga_all_in || null;
+  rollingForm.value.costs_lama = cloneDetailCosts(detail);
+  rollingForm.value.paket_sewa = detail?.paket_sewa || booking.value?.paket_sewa || 'harian';
+  syncRollingNewSchedule();
+};
+
 const syncDetailReturnDate = () => {
   const returnDate = addRentalDuration(
     detailForm.value.tgl_sewa,
@@ -585,6 +704,23 @@ watch(
   }
 );
 
+watch(
+  () => [rollingForm.value.lama_sewa_lama, rollingForm.value.paket_sewa_lama],
+  () => {
+    if (!showRollingDialog.value || rollingStep.value !== 1) return;
+    syncRollingOldReturnDate();
+    syncRollingNewSchedule();
+  }
+);
+
+watch(
+  () => rollingForm.value.paket_sewa,
+  () => {
+    if (!showRollingDialog.value) return;
+    syncRollingNewSchedule();
+  }
+);
+
 const showActionError = (err, fallback) => {
   const detail = err.response?.data?.message || fallback;
   toast.add({ severity: 'error', summary: 'Gagal', detail, life: 5000 });
@@ -608,7 +744,11 @@ onMounted(async () => {
 });
 
 const openDetailDialog = (detail = null) => {
-  detailDialogMode.value = detail?.detail_type === 'extend' ? 'edit_extend' : 'detail';
+  detailDialogMode.value = detail?.detail_type === 'extend'
+    ? 'edit_extend'
+    : detail?.detail_type === 'rolling'
+      ? 'edit_rolling'
+      : 'detail';
   const initial = getInitialBookingDetail();
   if (detail) {
     editingDetailId.value = detail.id;
@@ -701,16 +841,27 @@ const openRollingDialog = () => {
   const active = activeDetails.value[0];
   rollingStep.value = 1;
   rollingForm.value = {
-    booking_detail_id: active?.id || null,
-    tgl_rolling: new Date(),
-    lama_sewa_lama: active?.lama_sewa || null,
-    harga_mobil_lama: active?.harga_mobil || 0,
-    diskon_mobil_lama: active?.diskon_mobil || 0,
+    booking_detail_id: null,
+    tgl_rolling: null,
+    unit_id_lama: null,
+    driver_id_lama: null,
+    tgl_sewa_lama: null,
+    tgl_kembali_lama: null,
+    lama_sewa_lama: null,
+    lama_sewa_original: null,
+    paket_sewa_lama: booking.value?.paket_sewa || 'harian',
+    harga_mobil_lama: 0,
+    diskon_mobil_lama: 0,
+    pricing_mode_lama: 'non_all_in',
+    pricing_package_id_lama: null,
+    harga_all_in_lama: null,
+    costs_lama: [],
     unit_id: null,
     driver_id: null,
+    tgl_sewa: null,
     tgl_kembali: null,
     lama_sewa: null,
-    paket_sewa: active?.paket_sewa || 'harian',
+    paket_sewa: active?.paket_sewa || booking.value?.paket_sewa || 'harian',
     harga_mobil: 0,
     diskon_mobil: 0,
     pricing_mode: 'non_all_in',
@@ -718,6 +869,7 @@ const openRollingDialog = () => {
     harga_all_in: null,
     costs: [],
   };
+  applyRollingOldDetail(active);
   showRollingDialog.value = true;
 };
 
@@ -766,6 +918,26 @@ const onUnitChange = (e) => {
 const onDetailCostTypeChange = (idx, typeId) => {
   const ct = costTypesMaster.value.find(c => c.id === typeId);
   if (ct) detailForm.value.costs[idx].label = ct.nama;
+};
+
+const onRollingDetailChange = (detailId) => {
+  const detail = activeDetails.value.find(item => item.id === detailId);
+  if (detail) applyRollingOldDetail(detail);
+};
+
+const onRollingOldUnitChange = (e) => {
+  const unit = units.value.find(u => u.id === e.value);
+  if (unit) rollingForm.value.harga_mobil_lama = unit.harga_1_hari || 0;
+};
+
+const onRollingOldCostTypeChange = (idx, typeId) => {
+  const ct = costTypesMaster.value.find(c => c.id === typeId);
+  if (ct) rollingForm.value.costs_lama[idx].label = ct.nama;
+};
+
+const onRollingNewCostTypeChange = (idx, typeId) => {
+  const ct = costTypesMaster.value.find(c => c.id === typeId);
+  if (ct) rollingForm.value.costs[idx].label = ct.nama;
 };
 
 const addDetailCostRow = () => {
@@ -869,10 +1041,32 @@ const submitExtend = async () => {
 
 const submitRolling = async () => {
   try {
+    syncRollingOldReturnDate();
+    syncRollingNewSchedule();
+
+    if (!rollingForm.value.lama_sewa || rollingForm.value.lama_sewa < 1) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Sisa durasi habis',
+        detail: 'Lama sewa koreksi harus lebih kecil dari lama sewa sebelum rolling.',
+        life: 4000,
+      });
+      return;
+    }
+
+    const oldSelectedPackage = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id_lama);
+    const newSelectedPackage = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id);
     const payload = {
       ...rollingForm.value,
-      tgl_rolling: rollingForm.value.tgl_rolling instanceof Date ? rollingForm.value.tgl_rolling.toISOString() : rollingForm.value.tgl_rolling,
-      tgl_kembali: rollingForm.value.tgl_kembali instanceof Date ? rollingForm.value.tgl_kembali.toISOString() : rollingForm.value.tgl_kembali,
+      harga_all_in_lama: rollingForm.value.pricing_mode_lama === 'all_in'
+        ? (rollingForm.value.harga_all_in_lama || oldSelectedPackage?.harga || null)
+        : null,
+      harga_all_in: rollingForm.value.pricing_mode === 'all_in'
+        ? (rollingForm.value.harga_all_in || newSelectedPackage?.harga || null)
+        : null,
+      tgl_rolling: formatLocalDateTime(rollingForm.value.tgl_rolling),
+      tgl_sewa: formatLocalDateTime(rollingForm.value.tgl_sewa),
+      tgl_kembali: formatLocalDateTime(rollingForm.value.tgl_kembali),
     };
     await rolling(booking.value.id, payload);
     showRollingDialog.value = false;
@@ -1214,7 +1408,7 @@ const formatCurrency = (value) => {
               size="small"
               class="bg-emerald-600 hover:bg-emerald-700 border-none font-semibold rounded-lg px-3.5 py-2 text-white text-xs shadow-sm transition-all"
               @click="openPrimaryUnitDialog"
-              v-if="['follow_up', 'confirm'].includes(booking.status)"
+              v-if="['follow_up', 'confirm','waiting_list'].includes(booking.status)"
             />
           </div>
 
@@ -1242,6 +1436,8 @@ const formatCurrency = (value) => {
                 class="rounded-xl border overflow-hidden transition-colors"
                 :class="detail.detail_type === 'extend'
                   ? 'border-amber-200 hover:border-amber-300 bg-amber-50/20'
+                  : detail.detail_type === 'rolling'
+                    ? 'border-sky-200 hover:border-sky-300 bg-sky-50/20'
                   : 'border-slate-100 hover:border-slate-200'"
               >
                 <div
@@ -1250,6 +1446,13 @@ const formatCurrency = (value) => {
                 >
                   <i class="pi pi-calendar-plus text-[11px]"></i>
                   Ada Transaksi Extend
+                </div>
+                <div
+                  v-else-if="detail.detail_type === 'rolling'"
+                  class="px-5 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-700"
+                >
+                  <i class="pi pi-sync text-[11px]"></i>
+                  Ada Transaksi Rolling
                 </div>
                 <!-- Unit Header -->
                 <div class="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-5 bg-slate-50/40">
@@ -1285,26 +1488,45 @@ const formatCurrency = (value) => {
                           {{ formatDateTime(detail.tgl_kembali) }}
                         </span>
                       </div>
+                      <div class="flex flex-wrap items-center gap-2 mt-2 text-[11px] font-semibold">
+                        <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md border border-blue-100">
+                          <i class="pi pi-wallet text-[9px]"></i>
+                          Harga Mobil: {{ formatCurrency(detail.harga_mobil || 0) }}
+                        </span>
+                        <span
+                          v-if="detail.diskon_mobil > 0"
+                          class="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 px-2.5 py-1 rounded-md border border-rose-100"
+                        >
+                          <i class="pi pi-tag text-[9px]"></i>
+                          Diskon: {{ formatCurrency(detail.diskon_mobil) }}
+                        </span>
+                        <span
+                          v-if="detail.pricing_mode === 'all_in'"
+                          class="inline-flex items-center gap-1.5 bg-cyan-50 text-cyan-700 px-2.5 py-1 rounded-md border border-cyan-100"
+                        >
+                          <i class="pi pi-check-circle text-[9px]"></i>
+                          All In: {{ formatCurrency(detail.harga_all_in || 0) }}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div class="bg-white p-4 rounded-xl border border-slate-100 text-right min-w-[180px]">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Subtotal Sewa</span>
-                    <span class="text-xl font-bold text-slate-900">{{ formatCurrency(detailRentalSubtotal(detail)) }}</span>
-                    <div class="text-[11px] font-semibold text-slate-500 mt-0.5">
-                      {{ formatCurrency(detail.harga_mobil || 0) }} x {{ detail.lama_sewa || booking.lama_sewa || 1 }}
+                  <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 text-right min-w-[220px] shadow-lg shadow-slate-200/70">
+                    <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest block mb-0.5">Total Unit + Ops</span>
+                    <span class="text-xl font-bold text-white">{{ formatCurrency(detailUnitTotalWithCosts(detail)) }}</span>
+                    <div class="text-[11px] font-semibold text-sky-200 mt-1">
+                      {{ detailUnitPriceDescription(detail) }}
                     </div>
-                    <div v-if="detail.diskon_mobil > 0" class="text-[11px] font-semibold text-rose-500 mt-0.5 flex items-center justify-end gap-1">
-                      <i class="pi pi-tag text-[9px]"></i>
-                      -{{ formatCurrency(detail.diskon_mobil) }}
+                    <div class="text-[11px] font-semibold text-slate-300 mt-0.5">
+                      Biaya Ops: {{ formatCurrency(detailCostTotal(detail)) }}
                     </div>
                     <Button
                       v-if="canEditDetailTransaction(detail)"
-                      label="Edit Extend"
+                      :label="detail.detail_type === 'rolling' ? 'Edit Rolling' : 'Edit Extend'"
                       icon="pi pi-pencil"
                       size="small"
                       outlined
-                      severity="warning"
+                      :severity="detail.detail_type === 'rolling' ? 'info' : 'warning'"
                       class="mt-3 rounded-lg font-semibold text-xs px-3 py-1.5"
                       @click="openDetailDialog(detail)"
                     />
@@ -1416,7 +1638,7 @@ const formatCurrency = (value) => {
       </div>
 
       <!-- RIGHT COLUMN: Payment Summary -->
-      <div class="lg:col-span-4 flex flex-col gap-6 lg:sticky lg:top-6">
+      <div class="lg:col-span-4 flex flex-col gap-6 lg:sticky lg:top-24">
 
         <!-- Financial Summary Card -->
         <div class="financial-summary-card bg-slate-900 rounded-2xl shadow-xl p-6 text-white relative overflow-hidden">
@@ -2138,45 +2360,107 @@ const formatCurrency = (value) => {
     </Dialog>
 
     <!-- ======= DIALOG: Ganti Unit (Rolling) — E5 Revamp ======= -->
-    <Dialog :visible="showRollingDialog" @update:visible="onDialogVisibleChange('showRollingDialog', $event)" :header="rollingStep === 1 ? 'Ganti Unit (Rolling) — Step 1: Adjust Unit Lama' : 'Ganti Unit (Rolling) — Step 2: Detail Unit Baru'" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showRollingDialog" @update:visible="onDialogVisibleChange('showRollingDialog', $event)" :header="rollingStep === 1 ? 'Ganti Unit (Rolling) - Step 1: Koreksi Unit Lama' : 'Ganti Unit (Rolling) - Step 2: Pilih Unit Baru'" :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }" class="custom-dialog">
       <!-- Step indicator -->
       <div class="flex items-center gap-2 mb-4">
         <div class="flex items-center gap-1.5">
-          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" :class="rollingStep >= 1 ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-400'">1</div>
-          <span class="text-xs font-semibold" :class="rollingStep === 1 ? 'text-amber-600' : 'text-slate-400'">Adjust Unit Lama</span>
+          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" :class="rollingStep >= 1 ? 'bg-sky-600 text-white' : 'bg-slate-200 text-slate-400'">1</div>
+          <span class="text-xs font-semibold" :class="rollingStep === 1 ? 'text-sky-700' : 'text-slate-400'">Koreksi Unit Lama</span>
         </div>
         <div class="flex-1 h-px bg-slate-200"></div>
         <div class="flex items-center gap-1.5">
-          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" :class="rollingStep >= 2 ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-400'">2</div>
-          <span class="text-xs font-semibold" :class="rollingStep === 2 ? 'text-amber-600' : 'text-slate-400'">Detail Unit Baru</span>
+          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" :class="rollingStep >= 2 ? 'bg-sky-600 text-white' : 'bg-slate-200 text-slate-400'">2</div>
+          <span class="text-xs font-semibold" :class="rollingStep === 2 ? 'text-sky-700' : 'text-slate-400'">Unit Baru</span>
         </div>
       </div>
 
       <!-- Step 1 -->
       <div v-if="rollingStep === 1" class="flex flex-col gap-4 pt-1">
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Unit Yang Akan Diganti *</label>
-          <Dropdown v-model="rollingForm.booking_detail_id" :options="activeDetails" optionLabel="unit.no_polisi" optionValue="id" placeholder="Pilih unit aktif" class="w-full" />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Tanggal & Jam Rolling (unit lama selesai di sini) *</label>
-          <Calendar v-model="rollingForm.tgl_rolling" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" />
-        </div>
-        <div class="grid grid-cols-3 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-slate-600">Lama Sewa Lama (revisi)</label>
-            <InputNumber v-model="rollingForm.lama_sewa_lama" :min="1" class="w-full" />
+        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Unit Lama & Driver</legend>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Transaksi Aktif *</label>
+              <Dropdown v-model="rollingForm.booking_detail_id" :options="activeDetails" optionLabel="unit.no_polisi" optionValue="id" placeholder="Pilih unit aktif" class="w-full" @change="onRollingDetailChange(rollingForm.booking_detail_id)" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Unit Lama *</label>
+              <Dropdown v-model="rollingForm.unit_id_lama" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter class="w-full" @change="onRollingOldUnitChange" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Driver</label>
+              <Dropdown v-model="rollingForm.driver_id_lama" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
+            </div>
           </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-slate-600">Harga Lama (revisi)</label>
-            <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+        </fieldset>
+
+        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Periode Koreksi</legend>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Mulai</label>
+              <Calendar v-model="rollingForm.tgl_sewa_lama" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Kembali</label>
+              <Calendar v-model="rollingForm.tgl_kembali_lama" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Lama Sewa *</label>
+              <InputNumber v-model="rollingForm.lama_sewa_lama" :min="1" :max="Math.max(1, (rollingForm.lama_sewa_original || 1) - 1)" placeholder="Jml" class="w-full" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Paket *</label>
+              <Dropdown v-model="rollingForm.paket_sewa_lama" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
+            </div>
           </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-slate-600">Diskon Lama (revisi)</label>
-            <InputNumber v-model="rollingForm.diskon_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+        </fieldset>
+
+        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan Lama</legend>
+          <div class="flex flex-col gap-3 mt-2">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
+                <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">Diskon</label>
+                <InputNumber v-model="rollingForm.diskon_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              </div>
+            </div>
+            <SelectButton v-model="rollingForm.pricing_mode_lama" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
+            <div v-if="rollingForm.pricing_mode_lama === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
+              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" />
+              <InputNumber v-if="!rollingForm.pricing_package_id_lama" v-model="rollingForm.harga_all_in_lama" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional Lama</legend>
+          <div class="flex flex-col gap-2 mt-2">
+            <div v-if="!rollingForm.costs_lama.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.</div>
+            <div v-for="(cost, idx) in rollingForm.costs_lama" :key="idx" class="grid grid-cols-12 gap-2 items-center">
+              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingOldCostTypeChange(idx, cost.cost_type_id)" /></div>
+              <div class="col-span-4"><InputText v-model="cost.label" placeholder="Keterangan" class="w-full" /></div>
+              <div class="col-span-3"><InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" /></div>
+              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs_lama.splice(idx,1)" /></div>
+            </div>
+            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs_lama.push({cost_type_id:null,type:'biaya',label:'',amount:0,keterangan:''})" />
+          </div>
+        </fieldset>
+
+        <div class="bg-slate-900 rounded-xl p-4 text-white">
+          <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Kalkulasi Koreksi</p>
+          <div class="flex flex-col gap-1.5 text-sm">
+            <div class="flex justify-between"><span class="text-white/60">Harga Sewa Lama</span><span>{{ formatCurrency(rollingOldHargaSewa) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Biaya Ops Lama</span><span>{{ formatCurrency(rollingOldTotalBiaya) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Sisa Lama Sewa Rolling</span><span>{{ rollingForm.lama_sewa || 0 }} {{ rollingForm.paket_sewa }}</span></div>
+            <div class="h-px bg-white/10 my-1"></div>
+            <div class="flex justify-between"><span class="font-bold text-sky-300">Tagihan Unit Lama</span><span class="text-lg font-bold text-sky-300">{{ formatCurrency(rollingOldTagihan) }}</span></div>
           </div>
         </div>
-        <p class="text-xs text-slate-400">* Field revisi opsional — hanya isi jika harga unit lama perlu dikoreksi.</p>
       </div>
 
       <!-- Step 2 -->
@@ -2196,22 +2480,32 @@ const formatCurrency = (value) => {
         </fieldset>
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Durasi & Harga Baru</legend>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Selesai *</label>
-              <Calendar v-model="rollingForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" />
+              <label class="text-xs font-semibold text-slate-600">Mulai</label>
+              <Calendar v-model="rollingForm.tgl_sewa" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Lama *</label>
-              <InputNumber v-model="rollingForm.lama_sewa" :min="1" class="w-full" />
+              <label class="text-xs font-semibold text-slate-600">Kembali</label>
+              <Calendar v-model="rollingForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Lama Sewa</label>
+              <Dropdown v-model="rollingForm.lama_sewa" :options="lamaSewaOptions" optionLabel="label" optionValue="value" placeholder="Lama" class="w-full" disabled />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Paket *</label>
-              <Dropdown v-model="rollingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
+              <label class="text-xs font-semibold text-slate-600">Paket</label>
+              <Dropdown v-model="rollingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" disabled />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
               <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Diskon</label>
+              <InputNumber v-model="rollingForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
             </div>
           </div>
           <div class="mt-3">
@@ -2227,12 +2521,12 @@ const formatCurrency = (value) => {
           <div class="flex flex-col gap-2 mt-2">
             <div v-if="!rollingForm.costs.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.</div>
             <div v-for="(cost, idx) in rollingForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onCostTypeChange(idx, cost.cost_type_id)" /></div>
+              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingNewCostTypeChange(idx, cost.cost_type_id)" /></div>
               <div class="col-span-4"><InputText v-model="cost.label" placeholder="Keterangan" class="w-full" /></div>
               <div class="col-span-3"><InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" /></div>
               <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs.splice(idx,1)" /></div>
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs.push({cost_type_id:null,label:'',amount:0,keterangan:''})" />
+            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs.push({cost_type_id:null,type:'biaya',label:'',amount:0,keterangan:''})" />
           </div>
         </fieldset>
         <div class="bg-slate-900 rounded-xl p-4 text-white">
@@ -2249,9 +2543,9 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showRollingDialog')" />
-          <Button v-if="rollingStep === 1" label="Lanjut →" icon="pi pi-arrow-right" iconPos="right" class="bg-amber-500 border-none text-white px-6 rounded-lg font-semibold" @click="rollingStep = 2" />
-          <Button v-if="rollingStep === 2" label="← Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
-          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="bg-amber-600 border-none text-white px-6 rounded-lg font-semibold" @click="submitRolling" :loading="loading" />
+          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="bg-sky-600 hover:bg-sky-700 border-none text-white px-6 rounded-lg font-semibold" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
+          <Button v-if="rollingStep === 2" label="Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
+          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="bg-sky-700 hover:bg-sky-800 border-none text-white px-6 rounded-lg font-semibold" @click="submitRolling" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2335,15 +2629,15 @@ const formatCurrency = (value) => {
           <label class="text-xs font-semibold text-slate-600">Catatan (opsional)</label>
           <Textarea v-model="paymentForm.catatan" rows="2" placeholder="Transfer via BCA, bukti sudah dikirim WA..." class="w-full" />
         </div>
-        <div v-if="booking?.sisa_tagihan != null" class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm">
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm">
           <div class="flex justify-between text-slate-500 mb-1">
             <span>Sisa tagihan saat ini</span>
-            <span class="font-bold text-rose-500">{{ formatCurrency(booking.sisa_tagihan) }}</span>
+            <span class="font-bold text-rose-500">{{ formatCurrency(bookingSisaTagihan) }}</span>
           </div>
           <div v-if="paymentForm.amount" class="flex justify-between text-slate-500">
             <span>Sisa setelah pembayaran ini</span>
-            <span class="font-bold" :class="(booking.sisa_tagihan - paymentForm.amount) <= 0 ? 'text-emerald-600' : 'text-amber-600'">
-              {{ formatCurrency(Math.max(0, booking.sisa_tagihan - paymentForm.amount)) }}
+            <span class="font-bold" :class="(bookingSisaTagihan - paymentForm.amount) <= 0 ? 'text-emerald-600' : 'text-amber-600'">
+              {{ formatCurrency(Math.max(0, bookingSisaTagihan - paymentForm.amount)) }}
             </span>
           </div>
         </div>

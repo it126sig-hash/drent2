@@ -145,33 +145,28 @@ class BookingResource extends JsonResource
             return 0;
         }
 
-        $activeDetail = $this->bookingDetails
-            ->whereIn('status', ['aktif', 'draft'])
-            ->sortByDesc('created_at')
-            ->first();
+        $billableDetails = $this->bookingDetails->whereNotIn('status', ['batal']);
 
-        if (!$activeDetail) {
+        if ($billableDetails->isEmpty()) {
             return 0;
         }
 
-        if ($activeDetail->pricing_mode === 'all_in') {
-            return (int) (($activeDetail->harga_all_in ?? 0) * ($activeDetail->lama_sewa ?? 1));
-        }
+        $total = 0;
+        foreach ($billableDetails as $d) {
+            $duration = $d->lama_sewa ?? 1;
+            if ($d->pricing_mode === 'all_in') {
+                $total += (int) (($d->harga_all_in ?? 0) * $duration);
+            } else {
+                $total += (int) (($d->harga_mobil - $d->diskon_mobil) * $duration);
 
-        // non_all_in: hitung dari semua details yang bukan batal
-        $totalHarga = $this->bookingDetails
-            ->whereNotIn('status', ['batal'])
-            ->sum(fn($d) => (int) (($d->harga_mobil - $d->diskon_mobil) * ($d->lama_sewa ?? 1)));
-
-        $totalCosts = 0;
-        foreach ($this->bookingDetails->whereNotIn('status', ['batal']) as $d) {
-            if ($d->relationLoaded('costs')) {
-                $totalCosts += $d->costs->sum(fn($cost) =>
-                    $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount
-                );
+                if ($d->relationLoaded('costs')) {
+                    $total += $d->costs->sum(fn($cost) =>
+                        $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount
+                    );
+                }
             }
         }
 
-        return $totalHarga + $totalCosts;
+        return $total;
     }
 }

@@ -220,6 +220,15 @@ const getRentalDuration = (booking) => {
   return `${lamaSewa || '-'} x ${formatPackage(paketSewa)}`;
 };
 
+const getDriverInfo = (booking) => {
+  const driver = getDisplayDetail(booking)?.driver;
+
+  return {
+    name: driver?.nama || 'Lepas kunci',
+    hasDriver: Boolean(driver),
+  };
+};
+
 const getPaidAmount = (booking) => {
   if (booking?.total_payments != null) return booking.total_payments;
   return (booking?.payments || []).reduce((sum, payment) => sum + (payment.amount || 0), 0);
@@ -346,7 +355,7 @@ const rowClass = (data) => {
               </div>
             </template>
           </Column>
-          <Column header="Pelanggan">
+          <Column header="Pelanggan" style="min-width: 10rem">
             <template #body="{ data }">
               <div class="flex flex-col">
                 <span class="font-semibold">{{ data.customer?.nama || '-' }}</span>
@@ -354,7 +363,7 @@ const rowClass = (data) => {
               </div>
             </template>
           </Column>
-          <Column header="Kendaraan" style="min-width: 15rem">
+          <Column header="Kendaraan" style="min-width: 10rem">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
                 <span class="font-semibold">{{ getVehicleInfo(data).title }}</span>
@@ -382,6 +391,19 @@ const rowClass = (data) => {
                   +{{ getExtraDetailCount(data) }} detail lain
                 </span>
               </div>
+            </template>
+          </Column>
+          <Column header="Driver" style="min-width: 11rem">
+            <template #body="{ data }">
+              <span v-if="getDriverInfo(data).hasDriver" class="font-medium">
+                {{ getDriverInfo(data).name }}
+              </span>
+              <Tag
+                v-else
+                severity="success"
+                :value="getDriverInfo(data).name"
+                class="!text-[10px] uppercase"
+              />
             </template>
           </Column>
           <Column header="Periode Sewa" style="min-width: 13rem">
@@ -413,12 +435,12 @@ const rowClass = (data) => {
               </div>
             </template>
           </Column>
-          <Column header="Harga Dealing">
+          <Column header="Harga Dealing" style="min-width: 8rem">
             <template #body="{ data }">
               {{ formatCurrency(data.harga_dealing) }}
             </template>
           </Column>
-          <Column header="Sudah Bayar">
+          <Column header="Sudah Bayar" style="min-width: 8rem">
             <template #body="{ data }">
               <span class="font-semibold text-emerald-600">{{ formatCurrency(getPaidAmount(data)) }}</span>
             </template>

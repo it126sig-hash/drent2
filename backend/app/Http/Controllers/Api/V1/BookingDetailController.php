@@ -36,8 +36,14 @@ class BookingDetailController extends Controller
     {
         $this->authorize('update', $bookingDetail->booking);
 
-        if ($bookingDetail->detail_type === 'extend' && in_array($bookingDetail->status, ['selesai', 'batal'], true)) {
-            abort(422, 'Transaksi extend yang sudah selesai atau batal tidak bisa diedit.');
+        if (
+            in_array($bookingDetail->detail_type, ['extend', 'rolling'], true)
+            && (
+                in_array($bookingDetail->status, ['selesai', 'batal', 'cancelled', 'completed'], true)
+                || in_array($bookingDetail->booking->status, ['selesai', 'batal', 'cancelled', 'completed'], true)
+            )
+        ) {
+            abort(422, 'Transaksi yang sudah selesai atau batal tidak bisa diedit.');
         }
 
         $bookingDetail->update([

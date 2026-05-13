@@ -473,18 +473,18 @@ const formatDate = (value) => {
 
 <template>
   <div class="booking-create-container">
-    <div class="page-header mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div class="page-header mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">{{ isEditMode ? 'Edit Booking' : 'Buat Booking Baru' }}</h1>
-        <p class="text-slate-500 mt-1">
+        <h1 class="text-xl font-bold text-slate-900 tracking-tight">{{ isEditMode ? 'Edit Booking' : 'Buat Booking Baru' }}</h1>
+        <p class="mt-1 text-sm text-slate-500">
           {{ isEditMode ? 'Perbarui data transaksi tanpa mengubah konsumen.' : 'Input awal transaksi sebelum masuk proses handle booking.' }}
         </p>
       </div>
-      <Button label="Batal" icon="pi pi-times" class="p-button-text p-button-secondary self-start md:self-auto" @click="router.back()" />
+      <Button label="Batal" icon="pi pi-times" size="small" class="p-button-text p-button-secondary self-start md:self-auto" @click="router.back()" />
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
-      <div class="xl:col-span-8 flex flex-col gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+      <div class="md:col-span-8 flex flex-col gap-4">
         <Card class="premium-card">
           <template #title>
             <div class="section-title">
@@ -493,7 +493,7 @@ const formatDate = (value) => {
             </div>
           </template>
           <template #content>
-            <div class="flex flex-col gap-5">
+            <div class="flex flex-col gap-4">
               <Message v-if="isEditMode" severity="info" icon="pi pi-lock" class="!m-0">
                 Konsumen dikunci saat edit booking.
               </Message>
@@ -586,7 +586,7 @@ const formatDate = (value) => {
                 </transition>
               </div>
 
-              <div v-else-if="!isEditMode" class="new-customer-form grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in">
+              <div v-else-if="!isEditMode" class="new-customer-form grid grid-cols-1 md:grid-cols-3 gap-3 animate-fade-in">
                 <div class="form-field-vertical">
                   <label class="field-label">Nama lengkap *</label>
                   <InputText v-model="form.customer_name" placeholder="Nama pelanggan" class="w-full premium-input" />
@@ -612,7 +612,7 @@ const formatDate = (value) => {
             </div>
           </template>
           <template #content>
-            <div class="flex flex-col gap-5">
+            <div class="flex flex-col gap-4">
               <SelectButton
                 v-model="form.unit_mode"
                 :options="[{label: 'Unit Ready', value: 'existing'}, {label: 'Placeholder', value: 'placeholder'}]"
@@ -700,7 +700,7 @@ const formatDate = (value) => {
             </div>
           </template>
           <template #content>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
               <div class="form-field-vertical">
                 <label class="field-label">Mulai sewa *</label>
                 <Calendar
@@ -800,7 +800,7 @@ const formatDate = (value) => {
         </Card>
       </div>
 
-      <aside class="xl:col-span-4">
+      <aside class="md:col-span-4">
         <div class="summary-panel">
           <div class="section-title mb-4">
             <i class="pi pi-clipboard text-tosca"></i>
@@ -872,8 +872,9 @@ const formatDate = (value) => {
 
 <style scoped>
 .booking-create-container {
-  max-width: 1400px;
+  max-width: 1280px;
   margin: 0 auto;
+  padding-bottom: 12px;
 }
 
 .premium-card {
@@ -883,23 +884,35 @@ const formatDate = (value) => {
   background: white;
 }
 
+:deep(.premium-card .p-card-body) {
+  padding: 14px 16px 16px;
+}
+
+:deep(.premium-card .p-card-title) {
+  margin-bottom: 12px;
+}
+
+:deep(.premium-card .p-card-content) {
+  padding: 0;
+}
+
 .section-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: #0f172a;
-  font-size: 0.95rem;
+  font-size: 0.86rem;
   font-weight: 800;
 }
 
 .form-field-vertical {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .field-label {
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
@@ -912,11 +925,33 @@ const formatDate = (value) => {
 :deep(.premium-calendar .p-inputtext),
 :deep(.premium-input.p-dropdown) {
   border-radius: 8px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1.5px solid #e2e8f0;
   background: #fff;
   transition: all 0.2s;
-  font-size: 0.95rem;
+  font-size: 0.86rem;
+  min-height: 38px;
+}
+
+:deep(.premium-calendar .p-datepicker-trigger) {
+  width: 2.35rem;
+}
+
+:deep(.premium-input.p-dropdown .p-dropdown-label) {
+  padding: 0;
+  line-height: 1.35;
+}
+
+:deep(.premium-input.p-dropdown .p-dropdown-trigger) {
+  width: 2.35rem;
+}
+
+:deep(.p-button) {
+  font-size: 0.86rem;
+}
+
+:deep(.p-message) {
+  font-size: 0.82rem;
 }
 
 :deep(.premium-input .p-inputtext:focus),
@@ -932,8 +967,8 @@ const formatDate = (value) => {
   color: #475569;
   border-radius: 8px !important;
   font-weight: 700;
-  font-size: 0.85rem;
-  padding: 10px;
+  font-size: 0.8rem;
+  padding: 8px;
 }
 
 :deep(.custom-selectbutton .p-button.p-highlight) {
@@ -953,26 +988,27 @@ const formatDate = (value) => {
 
 .preview-panel {
   background: #f8fafc;
-  padding: 16px;
+  padding: 12px;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
 }
 
 .preview-heading {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   color: #0f172a;
   font-weight: 800;
+  font-size: 0.9rem;
 }
 
 .info-grid,
 .summary-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .info-grid {
   grid-template-columns: minmax(92px, 0.42fr) 1fr;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
 }
 
 .info-grid span,
@@ -990,13 +1026,13 @@ const formatDate = (value) => {
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
-  padding: 16px;
+  padding: 12px;
 }
 
 .summary-panel {
   position: sticky;
-  top: 18px;
-  padding: 20px;
+  top: 14px;
+  padding: 16px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #ffffff;
@@ -1007,10 +1043,10 @@ const formatDate = (value) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid #f1f5f9;
-  padding-bottom: 10px;
-  font-size: 0.875rem;
+  padding-bottom: 8px;
+  font-size: 0.8rem;
 }
 
 .summary-list > div:last-child {
@@ -1021,16 +1057,16 @@ const formatDate = (value) => {
 .summary-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
+  gap: 8px;
+  margin-top: 16px;
   border-top: 1px solid #e2e8f0;
-  padding-top: 16px;
+  padding-top: 12px;
 }
 
 .premium-tag {
   border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 0.65rem;
+  padding: 2px 7px;
+  font-size: 0.62rem;
 }
 
 .option-source {
