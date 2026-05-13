@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
 import { useUnit } from '../../composables/useUnit';
@@ -9,16 +9,12 @@ import { format, addMonths, subMonths, startOfMonth } from 'date-fns';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
-import TabView from 'primevue/tabview';
-import TabPanel from 'primevue/tabpanel';
-import Toolbar from 'primevue/toolbar';
 import Dropdown from 'primevue/dropdown';
 import DatePicker from 'primevue/datepicker';
 import Dialog from 'primevue/dialog';
 import Textarea from 'primevue/textarea';
 import ProgressBar from 'primevue/progressbar';
 import ContextMenu from 'primevue/contextmenu';
-import Tag from 'primevue/tag';
 
 const router = useRouter();
 const { 
@@ -40,6 +36,11 @@ const bookingContextMenu = ref(null);
 const contextMenuSelection = ref(null);
 const contextMenuItems = ref([]);
 
+const isMobile = ref(window.innerWidth < 768);
+const handleResize = () => {
+  isMobile.value = window.innerWidth < 768;
+};
+
 const statusOptions = [
   { label: 'Follow Up', value: 'follow_up' },
   { label: 'Confirm', value: 'confirm' },
@@ -59,7 +60,14 @@ const loadData = async () => {
   }
 };
 
-onMounted(loadData);
+onMounted(() => {
+  loadData();
+  window.addEventListener('resize', handleResize);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize);
+});
 
 watch(activeTab, loadData);
 
@@ -213,8 +221,8 @@ const getVehicleInfo = (booking) => {
 
 const getRentalDuration = (booking) => {
   const detail = getDisplayDetail(booking);
-  const lamaSewa = detail?.lama_sewa ?? booking?.lama_sewa;
-  const paketSewa = detail?.paket_sewa ?? booking?.paket_sewa;
+  const lamaSewa = detail?.lama_sewa || booking?.lama_sewa;
+  const paketSewa = detail?.paket_sewa || booking?.paket_sewa;
 
   if (!lamaSewa && !paketSewa) return '-';
   return `${lamaSewa || '-'} x ${formatPackage(paketSewa)}`;
@@ -229,9 +237,59 @@ const getDriverInfo = (booking) => {
   };
 };
 
+const hasPickupNotes = (booking) => {
+  return Boolean(booking?.alamat_penjemputan || booking?.catatan);
+};
+
 const getPaidAmount = (booking) => {
   if (booking?.total_payments != null) return booking.total_payments;
   return (booking?.payments || []).reduce((sum, payment) => sum + (payment.amount || 0), 0);
+};
+
+const getSignedCostAmount = (cost) => {
+  const amount = Number(cost?.amount || 0);
+  return cost?.type === 'diskon' ? -amount : amount;
+};
+
+const getDetailCostTotal = (detail, options = {}) => {
+  const costs = detail?.costs || [];
+  const filteredCosts = options.additionalOnly
+    ? costs.filter(cost => cost.is_additional)
+    : costs;
+
+  return filteredCosts.reduce((sum, cost) => sum + getSignedCostAmount(cost), 0);
+};
+
+const getDetailRentalSubtotal = (detail, booking) => {
+  const duration = detail?.lama_sewa || booking?.lama_sewa || 1;
+  return Math.max(0, ((detail?.harga_mobil || 0) - (detail?.diskon_mobil || 0)) * duration);
+};
+
+const getDetailTotalSewa = (detail, booking) => {
+  const duration = detail?.lama_sewa || booking?.lama_sewa || 1;
+
+  if (detail?.pricing_mode === 'all_in') {
+    return ((detail?.harga_all_in || 0) * duration) + getDetailCostTotal(detail, { additionalOnly: true });
+  }
+
+  return getDetailRentalSubtotal(detail, booking) + getDetailCostTotal(detail);
+};
+
+const hasPricedDetails = (booking) => {
+  const details = booking?.booking_details || [];
+  return details
+    .filter(detail => detail.status !== 'batal')
+    .some(detail => detail.unit_id && ((detail.harga_mobil || 0) > 0 || (detail.harga_all_in || 0) > 0));
+};
+
+const getTotalSewa = (booking) => {
+  if (!hasPricedDetails(booking)) return booking?.harga_dealing || 0;
+
+  if (booking?.total_tagihan != null) return booking.total_tagihan;
+
+  return (booking?.booking_details || [])
+    .filter(detail => detail.status !== 'batal')
+    .reduce((sum, detail) => sum + getDetailTotalSewa(detail, booking), 0);
 };
 
 const getLateInfo = (booking) => {
@@ -264,48 +322,93 @@ const getLateInfo = (booking) => {
 const rowClass = (data) => {
   return getLateInfo(data) ? 'booking-row booking-row-late' : 'booking-row';
 };
+
+const getBookingCardClass = (booking) => {
+  const statusClassMap = {
+    follow_up: 'booking-card-neutral',
+    confirm: 'booking-card-info',
+    waiting_list: 'booking-card-neutral',
+    rental_unit: 'booking-card-success',
+    selesai: 'booking-card-success',
+    batal: 'booking-card-error',
+  };
+
+  return statusClassMap[booking?.status] || 'booking-card-neutral';
+};
 </script>
 
 <template>
-  <div class="p-4">
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold">Manajemen Booking</h1>
-      <Button label="Buat Booking" icon="pi pi-plus" @click="router.push('/bookings/create')" />
+  <div class="page-container" :class="{ 'booking-list-active': activeTab === 0 }">
+    <!-- Page Header -->
+    <div class="page-header">
+      <div class="header-left">
+        <h1 class="text-h1">Manajemen Booking</h1>
+        <p class="text-secondary text-xs">Kelola semua pesanan rental kendaraan dalam satu panel.</p>
+      </div>
+      <button class="btn-pill btn-primary create-booking-button" @click="router.push('/bookings/create')">
+        <i class="pi pi-plus"></i>
+        <span class="create-label-desktop">Buat Booking</span>
+        <span class="create-label-mobile">Booking</span>
+      </button>
     </div>
 
-    <TabView v-model:activeIndex="activeTab">
-      <TabPanel header="Daftar Booking">
-        <Toolbar class="mb-4">
-          <template #start>
-            <div class="flex flex-wrap gap-3 items-end">
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-semibold text-gray-500">Status</label>
-                <Dropdown v-model="filters.status" :options="statusOptions" optionLabel="label" optionValue="value" placeholder="Semua Status" showClear class="w-48" />
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-semibold text-gray-500">Mulai</label>
-                <DatePicker v-model="filters.date_from" dateFormat="yy-mm-dd" placeholder="Dari Tanggal" class="w-40" />
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-semibold text-gray-500">Sampai</label>
-                <DatePicker v-model="filters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai Tanggal" class="w-40" />
-              </div>
-              <Button icon="pi pi-filter" label="Filter" @click="applyFilters" :loading="loading" />
-            </div>
-          </template>
-        </Toolbar>
+    <!-- Tab Toggle -->
+    <div class="tab-toggle-container">
+      <div class="pill-toggle">
+        <button 
+          class="toggle-item" 
+          :class="{ active: activeTab === 0 }" 
+          @click="activeTab = 0"
+        >
+          Daftar Booking
+        </button>
+        <button 
+          class="toggle-item" 
+          :class="{ active: activeTab === 1 }" 
+          @click="activeTab = 1"
+        >
+          Kalender Unit
+        </button>
+      </div>
+    </div>
 
-        <ContextMenu ref="bookingContextMenu" :model="contextMenuItems" />
+    <div v-if="activeTab === 0" class="tab-content booking-list-tab">
+      <!-- Filter Bar -->
+      <div class="filter-bar surface-card">
+        <div class="filter-groups">
+          <div class="filter-group">
+            <label>Status</label>
+            <Dropdown v-model="filters.status" :options="statusOptions" optionLabel="label" optionValue="value" placeholder="Semua Status" showClear class="w-full md:w-44" />
+          </div>
+          <div class="filter-group">
+            <label>Mulai</label>
+            <DatePicker v-model="filters.date_from" dateFormat="yy-mm-dd" placeholder="Dari Tanggal" class="w-full md:w-36" />
+          </div>
+          <div class="filter-group">
+            <label>Sampai</label>
+            <DatePicker v-model="filters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai Tanggal" class="w-full md:w-36" />
+          </div>
+        </div>
+        <button class="btn-pill btn-primary btn-pill-compact" @click="applyFilters" :disabled="loading">
+          <i class="pi pi-filter"></i> Filter
+        </button>
+      </div>
 
-        <DataTable 
-          :value="bookings" 
-          lazy 
-          paginator 
-          :rows="pagination.per_page" 
-          :totalRecords="pagination.total" 
+      <ContextMenu ref="bookingContextMenu" :model="contextMenuItems" />
+
+      <!-- Desktop DataTable -->
+      <div v-if="!isMobile" class="booking-table-shell">
+        <DataTable
+          :value="bookings"
+          lazy
+          paginator
+          scrollable
+          scrollHeight="flex"
+          :rows="pagination.per_page"
+          :totalRecords="pagination.total"
           @page="onPage"
           :loading="loading"
-          class="p-datatable-sm"
+          class="drent-datatable"
           responsiveLayout="scroll"
           :rowClass="rowClass"
           v-model:contextMenuSelection="contextMenuSelection"
@@ -313,195 +416,204 @@ const rowClass = (data) => {
           @row-dblclick="onRowDoubleClick"
           @row-contextmenu="onRowContextMenu"
         >
-          <Column header="Aksi" :exportable="false" style="min-width: 8rem">
+         <Column header="Aksi" class="text-center">
             <template #body="{ data }">
-              <div class="booking-actions">
-                <Button
-                  icon="pi pi-eye"
-                  outlined
-                  rounded
-                  size="small"
-                  severity="info"
-                  @click.stop="goToDetail(data.id)"
-                  v-tooltip="'Lihat Detail'"
-                />
-                <Button
-                  icon="pi pi-sync"
-                  outlined
-                  rounded
-                  size="small"
-                  severity="help"
-                  @click.stop="openStatusDialog(data)"
-                  v-tooltip="'Ubah Status'"
-                  :disabled="!canUpdateStatus(data)"
-                />
-              </div>
+               <div class="action-pill-group">
+                  <button class="action-btn" @click.stop="goToDetail(data.id)"><i class="pi pi-eye"></i></button>
+                  <button class="action-btn" @click.stop="openStatusDialog(data)" :disabled="!canUpdateStatus(data)"><i class="pi pi-sync"></i></button>
+               </div>
             </template>
           </Column>
           <Column header="Kode" style="min-width: 9rem">
             <template #body="{ data }">
               <div class="flex flex-col items-start gap-1">
-                <span class="font-semibold whitespace-nowrap">{{ data.kode_booking }}</span>
-                <div class="flex items-center gap-2">
-                  <BookingStatusBadge :status="data.status" />
-                  <Tag
-                    v-if="getLateInfo(data)"
-                    severity="danger"
-                    :value="`Terlambat ${getLateInfo(data).label}`"
-                    icon="pi pi-exclamation-triangle"
-                    class="text-[10px]"
-                  />
-                </div>
+                <span class="font-bold">{{ data.kode_booking }}</span>
+                <BookingStatusBadge :status="data.status" />
               </div>
             </template>
           </Column>
           <Column header="Pelanggan" style="min-width: 10rem">
             <template #body="{ data }">
-              <div class="flex flex-col">
+              <div class="flex flex-col items-start gap-1">
                 <span class="font-semibold">{{ data.customer?.nama || '-' }}</span>
-                <span class="text-xs text-gray-500">{{ data.customer?.status || '-' }}</span>
+                <BookingStatusBadge v-if="data.customer?.status" :status="data.customer.status" />
+                <span v-else class="text-xs text-tertiary">Status belum ada</span>
               </div>
             </template>
           </Column>
-          <Column header="Kendaraan" style="min-width: 10rem">
+            <Column header="Unit" style="min-width: 12rem">
             <template #body="{ data }">
-              <div class="flex flex-col gap-1">
+              <div class="flex flex-col gap-0.5">
                 <span class="font-semibold">{{ getVehicleInfo(data).title }}</span>
-                <span class="text-xs text-gray-500">
-                  {{ getVehicleInfo(data).subtitle }}
-                </span>
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <span v-if="getVehicleInfo(data).ownerName" class="text-xs text-gray-600">
-                    <Tag
-                    v-if="getVehicleInfo(data).ownerBadge"
-                    :severity="getVehicleInfo(data).ownerSeverity"
-                    :value="getVehicleInfo(data).ownerBadge"
-                    class="text-[10px]"
-                  > {{ getVehicleInfo(data).ownerName }} </Tag>
-                  </span>
-                  <Tag
-                    v-if="getVehicleInfo(data).placeholder"
-                    severity="danger"
-                    value="Unit belum ditentukan"
-                    icon="pi pi-exclamation-triangle"
-                    class="!text-[10px]"
-                  />
+                <span class="text-xs text-secondary font-mono-numeric">{{ getVehicleInfo(data).subtitle }}</span>
+                <div class="mt-1" v-if="getVehicleInfo(data).ownerType">
+                  <BookingStatusBadge :status="getVehicleInfo(data).ownerType" :text="getVehicleInfo(data).ownerName" />
                 </div>
-                <span v-if="getExtraDetailCount(data)" class="text-[10px] font-semibold text-blue-600 mt-1">
-                  +{{ getExtraDetailCount(data) }} detail lain
-                </span>
               </div>
             </template>
           </Column>
-          <Column header="Driver" style="min-width: 11rem">
-            <template #body="{ data }">
-              <span v-if="getDriverInfo(data).hasDriver" class="font-medium">
-                {{ getDriverInfo(data).name }}
-              </span>
-              <Tag
-                v-else
-                severity="success"
-                :value="getDriverInfo(data).name"
-                class="!text-[10px] uppercase"
-              />
-            </template>
-          </Column>
-          <Column header="Periode Sewa" style="min-width: 13rem">
+           <Column header="Periode" style="min-width: 13rem">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
-                <span class="font-medium">{{ formatDateTime(getDisplayDetail(data)?.tgl_sewa) }}</span>
-                <span class="text-xs text-gray-500">s/d {{ formatDateTime(getDisplayDetail(data)?.tgl_kembali) }}</span>
-                <span class="text-xs font-semibold text-gray-700 mt-1">{{ getRentalDuration(data) }}</span>
-                <Tag
-                  v-if="getLateInfo(data)"
-                  severity="danger"
-                  :value="`Lewat ${getLateInfo(data).label}`"
-                  icon="pi pi-clock"
-                  class="self-start text-[10px]"
-                />
+                <span class="font-medium text-xs">{{ formatDateTime(getDisplayDetail(data)?.tgl_sewa) }}</span>
+                <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getDisplayDetail(data)?.tgl_kembali) }}</span>
+                <span class="text-[11px] font-bold text-secondary mt-1">{{ getRentalDuration(data) }}</span>
               </div>
             </template>
           </Column>
-          <Column header="Alamat Penjemputan" style="min-width: 14rem">
+          <Column header="Total Biaya" style="min-width: 10rem">
             <template #body="{ data }">
-              <span class="text-sm text-gray-700">{{ data.alamat_penjemputan || '-' }}</span>
-            </template>
-          </Column>
-          <Column header="Tujuan & Catatan" style="min-width: 14rem">
-            <template #body="{ data }">
-              <div class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{{ data.tujuan || '-' }}</span>
-                <span class="text-xs text-gray-500 line-clamp-2">{{ data.catatan || '-' }}</span>
+              <div class="flex flex-col items-end">
+                <span class="font-mono-numeric text-primary text-sm">{{ formatCurrency(getTotalSewa(data)) }}</span>
+                <span class="font-mono-numeric text-positive text-sm">{{ formatCurrency(getPaidAmount(data)) }}</span>
+                <span class="font-mono-numeric text-info text-sm italic">(sisa){{ formatCurrency(getTotalSewa(data)-getPaidAmount(data)) }}</span>
               </div>
             </template>
           </Column>
-          <Column header="Harga Dealing" style="min-width: 8rem">
+          <Column header="Tujuan" style="min-width: 11rem">
             <template #body="{ data }">
-              {{ formatCurrency(data.harga_dealing) }}
+              <span class="table-text-clamp font-medium">{{ data.tujuan || '-' }}</span>
             </template>
           </Column>
-          <Column header="Sudah Bayar" style="min-width: 8rem">
+          <Column header="Kota" style="min-width: 9rem">
             <template #body="{ data }">
-              <span class="font-semibold text-emerald-600">{{ formatCurrency(getPaidAmount(data)) }}</span>
+              <span class="table-text-clamp font-medium">{{ data.kota || '-' }}</span>
             </template>
           </Column>
-          <Column header="Dibuat" style="min-width: 10rem">
+          <Column header="Alamat & Catatan" style="min-width: 17rem">
             <template #body="{ data }">
-              <div class="flex flex-col">
-                <span>{{ formatDateTime(data.created_at) }}</span>
-                <span class="text-xs text-gray-500">{{ data.created_by_user?.name || '-' }}</span>
+              <div v-if="hasPickupNotes(data)" class="table-note-stack">
+                <div v-if="data.alamat_penjemputan" class="table-note-line">
+                  <span class="font-bold">{{ data.alamat_penjemputan }}</span>
+                </div>
+                <div v-if="data.catatan" class="table-note-line">
+                  <span class="text-xs text-secondary italic">*{{ data.catatan }}</span>
+                </div>
+              </div>
+              <span v-else class="text-secondary">-</span>
+            </template>
+          </Column>
+        
+          <Column header="Driver" style="min-width: 10rem">
+            <template #body="{ data }">
+              <div class="driver-cell" :class="{ 'driver-cell-empty': !getDriverInfo(data).hasDriver }">
+                <span class="driver-name">{{ getDriverInfo(data).name }}</span>
+                <span class="status-badge" :class="getDriverInfo(data).hasDriver ? 'info' : 'success'">{{ getDriverInfo(data).hasDriver ? 'Dengan driver' : 'Tanpa driver' }}</span>
               </div>
             </template>
           </Column>
+         
         </DataTable>
-      </TabPanel>
+      </div>
 
-      <TabPanel header="Kalender Unit">
-        <div class="flex justify-between items-center mb-4">
-          <div class="flex items-center gap-4">
-            <Button icon="pi pi-chevron-left" @click="prevMonth" text rounded />
-            <h2 class="text-xl font-semibold">{{ format(new Date(calendarStart), 'MMMM yyyy') }}</h2>
-            <Button icon="pi pi-chevron-right" @click="nextMonth" text rounded />
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-sm text-gray-500 italic">* Klik pada sel kosong untuk membuat booking baru pada unit dan tanggal tersebut</span>
-          </div>
-        </div>
+      <!-- Mobile Card List -->
+      <div v-else class="mobile-card-list">
+         <div v-if="loading" class="p-4 text-center">
+            <ProgressBar mode="indeterminate" style="height: 4px" />
+         </div>
+         <div v-else-if="bookings.length === 0" class="p-8 text-center text-secondary">
+            Tidak ada booking ditemukan.
+         </div>
+         <div
+           v-else
+           v-for="booking in bookings"
+           :key="booking.id"
+           class="booking-card surface-card"
+           :class="getBookingCardClass(booking)"
+           @click="goToDetail(booking.id)"
+         >
+            <div class="card-header">
+               <BookingStatusBadge :status="booking.status" />
+               <span class="font-bold text-sm">{{ getVehicleInfo(booking).title }}</span>
+               <span class="text-xs text-semibold text-tertiary">{{ booking.kode_booking }}</span>
+            </div>
+            <div class="card-body">
+               <div class="info-row">
+                  <div class="info-col">
+                     <span class="label">Pelanggan</span>
+                     <span class="value">{{ booking.customer?.nama || '-' }}</span>
+                  </div>
+                  <div class="info-col items-end">
+                     <span class="label">Unit</span>
+                     <span class="value">{{ getVehicleInfo(booking).title }}</span>
+                  </div>
+               </div>
+               <div class="info-row mt-3">
+                  <div class="info-col">
+                     <span class="label">Periode</span>
+                     <span class="value text-xs">{{ formatDateTime(getDisplayDetail(booking)?.tgl_sewa) }}</span>
+                  </div>
+                  <div class="info-col items-end">
+                     <span class="label">Durasi</span>
+                     <span class="value">{{ getRentalDuration(booking) }}</span>
+                  </div>
+               </div>
+               <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
+                  <i class="pi pi-clock"></i> Terlambat {{ getLateInfo(booking).label }}
+               </div>
+            </div>
+            <div class="card-footer">
+               <div class="amount-group">
+                  <span class="text-tertiary text-[10px]">Total Sewa</span>
+                  <span class="font-mono-numeric font-bold text-sm">{{ formatCurrency(getTotalSewa(booking)) }}</span>
+               </div>
+               <div class="amount-group items-end">
+                  <span class="text-tertiary text-[10px]">Sudah Bayar</span>
+                  <span class="font-mono-numeric font-bold text-sm text-positive">{{ formatCurrency(getPaidAmount(booking)) }}</span>
+               </div>
+            </div>
+         </div>
+         <!-- Mobile Paginator -->
+         <div class="mobile-paginator mt-4">
+            <Button icon="pi pi-chevron-left" :disabled="pagination.current_page === 1" @click="onPage({page: pagination.current_page - 2})" text />
+            <span class="text-sm">Hal {{ pagination.current_page }} dari {{ pagination.last_page }}</span>
+            <Button icon="pi pi-chevron-right" :disabled="pagination.current_page === pagination.last_page" @click="onPage({page: pagination.current_page})" text />
+         </div>
+      </div>
+    </div>
 
-        <ProgressBar v-if="unitsLoading" mode="indeterminate" style="height: 6px" class="mb-4" />
+    <div v-if="activeTab === 1" class="tab-content">
+      <div class="calendar-header">
+         <div class="flex items-center gap-4">
+           <Button icon="pi pi-chevron-left" @click="prevMonth" text rounded />
+           <h2 class="calendar-title">{{ format(new Date(calendarStart), 'MMMM yyyy') }}</h2>
+           <Button icon="pi pi-chevron-right" @click="nextMonth" text rounded />
+         </div>
+      </div>
 
-        <div v-if="!unitsLoading && units.length === 0" class="p-8 text-center bg-gray-50 rounded-lg border border-dashed">
-          <i class="pi pi-info-circle text-4xl text-gray-400 mb-3"></i>
-          <p class="text-gray-500">Tidak ada unit kendaraan yang tersedia untuk ditampilkan di kalender.</p>
-        </div>
+      <ProgressBar v-if="unitsLoading" mode="indeterminate" style="height: 4px" class="mb-4" />
 
-        <BookingCalendar 
-          v-else
-          :bookings="calendarBookings" 
-          :units="units" 
-          :startDate="calendarStart"
-          @booking-click="goToDetail"
-          @cell-click="openCreateWithPreFill"
-        />
-      </TabPanel>
-    </TabView>
+      <div v-if="!unitsLoading && units.length === 0" class="drent-empty-state">
+        <i class="pi pi-info-circle text-4xl text-tertiary mb-3"></i>
+        <p class="text-secondary">Tidak ada unit kendaraan yang tersedia.</p>
+      </div>
+
+      <BookingCalendar 
+        v-else
+        :bookings="calendarBookings" 
+        :units="units" 
+        :startDate="calendarStart"
+        @booking-click="goToDetail"
+        @cell-click="openCreateWithPreFill"
+      />
+    </div>
 
     <!-- Status Dialog -->
-    <Dialog v-model:visible="showStatusDialog" header="Perbarui Status Booking" :style="{ width: '450px' }" modal>
+    <Dialog v-model:visible="showStatusDialog" header="Perbarui Status Booking" :style="{ width: '450px' }" modal :position="isMobile ? 'bottom' : 'center'" :class="{'mobile-bottom-sheet': isMobile}">
       <div class="flex flex-col gap-4">
-        <div v-if="selectedBooking" class="p-3 bg-gray-50 rounded border">
-          <div class="flex justify-between text-sm">
-            <span>Booking:</span>
+        <div v-if="selectedBooking" class="status-summary-card">
+          <div class="flex justify-between">
+            <span class="text-tertiary">Booking</span>
             <span class="font-bold">{{ selectedBooking.kode_booking }}</span>
           </div>
-          <div class="flex justify-between text-sm mt-1">
-            <span>Status Saat Ini:</span>
+          <div class="flex justify-between mt-2">
+            <span class="text-tertiary">Status Saat Ini</span>
             <BookingStatusBadge :status="selectedBooking.status" />
           </div>
         </div>
 
-        <div class="flex flex-col gap-2">
-          <label class="font-semibold">Pilih Status Baru</label>
+        <div class="flex flex-col gap-1.5">
+          <label class="font-semibold text-xs text-secondary">Pilih Status Baru</label>
           <Dropdown 
             v-model="newStatus" 
             :options="getAllowedNextStatuses(selectedBooking?.status)" 
@@ -512,58 +624,546 @@ const rowClass = (data) => {
           />
         </div>
 
-        <div class="flex flex-col gap-2">
-          <label class="font-semibold">Catatan Status (Opsional)</label>
+        <div class="flex flex-col gap-1.5">
+          <label class="font-semibold text-xs text-secondary">Catatan Status (Opsional)</label>
           <Textarea v-model="statusNote" rows="3" class="w-full" />
         </div>
       </div>
 
       <template #footer>
-        <Button label="Batal" icon="pi pi-times" text @click="showStatusDialog = false" />
-        <Button label="Simpan Perubahan" icon="pi pi-check" @click="saveStatus" :loading="statusLoading" :disabled="!newStatus" />
+        <div class="flex gap-2 w-full">
+           <Button label="Batal" icon="pi pi-times" text class="flex-1" @click="showStatusDialog = false" />
+           <Button label="Simpan" icon="pi pi-check" class="flex-1" @click="saveStatus" :loading="statusLoading" :disabled="!newStatus" />
+        </div>
       </template>
     </Dialog>
   </div>
 </template>
 
 <style scoped>
-:deep(.booking-row) {
-  cursor: pointer;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+.page-container {
+  padding: var(--space-2xl);
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
 }
 
-:deep(.booking-row:hover) {
-  background-color: #f8fafc !important;
-  box-shadow: inset 3px 0 0 #3b82f6;
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-3xl);
 }
 
-:deep(.booking-row:hover > td) {
-  background-color: transparent !important;
+.create-label-mobile {
+   display: none;
+}
+
+/* === Tab Toggle === */
+.tab-toggle-container {
+   margin-bottom: var(--space-2xl);
+}
+
+.pill-toggle {
+   display: inline-flex;
+   background: var(--card-bg);
+   padding: 4px;
+   border-radius: var(--radius-full);
+   gap: 4px;
+}
+
+.toggle-item {
+   padding: 6px 16px;
+   border-radius: var(--radius-full);
+   border: none;
+   background: transparent;
+   font-family: var(--font-body);
+   font-size: 12px;
+   font-weight: 600;
+   color: var(--text-secondary);
+   cursor: pointer;
+   transition: all 0.2s;
+}
+
+.toggle-item.active {
+   background: var(--text-primary);
+   color: #FFFFFF;
+   box-shadow: var(--shadow-tile);
+}
+
+/* === Filter Bar === */
+.filter-bar {
+   padding: var(--space-md);
+   display: flex;
+   justify-content: space-between;
+   align-items: flex-end;
+   margin-bottom: var(--space-lg);
+   gap: var(--space-lg);
+   flex-wrap: wrap;
+}
+
+.filter-groups {
+   display: flex;
+   gap: var(--space-xl);
+   flex-wrap: wrap;
+}
+
+.filter-group {
+   display: flex;
+   flex-direction: column;
+   gap: 4px;
+}
+
+.filter-group label {
+   font-size: 11px;
+   font-weight: 600;
+   color: var(--text-tertiary);
+   margin-left: 4px;
+}
+
+/* === DataTable Styling === */
+.booking-table-shell {
+   width: 100%;
 }
 
 :deep(.booking-row-late) {
-  background-color: #fff1f2 !important;
-  border-left: 3px solid #f43f5e !important;
+   background-color: rgba(229, 83, 75, 0.04) !important;
 }
 
-:deep(.booking-row-late:hover) {
-  background-color: #ffe4e6 !important;
-  box-shadow: inset 3px 0 0 #f43f5e;
+:deep(.booking-row-late td:first-child) {
+   border-left: 3px solid var(--negative);
 }
 
-.booking-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+.drent-datatable {
+   width: 100%;
+   border: 1px solid var(--surface-border);
+   border-radius: var(--radius-default);
+   overflow: hidden;
+   background: var(--surface-default);
+   box-shadow: var(--shadow-tile);
 }
 
-.booking-actions :deep(.p-button) {
-  width: 2rem;
-  height: 2rem;
+:deep(.drent-datatable .p-datatable-wrapper),
+:deep(.drent-datatable .p-datatable-table-container) {
+   border-radius: inherit;
+}
+
+:deep(.drent-datatable .p-datatable-thead > tr > th),
+:deep(.drent-datatable .p-datatable-tbody > tr > td) {
+   border-right: none;
+}
+
+:deep(.drent-datatable .p-datatable-tbody > tr:last-child > td) {
+   border-bottom: none;
+}
+
+:deep(.drent-datatable .p-paginator) {
+   border-top: 1px solid var(--surface-border);
+   border-radius: 0 0 var(--radius-default) var(--radius-default);
+}
+
+.booking-code-badge {
+   display: inline-flex;
+   align-items: center;
+   width: fit-content;
+   max-width: 100%;
+   padding: 5px 10px;
+   border-radius: var(--radius-full);
+   background: rgba(43, 52, 72, 0.08);
+   color: var(--text-primary);
+   font-size: 11px;
+   font-weight: 700;
+   line-height: 1.2;
+   white-space: nowrap;
+}
+
+.table-text-clamp {
+   display: -webkit-box;
+   -webkit-line-clamp: 2;
+   -webkit-box-orient: vertical;
+   overflow: hidden;
+   line-height: 1.35;
+}
+
+.table-note-stack {
+   display: flex;
+   flex-direction: column;
+   gap: 6px;
+}
+
+.table-note-line {
+   display: flex;
+   flex-direction: column;
+   gap: 2px;
+}
+
+.table-note-label {
+   width: fit-content;
+   color: var(--text-tertiary);
+   font-size: 10px;
+   font-weight: 700;
+   text-transform: uppercase;
+}
+
+.driver-cell {
+   display: inline-flex;
+   flex-direction: column;
+   align-items: flex-start;
+   gap: 2px;
+   max-width: 100%;
+}
+
+.driver-name {
+   color: var(--text-primary);
+   font-size: 12px;
+   font-weight: 700;
+   line-height: 1.25;
+}
+
+.driver-mode {
+   color: var(--text-tertiary);
+   font-size: 10px;
+   font-weight: 600;
+}
+
+.driver-cell-empty .driver-name {
+   color: var(--text-secondary);
+}
+
+.action-pill-group {
+   display: inline-flex;
+   background: var(--surface-default);
+   border: 1px solid var(--surface-border);
+   padding: 2px;
+   border-radius: var(--radius-full);
+   gap: 2px;
+}
+
+.action-btn {
+   width: 28px;
+   height: 28px;
+   border-radius: var(--radius-full);
+   border: none;
+   background: transparent;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   color: var(--text-secondary);
+   cursor: pointer;
+   transition: all 0.2s;
+}
+
+.action-btn:hover:not(:disabled) {
+   background: var(--card-bg-hover);
+   color: var(--text-primary);
+}
+
+.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* === Mobile Card List === */
+.mobile-card-list {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-sm);
+}
+
+.booking-card {
+   padding: var(--space-lg);
+   cursor: pointer;
+}
+
+.card-header {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   margin-bottom: var(--space-lg);
+   padding-bottom: var(--space-sm);
+   border-bottom: 1px solid var(--surface-border);
+}
+
+.info-row { display: flex; justify-content: space-between; gap: var(--space-md); }
+.info-col { display: flex; flex-direction: column; gap: 2px; }
+.info-col .label { font-size: 10px; color: var(--text-tertiary); font-weight: 500; }
+.info-col .value { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+
+.late-banner-mini {
+   display: inline-flex;
+   align-items: center;
+   gap: 6px;
+   padding: 4px 8px;
+   background: rgba(229, 83, 75, 0.08);
+   color: var(--negative);
+   border-radius: var(--radius-xs);
+   font-size: 10px;
+   font-weight: 700;
+}
+
+.card-footer {
+   margin-top: var(--space-lg);
+   padding-top: var(--space-md);
+   border-top: 1px dashed var(--surface-border);
+   display: flex;
+   justify-content: space-between;
+}
+
+.amount-group { display: flex; flex-direction: column; }
+
+.mobile-paginator {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   gap: var(--space-xl);
+   color: var(--text-secondary);
+}
+
+/* === Calendar Polish === */
+.calendar-header {
+   margin-bottom: var(--space-xl);
+}
+
+.calendar-title {
+   font-family: var(--font-headline);
+   font-size: 16px;
+   font-weight: 700;
+   color: var(--text-primary);
+   text-transform: capitalize;
+}
+
+.drent-empty-state {
+   padding: var(--space-3xl);
+   text-align: center;
+   background: var(--card-bg);
+   border-radius: var(--radius-default);
+   border: 1px dashed var(--surface-border);
+}
+
+/* === Dialog/Bottom Sheet === */
+.status-summary-card {
+   background: var(--card-bg);
+   padding: var(--space-lg);
+   border-radius: var(--radius-default);
+   font-size: 12px;
+}
+
+:deep(.mobile-bottom-sheet) {
+   margin: 0 !important;
+   width: 100% !important;
+   border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+   max-height: 80vh;
+}
+
+@media (max-width: 768px) {
+  .page-container {
+     padding: var(--space-lg);
+  }
+
+  .page-header {
+     margin-bottom: var(--space-xl);
+  }
+
+  .page-header .header-left p {
+     display: none;
+  }
+
+  .page-header .text-h1 {
+     font-size: 20px;
+     line-height: 1.2;
+  }
+
+  .tab-toggle-container {
+     margin-bottom: var(--space-xl);
+  }
+
+  .pill-toggle {
+     width: fit-content;
+     max-width: 100%;
+     padding: 4px;
+  }
+
+  .toggle-item {
+     min-height: 32px;
+     padding: 7px 16px;
+     font-size: 12px;
+  }
+
+  .filter-bar {
+     align-items: flex-start;
+     flex-direction: column;
+     gap: var(--space-md);
+     padding: var(--space-lg);
+     margin-bottom: var(--space-md);
+     border-radius: var(--radius-default);
+  }
+
+  .filter-groups {
+     width: 100%;
+     flex-direction: column;
+     gap: var(--space-md);
+  }
+
+  .filter-group {
+     width: 100%;
+     max-width: 205px;
+     gap: 6px;
+  }
+
+  .filter-group label {
+     margin-left: 4px;
+     font-size: 10px;
+  }
+
+  .filter-group :deep(.p-dropdown),
+  .filter-group :deep(.p-datepicker),
+  .filter-group :deep(.p-inputtext) {
+     width: 100%;
+  }
+
+  .filter-bar .btn-pill {
+     min-height: 30px;
+     padding: 6px 12px;
+  }
+
+  .create-booking-button {
+     position: fixed;
+     right: var(--space-lg);
+     bottom: calc(72px + env(safe-area-inset-bottom));
+     z-index: 150;
+     padding: 12px 16px;
+     box-shadow: 0 12px 28px rgba(26, 29, 46, 0.22);
+  }
+  .create-label-desktop { display: none; }
+  .create-label-mobile { display: inline; }
+
+  .mobile-card-list {
+     gap: var(--space-md);
+     padding-bottom: 80px;
+  }
+
+  .booking-card {
+     padding: var(--space-md);
+     border-width: 1px;
+     border-style: solid;
+     border-radius: var(--radius-default);
+     box-shadow: var(--shadow-tile);
+  }
+
+  .booking-card-neutral {
+     border-color: var(--neutral-4);
+  }
+
+  .booking-card-info {
+     border-color: var(--info-cyan);
+  }
+
+  .booking-card-success {
+     border-color: var(--positive);
+  }
+
+  .booking-card-error {
+     border-color: var(--negative);
+  }
+
+  .card-header {
+     margin-bottom: var(--space-md);
+     padding-bottom: var(--space-sm);
+     align-items: center;
+  }
+
+  .card-header :deep(.status-badge) {
+     padding: 5px 10px;
+     font-size: 10px;
+  }
+
+  .card-body {
+     display: flex;
+     flex-direction: column;
+     gap: var(--space-md);
+  }
+
+  .info-row {
+     align-items: flex-start;
+     gap: var(--space-md);
+  }
+
+  .info-col {
+     flex: 1 1 0;
+     min-width: 0;
+  }
+
+  .info-col.items-end {
+     text-align: right;
+  }
+
+  .info-col .label {
+     font-size: 10px;
+  }
+
+  .info-col .value {
+     font-size: 12px;
+     line-height: 1.25;
+     overflow-wrap: anywhere;
+  }
+
+  .card-footer {
+     margin-top: var(--space-md);
+     padding-top: var(--space-sm);
+     align-items: flex-end;
+  }
+
+  .amount-group {
+     min-width: 0;
+  }
+
+  .amount-group.items-end {
+     text-align: right;
+  }
+}
+
+@media (min-width: 769px) {
+  .page-container.booking-list-active {
+     height: 100dvh;
+     min-height: 0;
+     display: flex;
+     flex-direction: column;
+     overflow: hidden;
+  }
+
+  .page-container.booking-list-active .page-header,
+  .page-container.booking-list-active .tab-toggle-container {
+     flex: 0 0 auto;
+  }
+
+  .booking-list-tab {
+     flex: 1 1 auto;
+     min-height: 0;
+     display: flex;
+     flex-direction: column;
+     overflow: hidden;
+  }
+
+  .filter-bar {
+     flex: 0 0 auto;
+  }
+
+  .booking-table-shell {
+     flex: 1 1 auto;
+     min-height: 0;
+     display: flex;
+     overflow: hidden;
+  }
+
+  .drent-datatable {
+     flex: 1 1 auto;
+     min-height: 0;
+     display: flex;
+     flex-direction: column;
+  }
+
+  :deep(.drent-datatable .p-datatable-table-container),
+  :deep(.drent-datatable .p-datatable-wrapper) {
+     flex: 1 1 auto;
+     min-height: 0;
+     overflow: auto;
+  }
 }
 </style>

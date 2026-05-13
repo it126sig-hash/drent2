@@ -48,7 +48,7 @@ class PricingPackageController extends Controller
     public function show(PricingPackage $pricingPackage)
     {
         $this->authorize('view', $pricingPackage);
-        return new PricingPackageResource($pricingPackage);
+        return new PricingPackageResource($pricingPackage->loadMissing(['costType', 'items.costType']));
     }
 
     /**

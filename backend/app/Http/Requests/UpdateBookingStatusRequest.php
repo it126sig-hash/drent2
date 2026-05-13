@@ -16,6 +16,7 @@ class UpdateBookingStatusRequest extends FormRequest
         return [
             'status' => ['required', 'string', 'in:follow_up,confirm,waiting_list,rental_unit,selesai,batal'],
             'catatan_status' => ['nullable', 'string', 'max:500'],
+            'returned_at' => ['nullable', 'date'],
         ];
     }
 }

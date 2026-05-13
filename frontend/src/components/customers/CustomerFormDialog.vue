@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
@@ -8,6 +8,7 @@ import Textarea from 'primevue/textarea'
 import Checkbox from 'primevue/checkbox'
 import Message from 'primevue/message'
 import { useAuthStore } from '../../stores/auth'
+import { useCity } from '../../composables/useCity'
 
 const props = defineProps({
   visible: Boolean,
@@ -20,11 +21,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'save'])
 const authStore = useAuthStore()
+const { cities, fetchAll: fetchCities, loading: citiesLoading } = useCity()
 
 const formData = ref({
   nama: '',
   kontak_1: '',
   kontak_2: '',
+  email: '',
   alamat: '',
   kota: '',
   status: 'Normal',
@@ -43,6 +46,16 @@ const statusOptions = [
 ]
 
 const showWarning = computed(() => ['Redflag', 'Blacklist'].includes(formData.value.status))
+const cityOptions = computed(() =>
+  cities.value
+    .filter(city => city.is_active)
+    .map(city => ({
+      label: city.provinsi ? `${city.nama} - ${city.provinsi}` : city.nama,
+      value: city.nama
+    }))
+)
+
+onMounted(() => fetchCities({ per_page: 200, is_active: true }))
 
 watch(() => props.customer, (newVal) => {
   if (newVal) {
@@ -57,6 +70,7 @@ function resetForm() {
     nama: '',
     kontak_1: '',
     kontak_2: '',
+    email: '',
     alamat: '',
     kota: '',
     status: 'Normal',
@@ -119,6 +133,11 @@ const handleClose = () => {
           </div>
         </div>
 
+        <div class="field">
+          <label for="email">Email</label>
+          <InputText id="email" v-model="formData.email" type="email" placeholder="nama@email.com" />
+        </div>
+
         <div class="form-row">
           <div class="field">
             <label for="status" class="label-required">Status</label>
@@ -132,7 +151,16 @@ const handleClose = () => {
 
         <div class="field">
           <label for="kota">Kota Domisili</label>
-          <InputText id="kota" v-model="formData.kota" placeholder="Contoh: Surabaya" />
+          <Dropdown
+            id="kota"
+            v-model="formData.kota"
+            :options="cityOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Pilih kota"
+            filter
+            :loading="citiesLoading"
+          />
         </div>
 
         <div class="field">

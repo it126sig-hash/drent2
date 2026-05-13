@@ -14,9 +14,12 @@ use App\Http\Controllers\Api\V1\BookingCostController;
 use App\Http\Controllers\Api\V1\BookingModificationController;
 use App\Http\Controllers\Api\V1\PaymentAccountController;
 use App\Http\Controllers\Api\V1\CostTypeController;
+use App\Http\Controllers\Api\V1\CityController;
 use App\Http\Controllers\Api\V1\PricingPackageController;
 use App\Http\Controllers\Api\V1\BookingPaymentController;
 use App\Http\Controllers\Api\V1\RefundController;
+use App\Http\Controllers\Api\V1\PhysicalCheckController;
+use App\Http\Controllers\Api\V1\PhysicalCheckItemController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -54,8 +57,17 @@ Route::prefix('v1')->group(function () {
 
         // Master Data: Payment Accounts, Cost Types, Pricing Packages
         Route::apiResource('payment-accounts', PaymentAccountController::class);
+        Route::apiResource('cities', CityController::class);
         Route::apiResource('cost-types', CostTypeController::class);
         Route::apiResource('pricing-packages', PricingPackageController::class);
+
+        // Physical Checks
+        Route::get('physical-check-items', [PhysicalCheckItemController::class, 'index']);
+        Route::get('physical-checks/bookings', [PhysicalCheckController::class, 'bookings']);
+        Route::post('physical-checks/request', [PhysicalCheckController::class, 'request']);
+        Route::post('physical-checks', [PhysicalCheckController::class, 'store']);
+        Route::get('bookings/{booking}/physical-checks/{type}', [PhysicalCheckController::class, 'showByBooking']);
+        Route::get('physical-checks/{physicalCheck}', [PhysicalCheckController::class, 'show']);
 
         // Booking Payments (C1)
         Route::get('bookings/{booking}/payments', [BookingPaymentController::class, 'index']);

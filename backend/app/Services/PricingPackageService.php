@@ -4,12 +4,14 @@ namespace App\Services;
 
 use App\Models\PricingPackage;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class PricingPackageService
 {
     public function getAll(array $filters = [])
     {
         $query = PricingPackage::query()
+            ->with(['costType', 'items.costType'])
             ->where('tenant_id', Auth::user()->tenant_id);
 
         // Branch scope
@@ -35,23 +37,57 @@ class PricingPackageService
 
     public function create(array $data)
     {
-        $data['tenant_id'] = Auth::user()->tenant_id;
+        return DB::transaction(function () use ($data) {
+            $items = $data['items'] ?? [];
+            unset($data['items']);
 
-        if (!isset($data['branch_id'])) {
-            $data['branch_id'] = Auth::user()->branch_id;
-        }
+            $data['tenant_id'] = Auth::user()->tenant_id;
 
-        return PricingPackage::create($data);
+            if (!isset($data['branch_id'])) {
+                $data['branch_id'] = Auth::user()->branch_id;
+            }
+
+            $package = PricingPackage::create($data);
+            $this->syncItems($package, $items);
+
+            return $package->load(['costType', 'items.costType']);
+        });
     }
 
     public function update(PricingPackage $pricingPackage, array $data)
     {
-        $pricingPackage->update($data);
-        return $pricingPackage;
+        return DB::transaction(function () use ($pricingPackage, $data) {
+            $items = $data['items'] ?? null;
+            unset($data['items']);
+
+            $pricingPackage->update($data);
+
+            if (is_array($items)) {
+                $this->syncItems($pricingPackage, $items);
+            }
+
+            return $pricingPackage->load(['costType', 'items.costType']);
+        });
     }
 
     public function delete(PricingPackage $pricingPackage)
     {
         return $pricingPackage->delete();
+    }
+
+    protected function syncItems(PricingPackage $pricingPackage, array $items): void
+    {
+        $pricingPackage->items()->delete();
+
+        foreach (array_values($items) as $index => $item) {
+            $pricingPackage->items()->create([
+                'cost_type_id' => $item['cost_type_id'] ?? null,
+                'type'         => $item['type'] ?? 'biaya',
+                'label'        => $item['label'],
+                'amount'       => $item['amount'],
+                'keterangan'   => $item['keterangan'] ?? null,
+                'sort_order'   => $index + 1,
+            ]);
+        }
     }
 }

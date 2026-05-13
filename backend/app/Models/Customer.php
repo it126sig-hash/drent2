@@ -17,6 +17,7 @@ class Customer extends Model
         'nama',
         'kontak_1',
         'kontak_2',
+        'email',
         'alamat',
         'kota',
         'status',

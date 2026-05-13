@@ -32,12 +32,32 @@ class PricingPackageSeeder extends Seeder
             ],
         ];
 
+        $costTypes = \App\Models\CostType::where('tenant_id', $tenant->id)
+            ->get()
+            ->keyBy('kode');
+
         foreach ($packages as $pkg) {
-            \App\Models\PricingPackage::create(array_merge($pkg, [
+            $package = \App\Models\PricingPackage::create(array_merge($pkg, [
                 'tenant_id' => $tenant->id,
                 'branch_id' => $branch->id,
                 'is_active' => true,
             ]));
+
+            $items = [
+                ['kode' => 'driver', 'label' => 'Driver', 'amount' => 250000],
+                ['kode' => 'bbm', 'label' => 'BBM', 'amount' => 250000],
+                ['kode' => 'tol', 'label' => 'Tol', 'amount' => 150000],
+            ];
+
+            foreach ($items as $index => $item) {
+                $package->items()->create([
+                    'cost_type_id' => $costTypes[$item['kode']]->id ?? null,
+                    'type' => 'biaya',
+                    'label' => $item['label'],
+                    'amount' => $item['amount'],
+                    'sort_order' => $index + 1,
+                ]);
+            }
         }
     }
 }

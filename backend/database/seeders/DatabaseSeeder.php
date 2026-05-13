@@ -40,6 +40,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             PaymentAccountSeeder::class,
             CostTypeSeeder::class,
+            PhysicalCheckItemSeeder::class,
             PricingPackageSeeder::class,
             BookingSeeder::class,
         ]);

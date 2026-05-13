@@ -31,6 +31,7 @@ class HandleBookingRequest extends FormRequest
             'costs.*.keterangan'    => ['nullable', 'string'],
             'alamat_penjemputan'    => ['nullable', 'string', 'max:500'],
             'tujuan'                => ['nullable', 'string', 'max:500'],
+            'kota'                  => ['nullable', 'string', 'max:100'],
         ];
     }
 

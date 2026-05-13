@@ -22,12 +22,27 @@ class Booking extends Model
         'dp',
         'rekening_dp_id',
         'tujuan',
+        'kota',
         'alamat_penjemputan',
         'catatan',
+        'confirmed_at',
+        'confirmed_by',
+        'handled_at',
+        'handled_by',
+        'checked_out_at',
+        'checked_out_by',
+        'returned_at',
+        'completed_at',
+        'completed_by',
     ];
 
     protected $casts = [
         'lama_sewa' => 'integer',
+        'confirmed_at' => 'datetime',
+        'handled_at' => 'datetime',
+        'checked_out_at' => 'datetime',
+        'returned_at' => 'datetime',
+        'completed_at' => 'datetime',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
@@ -41,6 +56,26 @@ class Booking extends Model
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function confirmedBy()
+    {
+        return $this->belongsTo(User::class, 'confirmed_by');
+    }
+
+    public function handledBy()
+    {
+        return $this->belongsTo(User::class, 'handled_by');
+    }
+
+    public function checkedOutBy()
+    {
+        return $this->belongsTo(User::class, 'checked_out_by');
+    }
+
+    public function completedBy()
+    {
+        return $this->belongsTo(User::class, 'completed_by');
     }
 
     public function bookingDetails()
@@ -66,5 +101,10 @@ class Booking extends Model
     public function refunds()
     {
         return $this->hasMany(Refund::class);
+    }
+
+    public function physicalChecks()
+    {
+        return $this->hasMany(PhysicalCheck::class);
     }
 }

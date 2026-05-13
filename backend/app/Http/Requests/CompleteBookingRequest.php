@@ -15,6 +15,7 @@ class CompleteBookingRequest extends FormRequest
     {
         return [
             'skip_inspection' => ['sometimes', 'boolean'],
+            'returned_at' => ['nullable', 'date'],
         ];
     }
 }

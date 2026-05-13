@@ -12,6 +12,7 @@ class PricingPackage extends Model
     protected $fillable = [
         'tenant_id',
         'branch_id',
+        'cost_type_id',
         'nama_paket',
         'harga',
         'keterangan',
@@ -31,5 +32,15 @@ class PricingPackage extends Model
     public function branch()
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function costType()
+    {
+        return $this->belongsTo(CostType::class);
+    }
+
+    public function items()
+    {
+        return $this->hasMany(PricingPackageItem::class)->orderBy('sort_order');
     }
 }

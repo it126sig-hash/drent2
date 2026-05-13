@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { format, parseISO, addDays, isSameDay, isWithinInterval, startOfDay } from 'date-fns';
+import { format, parseISO, addDays, startOfDay } from 'date-fns';
 
 const props = defineProps({
   bookings: {
@@ -76,28 +76,16 @@ const bookingBars = computed(() => {
   return result;
 });
 
-const getStatusColor = (status) => {
-  const colors = {
-    'follow_up':    '#FFF3CD',
-    'confirm':      '#D1ECF1',
-    'waiting_list': '#D6D8DB',
-    'rental_unit':  '#D4EDDA',
-    'selesai':      '#CCE5FF',
-    'batal':        '#F8D7DA',
+const getStatusConfig = (status) => {
+  const map = {
+    'follow_up':    { bg: 'rgba(168, 174, 187, 0.2)', border: 'var(--text-secondary)', color: 'var(--text-primary)' },
+    'confirm':      { bg: 'rgba(11, 122, 138, 0.15)', border: 'var(--info-cyan)', color: '#0B7A8A' },
+    'waiting_list': { bg: 'rgba(168, 174, 187, 0.12)', border: 'var(--neutral-6)', color: 'var(--text-secondary)' },
+    'rental_unit':  { bg: 'rgba(39, 168, 88, 0.15)', border: 'var(--positive)', color: '#27A858' },
+    'selesai':      { bg: 'rgba(39, 168, 88, 0.12)', border: '#27A858', color: '#1A6A38' },
+    'batal':        { bg: 'rgba(229, 83, 75, 0.12)', border: 'var(--negative)', color: 'var(--negative)' },
   };
-  return colors[status] || '#eee';
-};
-
-const getStatusTextColor = (status) => {
-  const colors = {
-    'follow_up':    '#856404',
-    'confirm':      '#0C5460',
-    'waiting_list': '#383D41',
-    'rental_unit':  '#155724',
-    'selesai':      '#004085',
-    'batal':        '#721C24',
-  };
-  return colors[status] || '#333';
+  return map[status] || { bg: '#eee', border: '#ccc', color: '#333' };
 };
 
 const handleCellClick = (unitId, date) => {
@@ -152,9 +140,9 @@ const handleBookingClick = (bookingId) => {
         :style="{
           gridColumn: `${bar.startCol} / span ${bar.span}`,
           gridRow: units.findIndex(u => u.id === bar.unitId) + 2,
-          backgroundColor: getStatusColor(bar.status),
-          color: getStatusTextColor(bar.status),
-          borderLeft: `4px solid ${getStatusTextColor(bar.status)}`
+          backgroundColor: getStatusConfig(bar.status).bg,
+          color: getStatusConfig(bar.status).color,
+          borderLeft: `3px solid ${getStatusConfig(bar.status).border}`
         }"
         @click.stop="handleBookingClick(bar.bookingId)"
       >
@@ -170,10 +158,9 @@ const handleBookingClick = (bookingId) => {
 .calendar-container {
   width: 100%;
   overflow-x: auto;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-  color: #1e293b; /* Dark slate text */
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
 }
 
 .calendar-grid {
@@ -183,24 +170,27 @@ const handleBookingClick = (bookingId) => {
 }
 
 .grid-header {
-  background: #f8fafc;
-  padding: 12px 8px;
+  background: var(--page-bg);
+  padding: 10px 4px;
+  font-family: var(--font-body);
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 11px;
   text-align: center;
-  border-bottom: 2px solid #e2e8f0;
-  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--surface-border);
+  border-right: 1px solid var(--surface-border);
   z-index: 10;
+  color: var(--text-secondary);
 }
 
 .sticky-col {
   position: sticky;
   left: 0;
-  background: #f8fafc;
+  background: var(--surface-default);
   z-index: 20;
-  border-right: 2px solid #e2e8f0;
+  border-right: 1px solid var(--surface-border);
   text-align: left;
-  padding-left: 16px;
+  padding-left: var(--space-lg);
+  box-shadow: 2px 0 4px rgba(0,0,0,0.02);
 }
 
 .day-header {
@@ -211,64 +201,72 @@ const handleBookingClick = (bookingId) => {
 }
 
 .day-name {
-  font-size: 0.65rem;
-  color: #64748b;
+  font-size: 9px;
+  color: var(--text-tertiary);
   text-transform: uppercase;
 }
 
 .day-num {
-  font-size: 1rem;
-  color: #0f172a;
+  font-family: var(--font-headline);
+  font-size: 14px;
+  color: var(--text-primary);
 }
 
 .unit-cell {
-  padding: 12px 16px;
-  border-bottom: 1px solid #e2e8f0;
+  padding: 10px var(--space-lg);
+  border-bottom: 1px solid var(--surface-border);
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 
 .unit-name {
+  font-family: var(--font-headline);
   font-weight: 600;
-  font-size: 0.85rem;
-  color: #1e293b;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .unit-plate {
-  font-size: 0.75rem;
-  color: #475569;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
 }
 
 .grid-cell {
-  border-bottom: 1px solid #e2e8f0;
-  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--surface-border);
+  border-right: 1px solid var(--surface-border);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.15s;
 }
 
 .grid-cell:hover {
-  background: #f1f5f9;
+  background: var(--card-bg-hover);
 }
 
 .is-today {
-  background: rgba(59, 130, 246, 0.05);
+  background: rgba(13, 128, 145, 0.04);
 }
 
 .is-weekend {
-  background: #fcfcfc;
+  background: rgba(245, 246, 250, 0.4);
 }
 
 .day-header.is-today {
-  color: #3b82f6;
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(13, 128, 145, 0.08);
+}
+
+.day-header.is-today .day-num {
+   color: #0D8091;
 }
 
 .booking-bar {
-  margin: 8px 2px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  margin: 6px 1px;
+  padding: 4px 6px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-body);
+  font-size: 10px;
   font-weight: 600;
   cursor: pointer;
   z-index: 5;
@@ -277,14 +275,14 @@ const handleBookingClick = (bookingId) => {
   text-overflow: ellipsis;
   display: flex;
   align-items: center;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-  transition: transform 0.1s, box-shadow 0.1s;
+  box-shadow: var(--shadow-tile);
+  transition: all 0.2s;
 }
 
 .booking-bar:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  filter: brightness(0.95);
   z-index: 6;
+  transform: translateY(-1px);
 }
 
 .bar-content {
@@ -298,3 +296,4 @@ const handleBookingClick = (bookingId) => {
   text-overflow: ellipsis;
 }
 </style>
+

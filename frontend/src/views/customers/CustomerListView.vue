@@ -163,7 +163,7 @@ const getStatusSeverity = (status) => {
             <i class="pi pi-search" />
             <InputText 
               v-model="searchQuery" 
-              placeholder="Cari nama, kontak, atau kota..." 
+              placeholder="Cari nama, kontak, email, atau kota..." 
               @input="onSearch"
               class="w-full"
             />
@@ -214,6 +214,12 @@ const getStatusSeverity = (status) => {
               <span>{{ data.kontak_1 }}</span>
               <small v-if="data.kontak_2" class="text-gray-500">{{ data.kontak_2 }}</small>
             </div>
+          </template>
+        </Column>
+
+        <Column field="email" header="Email" style="min-width: 180px">
+          <template #body="{ data }">
+            {{ data.email || '-' }}
           </template>
         </Column>
 

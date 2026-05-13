@@ -7,6 +7,7 @@ import { useDriver } from '../../composables/useDriver';
 import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
+import { usePhysicalCheck } from '../../composables/usePhysicalCheck';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
@@ -29,12 +30,13 @@ const route = useRoute();
 const router = useRouter();
 const toast = useToast();
 const confirm = useConfirm();
-const { fetchOne, updateBooking, changeStatus, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, loading } = useBooking();
+const { fetchOne, updateBooking, handle, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, loading } = useBooking();
 const { units, fetchAll: fetchUnits } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
 const { costTypes: costTypesMaster, fetchAll: fetchCostTypes } = useCostType();
 const { packages: pricingPackages, fetchAll: fetchPricingPackages } = usePricingPackage();
+const { requestCheck: requestPhysicalCheck, loading: physicalCheckLoading } = usePhysicalCheck();
 
 const booking = ref(null);
 const showDetailDialog = ref(false);
@@ -114,13 +116,72 @@ const packageOptions = computed(() =>
   pricingPackages.value.filter(p => p.is_active).map(p => ({ id: p.id, label: `${p.nama_paket} — ${formatCurrency(p.harga)}` }))
 );
 
+const findPricingPackage = (packageId) =>
+  pricingPackages.value.find(pkg => pkg.id === packageId);
+
+const packageCostItems = (pkg) =>
+  (pkg?.items || []).map(item => ({
+    cost_type_id: item.cost_type_id ?? null,
+    type: item.type || 'biaya',
+    label: item.label || item.cost_type?.nama || '',
+    amount: item.amount || 0,
+    keterangan: item.keterangan || '',
+  }));
+
+const getSignedCostAmount = (cost) => {
+  const amount = cost?.amount || 0;
+  return cost?.type === 'diskon' ? -amount : amount;
+};
+
+const sumCosts = (costs = [], { discountsOnly = false } = {}) => {
+  return (costs || []).reduce((sum, cost) => {
+    if (discountsOnly && cost?.type !== 'diskon') return sum;
+    return sum + getSignedCostAmount(cost);
+  }, 0);
+};
+
+const getBillableCostTotal = (pricingMode, costs = []) => {
+  return sumCosts(costs, { discountsOnly: pricingMode === 'all_in' });
+};
+
+const applyPricingPackage = (target, packageId, costKey = 'costs', priceKey = 'harga_all_in') => {
+  const pkg = findPricingPackage(packageId);
+  if (!pkg) {
+    target[priceKey] = null;
+    return;
+  }
+
+  target[priceKey] = pkg.harga || null;
+  target[costKey] = packageCostItems(pkg);
+};
+
+const onHandlePackageChange = () => {
+  applyPricingPackage(handleForm.value, handleForm.value.pricing_package_id);
+};
+
+const onDetailPackageChange = () => {
+  applyPricingPackage(detailForm.value, detailForm.value.pricing_package_id);
+};
+
+const onExtendPackageChange = () => {
+  applyPricingPackage(extendForm.value, extendForm.value.pricing_package_id);
+};
+
+const onRollingOldPackageChange = () => {
+  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id_lama, 'costs_lama', 'harga_all_in_lama');
+};
+
+const onRollingNewPackageChange = () => {
+  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id);
+};
+
 const hargaSewa = computed(() => {
   const { harga_mobil, diskon_mobil, lama_sewa } = handleForm.value;
   return Math.max(0, ((harga_mobil || 0) - (diskon_mobil || 0)) * (lama_sewa || 0));
 });
 
 const totalBiayaOps = computed(() =>
-  handleForm.value.costs.reduce((sum, c) => sum + (c.amount || 0), 0)
+  getBillableCostTotal(handleForm.value.pricing_mode, handleForm.value.costs)
 );
 
 const grandTotalInternal = computed(() => hargaSewa.value + totalBiayaOps.value);
@@ -130,9 +191,9 @@ const tagihanKonsumen = computed(() => {
     const lama = handleForm.value.lama_sewa || 1;
     if (handleForm.value.pricing_package_id) {
       const pkg = pricingPackages.value.find(p => p.id === handleForm.value.pricing_package_id);
-      return (pkg?.harga || handleForm.value.harga_all_in || 0) * lama;
+      return ((pkg?.harga || handleForm.value.harga_all_in || 0) * lama) + totalBiayaOps.value;
     }
-    return (handleForm.value.harga_all_in || 0) * lama;
+    return ((handleForm.value.harga_all_in || 0) * lama) + totalBiayaOps.value;
   }
   return grandTotalInternal.value;
 });
@@ -155,14 +216,14 @@ const onCostTypeChange = (idx, typeId) => {
   if (ct) handleForm.value.costs[idx].label = ct.nama;
 };
 
-const openHandleDialog = () => {
+const prepareHandleForm = () => {
   handleFormErrors.value = {};
-  const detail = booking.value?.booking_details?.[0];
+  const detail = primaryUnitDetail.value || booking.value?.booking_details?.[0];
   handleForm.value = {
     unit_id: detail?.unit_id || null,
     driver_id: detail?.driver_id || null,
-    lama_sewa: booking.value?.lama_sewa || null,
-    paket_sewa: booking.value?.paket_sewa || 'harian',
+    lama_sewa: detail?.lama_sewa || booking.value?.lama_sewa || 1,
+    paket_sewa: detail?.paket_sewa || booking.value?.paket_sewa || 'harian',
     harga_mobil: detail?.harga_mobil || 0,
     diskon_mobil: detail?.diskon_mobil || 0,
     pricing_mode: detail?.pricing_mode || 'non_all_in',
@@ -172,6 +233,10 @@ const openHandleDialog = () => {
     alamat_penjemputan: booking.value?.alamat_penjemputan || '',
     tujuan: booking.value?.tujuan || '',
   };
+};
+
+const openHandleDialog = () => {
+  prepareHandleForm();
   showHandleDialog.value = true;
 };
 
@@ -188,11 +253,24 @@ const submitHandle = async () => {
       return;
     }
 
-    await changeStatus(booking.value.id, 'waiting_list');
+    const selectedPackage = findPricingPackage(handleForm.value.pricing_package_id);
+    const payload = {
+      ...handleForm.value,
+      harga_all_in: handleForm.value.pricing_mode === 'all_in'
+        ? (handleForm.value.harga_all_in || selectedPackage?.harga || null)
+        : null,
+    };
+
+    await handle(booking.value.id, payload);
     showHandleConfirmDialog.value = false;
     showHandleDialog.value = false;
     router.push({ name: 'BookingList' });
   } catch (err) {
+    if (err.response?.data?.errors) {
+      handleFormErrors.value = err.response.data.errors;
+      showHandleConfirmDialog.value = false;
+      showHandleDialog.value = true;
+    }
     console.error(err);
   }
 };
@@ -308,47 +386,47 @@ const costTypes = [
 ];
 
 const extendHargaSewa = computed(() => Math.max(0, ((extendForm.value.harga_mobil || 0) - (extendForm.value.diskon_mobil || 0)) * (extendForm.value.lama_sewa || 0)));
-const extendTotalBiaya = computed(() => extendForm.value.costs.reduce((s, c) => s + (c.amount || 0), 0));
+const extendTotalBiaya = computed(() => getBillableCostTotal(extendForm.value.pricing_mode, extendForm.value.costs));
 const extendGrandTotal = computed(() => extendHargaSewa.value + extendTotalBiaya.value);
 const extendTagihan = computed(() => {
   if (extendForm.value.pricing_mode === 'all_in') {
     const lama = extendForm.value.lama_sewa || 1;
     if (extendForm.value.pricing_package_id) {
       const pkg = pricingPackages.value.find(p => p.id === extendForm.value.pricing_package_id);
-      return (pkg?.harga || extendForm.value.harga_all_in || 0) * lama;
+      return ((pkg?.harga || extendForm.value.harga_all_in || 0) * lama) + extendTotalBiaya.value;
     }
-    return (extendForm.value.harga_all_in || 0) * lama;
+    return ((extendForm.value.harga_all_in || 0) * lama) + extendTotalBiaya.value;
   }
   return extendGrandTotal.value;
 });
 
 // Rolling computed
 const rollingHargaSewa = computed(() => Math.max(0, ((rollingForm.value.harga_mobil||0) - (rollingForm.value.diskon_mobil||0)) * (rollingForm.value.lama_sewa||0)));
-const rollingTotalBiaya = computed(() => rollingForm.value.costs.reduce((s, c) => s + (c.amount||0), 0));
+const rollingTotalBiaya = computed(() => getBillableCostTotal(rollingForm.value.pricing_mode, rollingForm.value.costs));
 const rollingGrandTotal = computed(() => rollingHargaSewa.value + rollingTotalBiaya.value);
 const rollingTagihan = computed(() => {
   if (rollingForm.value.pricing_mode === 'all_in') {
     const lama = rollingForm.value.lama_sewa || 1;
     if (rollingForm.value.pricing_package_id) {
       const pkg = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id);
-      return (pkg?.harga || rollingForm.value.harga_all_in || 0) * lama;
+      return ((pkg?.harga || rollingForm.value.harga_all_in || 0) * lama) + rollingTotalBiaya.value;
     }
-    return (rollingForm.value.harga_all_in || 0) * lama;
+    return ((rollingForm.value.harga_all_in || 0) * lama) + rollingTotalBiaya.value;
   }
   return rollingGrandTotal.value;
 });
 
 const rollingOldHargaSewa = computed(() => Math.max(0, ((rollingForm.value.harga_mobil_lama || 0) - (rollingForm.value.diskon_mobil_lama || 0)) * (rollingForm.value.lama_sewa_lama || 0)));
-const rollingOldTotalBiaya = computed(() => rollingForm.value.costs_lama.reduce((s, c) => s + getSignedCostAmount(c), 0));
+const rollingOldTotalBiaya = computed(() => getBillableCostTotal(rollingForm.value.pricing_mode_lama, rollingForm.value.costs_lama));
 const rollingOldGrandTotal = computed(() => rollingOldHargaSewa.value + rollingOldTotalBiaya.value);
 const rollingOldTagihan = computed(() => {
   if (rollingForm.value.pricing_mode_lama === 'all_in') {
     const lama = rollingForm.value.lama_sewa_lama || 1;
     if (rollingForm.value.pricing_package_id_lama) {
       const pkg = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id_lama);
-      return (pkg?.harga || rollingForm.value.harga_all_in_lama || 0) * lama;
+      return ((pkg?.harga || rollingForm.value.harga_all_in_lama || 0) * lama) + rollingOldTotalBiaya.value;
     }
-    return (rollingForm.value.harga_all_in_lama || 0) * lama;
+    return ((rollingForm.value.harga_all_in_lama || 0) * lama) + rollingOldTotalBiaya.value;
   }
   return rollingOldGrandTotal.value;
 });
@@ -365,7 +443,7 @@ const primaryUnitDetail = computed(() => {
 const hasFixedUnit = computed(() => Boolean(primaryUnitDetail.value?.unit_id));
 const canHandleBooking = computed(() => hasFixedUnit.value);
 const unitActionDetail = computed(() => primaryUnitDetail.value || null);
-const unitActionLabel = computed(() => hasFixedUnit.value ? 'Edit Unit' : 'Tambah Unit');
+const unitActionLabel = computed(() => hasFixedUnit.value ? 'Edit Unit' : 'Atur Unit');
 const unitActionIcon = computed(() => hasFixedUnit.value ? 'pi pi-pencil' : 'pi pi-plus');
 const hasZeroReadyUnitPrice = computed(() => {
   const detail = primaryUnitDetail.value;
@@ -420,16 +498,16 @@ const isPaidOff = computed(() => bookingTotalTagihan.value > 0 && bookingSisaTag
 const selectedDetailUnit = computed(() => units.value.find(unit => unit.id === detailForm.value.unit_id));
 const selectedDetailDriver = computed(() => drivers.value.find(driver => driver.id === detailForm.value.driver_id));
 const detailHargaSewa = computed(() => Math.max(0, ((detailForm.value.harga_mobil || 0) - (detailForm.value.diskon_mobil || 0)) * (detailForm.value.lama_sewa || 0)));
-const detailTotalBiayaOps = computed(() => detailForm.value.costs.reduce((sum, cost) => sum + getSignedCostAmount(cost), 0));
+const detailTotalBiayaOps = computed(() => getBillableCostTotal(detailForm.value.pricing_mode, detailForm.value.costs));
 const detailGrandTotalInternal = computed(() => detailHargaSewa.value + detailTotalBiayaOps.value);
 const detailTagihanKonsumen = computed(() => {
   if (detailForm.value.pricing_mode === 'all_in') {
     const lama = detailForm.value.lama_sewa || 1;
     if (detailForm.value.pricing_package_id) {
       const pkg = pricingPackages.value.find(p => p.id === detailForm.value.pricing_package_id);
-      return (pkg?.harga || detailForm.value.harga_all_in || 0) * lama;
+      return ((pkg?.harga || detailForm.value.harga_all_in || 0) * lama) + detailTotalBiayaOps.value;
     }
-    return (detailForm.value.harga_all_in || 0) * lama;
+    return ((detailForm.value.harga_all_in || 0) * lama) + detailTotalBiayaOps.value;
   }
   return detailGrandTotalInternal.value;
 });
@@ -449,9 +527,9 @@ const detailSubmitLabel = computed(() => {
 });
 
 const detailSubmitButtonClass = computed(() => {
-  if (['extend', 'edit_extend'].includes(detailDialogMode.value)) return 'bg-amber-600 hover:bg-amber-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
-  if (detailDialogMode.value === 'edit_rolling') return 'bg-sky-700 hover:bg-sky-800 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
-  return 'bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all';
+  if (detailDialogMode.value === 'edit_rolling') return 'app-dialog-button app-dialog-button-info';
+  if (['extend', 'edit_extend'].includes(detailDialogMode.value)) return 'app-dialog-button app-dialog-button-warning';
+  return 'app-dialog-button app-dialog-button-primary';
 });
 
 const extendMinStartDate = computed(() => {
@@ -468,12 +546,16 @@ const detailRentalSubtotal = (detail) => {
 };
 
 const detailCostTotal = (detail) => {
-  return (detail.costs || []).reduce((sum, cost) => sum + getSignedCostAmount(cost), 0);
+  return sumCosts(detail.costs || []);
+};
+
+const detailBillableCostTotal = (detail) => {
+  return getBillableCostTotal(detail.pricing_mode, detail.costs || []);
 };
 
 const detailConsumerBill = (detail) => {
   if (detail.pricing_mode === 'all_in') {
-    return (detail.harga_all_in || 0) * (detail.lama_sewa || booking.value?.lama_sewa || 1);
+    return ((detail.harga_all_in || 0) * (detail.lama_sewa || booking.value?.lama_sewa || 1)) + detailBillableCostTotal(detail);
   }
   return detailRentalSubtotal(detail) + detailCostTotal(detail);
 };
@@ -489,7 +571,7 @@ const detailUnitPriceTotal = (detail) => {
 };
 
 const detailUnitTotalWithCosts = (detail) => {
-  return detailUnitPriceTotal(detail) + detailCostTotal(detail);
+  return detailUnitPriceTotal(detail) + detailBillableCostTotal(detail);
 };
 
 const detailUnitPriceDescription = (detail) => {
@@ -519,11 +601,6 @@ const canEditDetailTransaction = (detail) => {
   return ['extend', 'rolling'].includes(detail.detail_type)
     && !finalDetailStatuses.includes(detail.status)
     && !finalBookingStatuses.includes(booking.value?.status);
-};
-
-const getSignedCostAmount = (cost) => {
-  const amount = cost?.amount || 0;
-  return cost?.type === 'diskon' ? -amount : amount;
 };
 
 const formatSignedCostAmount = (cost) => {
@@ -970,7 +1047,7 @@ const submitDetail = async () => {
       return;
     }
 
-    const selectedPackage = pricingPackages.value.find(p => p.id === detailForm.value.pricing_package_id);
+    const selectedPackage = findPricingPackage(detailForm.value.pricing_package_id);
     const payload = {
       ...detailForm.value,
       detail_type: detailForm.value.detail_type || 'initial',
@@ -1026,8 +1103,12 @@ const submitCost = async () => {
 // Modification Submits
 const submitExtend = async () => {
   try {
+    const selectedPackage = findPricingPackage(extendForm.value.pricing_package_id);
     const payload = {
       ...extendForm.value,
+      harga_all_in: extendForm.value.pricing_mode === 'all_in'
+        ? (extendForm.value.harga_all_in || selectedPackage?.harga || null)
+        : null,
       tgl_sewa: formatLocalDateTime(extendForm.value.tgl_sewa),
       tgl_kembali: formatLocalDateTime(extendForm.value.tgl_kembali),
     };
@@ -1054,8 +1135,8 @@ const submitRolling = async () => {
       return;
     }
 
-    const oldSelectedPackage = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id_lama);
-    const newSelectedPackage = pricingPackages.value.find(p => p.id === rollingForm.value.pricing_package_id);
+    const oldSelectedPackage = findPricingPackage(rollingForm.value.pricing_package_id_lama);
+    const newSelectedPackage = findPricingPackage(rollingForm.value.pricing_package_id);
     const payload = {
       ...rollingForm.value,
       harga_all_in_lama: rollingForm.value.pricing_mode_lama === 'all_in'
@@ -1134,6 +1215,7 @@ const onHandle = () => {
     });
     return;
   }
+  prepareHandleForm();
   showHandleConfirmDialog.value = true;
 };
 
@@ -1148,9 +1230,72 @@ const showCheckoutDialog = ref(false);
 const showCompleteDialog = ref(false);
 const checkoutSkip = ref(false);
 const completeSkip = ref(false);
+const completeReturnedAt = ref(null);
+
+const departurePhysicalCheck = computed(() => booking.value?.physical_check_summary?.departure || { status: 'not_requested' });
+const returnPhysicalCheck = computed(() => booking.value?.physical_check_summary?.return || { status: 'not_requested' });
+const departureCheckDone = computed(() => departurePhysicalCheck.value.status === 'completed');
+const returnCheckDone = computed(() => returnPhysicalCheck.value.status === 'completed');
+
+const physicalCheckStatusLabel = (status) => {
+  const map = {
+    not_requested: 'Belum diminta',
+    requested: 'Diminta',
+    completed: 'Sudah dilakukan',
+    skipped: 'Dilewati',
+  };
+  return map[status] || status || '-';
+};
+
+const physicalCheckSeverity = (status) => {
+  const map = {
+    not_requested: 'secondary',
+    requested: 'warning',
+    completed: 'success',
+    skipped: 'danger',
+  };
+  return map[status] || 'info';
+};
+
+const openCheckoutDialog = () => {
+  checkoutSkip.value = false;
+  showCheckoutDialog.value = true;
+};
+
+const openCompleteDialog = () => {
+  completeSkip.value = false;
+  completeReturnedAt.value = new Date();
+  showCompleteDialog.value = true;
+};
+
+const openPhysicalCheckForm = (type) => {
+  router.push({
+    name: 'PhysicalCheckForm',
+    params: { bookingId: booking.value.id, type },
+  });
+};
+
+const requestPhysicalCheckFromBooking = async (type) => {
+  await requestPhysicalCheck(booking.value.id, type);
+  await loadBooking();
+  toast.add({
+    severity: 'warn',
+    summary: 'Checkout ditahan',
+    detail: type === 'departure'
+      ? 'Cek fisik keberangkatan belum selesai. Request sudah masuk ke tabel cek fisik.'
+      : 'Cek fisik pengembalian belum selesai. Request sudah masuk ke tabel cek fisik.',
+    life: 6000,
+  });
+};
 
 const submitCheckout = async () => {
   try {
+    if (!checkoutSkip.value && !departureCheckDone.value) {
+      await requestPhysicalCheckFromBooking('departure');
+      showCheckoutDialog.value = false;
+      return;
+    }
+
     await checkout(booking.value.id, { skip_inspection: checkoutSkip.value });
     showCheckoutDialog.value = false;
     router.push({ name: 'BookingList' });
@@ -1161,7 +1306,16 @@ const submitCheckout = async () => {
 
 const submitComplete = async () => {
   try {
-    await complete(booking.value.id, { skip_inspection: completeSkip.value });
+    if (!completeSkip.value && !returnCheckDone.value) {
+      await requestPhysicalCheckFromBooking('return');
+      showCompleteDialog.value = false;
+      return;
+    }
+
+    await complete(booking.value.id, {
+      skip_inspection: completeSkip.value,
+      returned_at: completeReturnedAt.value?.toISOString(),
+    });
     showCompleteDialog.value = false;
     loadBooking();
   } catch (err) {
@@ -1223,7 +1377,8 @@ const requestCloseDialog = (dialogKey) => {
     message: `Tutup modal ${dialogTitles[dialogKey] || 'ini'}? Perubahan yang belum disimpan akan hilang.`,
     header: 'Konfirmasi Tutup',
     icon: 'pi pi-exclamation-triangle',
-    acceptClass: 'p-button-danger',
+    acceptClass: 'app-dialog-button app-dialog-button-danger',
+    rejectClass: 'app-dialog-button app-dialog-button-secondary',
     acceptLabel: 'Tutup',
     rejectLabel: 'Tetap Edit',
     accept: () => closeDialogSilently(dialogKey),
@@ -1239,40 +1394,41 @@ const onDialogVisibleChange = (dialogKey, visible) => {
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
 };
+
+const auditUserName = (user) => user?.name || '-';
 </script>
 
 <template>
-  <div class="booking-detail-container app-page">
+  <div class="booking-detail-container">
     <ConfirmDialog />
-
     <!-- Header & Action Bar -->
-    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+    <div class="detail-page-header">
       <div class="flex items-center gap-3">
-        <Button icon="pi pi-arrow-left" text rounded @click="router.push({ name: 'BookingList' })" class="bg-white shadow-sm hover:shadow-md transition-all" />
+        <Button icon="pi pi-arrow-left" text rounded @click="router.push({ name: 'BookingList' })" class="back-button" />
         <div>
           <div class="flex flex-wrap items-center gap-3 mb-1">
-            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Booking #{{ booking?.kode_booking || '...' }}</h1>
+            <h1 class="detail-title">Booking #{{ booking?.kode_booking || '...' }}</h1>
             <BookingStatusBadge v-if="booking" :status="booking.status" />
             <span
               v-if="booking?.is_overdue"
-              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-600 border border-rose-200 animate-pulse"
+              class="overdue-chip"
             >
               <i class="pi pi-exclamation-triangle text-[10px]"></i> Terlambat Kembali
             </span>
           </div>
-          <p class="text-sm text-slate-500 flex items-center gap-1.5">
-            <i class="pi pi-clock text-xs text-slate-400"></i>
+          <p class="detail-subtitle">
+            <i class="pi pi-clock"></i>
             {{ booking?.created_at ? new Date(booking.created_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : '-' }}
           </p>
         </div>
       </div>
 
-      <div class="flex flex-wrap gap-2 w-full lg:w-auto">
+      <div class="detail-action-bar">
         <Button
           v-if="booking && ['follow_up', 'confirm'].includes(booking.status)"
           label="Handle Booking"
           icon="pi pi-check-circle"
-          class="bg-blue-600 hover:bg-blue-700 border-none px-5 py-2.5 rounded-xl font-semibold flex-1 lg:flex-none shadow-md shadow-blue-200 transition-all text-white"
+          class="detail-primary-action"
           @click="onHandle"
           :loading="loading"
           :disabled="!canHandleBooking"
@@ -1282,16 +1438,16 @@ const formatCurrency = (value) => {
           v-if="booking && booking.status === 'waiting_list'"
           label="Checkout"
           icon="pi pi-sign-out"
-          class="bg-emerald-600 hover:bg-emerald-700 border-none px-5 py-2.5 rounded-xl font-semibold flex-1 lg:flex-none shadow-md shadow-emerald-200 transition-all text-white"
-          @click="checkoutSkip = false; showCheckoutDialog = true"
+          class="detail-primary-action"
+          @click="openCheckoutDialog"
           :loading="loading"
         />
         <Button
           v-if="booking && booking.status === 'rental_unit'"
           label="Selesai"
           icon="pi pi-flag-fill"
-          class="bg-violet-600 hover:bg-violet-700 border-none px-5 py-2.5 rounded-xl font-semibold flex-1 lg:flex-none shadow-md shadow-violet-200 transition-all text-white"
-          @click="completeSkip = false; showCompleteDialog = true"
+          class="detail-primary-action"
+          @click="openCompleteDialog"
           :loading="loading"
         />
         <Button
@@ -1300,27 +1456,27 @@ const formatCurrency = (value) => {
           icon="pi pi-ban"
           severity="danger"
           outlined
-          class="px-4 py-2.5 rounded-xl font-semibold flex-1 lg:flex-none"
+          class="detail-secondary-action"
           @click="openBatalDialog"
           :loading="loading"
         />
-        <Button label="Print" icon="pi pi-print" severity="secondary" outlined class="px-4 py-2.5 rounded-xl font-semibold border flex-1 lg:flex-none" disabled />
+        <Button label="Print" icon="pi pi-print" severity="secondary" outlined class="detail-secondary-action" disabled />
       </div>
     </div>
 
     <!-- Loading State -->
-    <div v-if="!booking && loading" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 flex flex-col gap-6">
-        <Skeleton width="100%" height="180px" borderRadius="16px" />
-        <Skeleton width="100%" height="360px" borderRadius="16px" />
+    <div v-if="!booking && loading" class="loading-grid">
+      <div class="lg:col-span-2 flex flex-col gap-4">
+        <Skeleton width="100%" height="160px" borderRadius="10px" />
+        <Skeleton width="100%" height="340px" borderRadius="10px" />
       </div>
-      <Skeleton width="100%" height="460px" borderRadius="16px" />
+      <Skeleton width="100%" height="420px" borderRadius="10px" />
     </div>
 
     <!-- Main Content Grid -->
-    <div v-else-if="booking" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    <div v-else-if="booking" class="detail-grid">
       <!-- LEFT COLUMN -->
-      <div class="lg:col-span-8 flex flex-col gap-6">
+      <div class="detail-main-column">
 
         <!-- Section: Customer & Booking Info -->
         <div class="app-card overflow-hidden">
@@ -1352,11 +1508,39 @@ const formatCurrency = (value) => {
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Penjemputan</span>
               <span class="text-sm font-medium text-slate-700">{{ booking.alamat_penjemputan || 'Office' }}</span>
             </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Booking Oleh</span>
+              <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.created_by_user) }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Confirm / DP Oleh</span>
+              <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.confirmed_by_user) }}</span>
+              <span v-if="booking.confirmed_at" class="text-xs text-slate-400">{{ formatDateTime(booking.confirmed_at) }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Handle Oleh</span>
+              <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.handled_by_user) }}</span>
+              <span v-if="booking.handled_at" class="text-xs text-slate-400">{{ formatDateTime(booking.handled_at) }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Checkout Oleh</span>
+              <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.checked_out_by_user) }}</span>
+              <span v-if="booking.checked_out_at" class="text-xs text-slate-400">{{ formatDateTime(booking.checked_out_at) }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Dikembalikan</span>
+              <span class="text-sm font-medium text-slate-700">{{ formatDateTime(booking.returned_at) }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Selesai Oleh</span>
+              <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.completed_by_user) }}</span>
+              <span v-if="booking.completed_at" class="text-xs text-slate-400">{{ formatDateTime(booking.completed_at) }}</span>
+            </div>
           </div>
         </div>
 
         <!-- Section: Financial Reference -->
-        <div class="app-card overflow-hidden">
+        <div class="app-card overflow-hidden" v-if="!hasFixedUnit">
           <div class="app-section-header px-6 py-4 flex items-center gap-3">
             <div class="w-9 h-9 rounded-lg bg-cyan-100 flex items-center justify-center text-cyan-700">
               <i class="pi pi-calculator"></i>
@@ -1512,13 +1696,15 @@ const formatCurrency = (value) => {
                   </div>
 
                   <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 text-right min-w-[220px] shadow-lg shadow-slate-200/70">
-                    <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest block mb-0.5">Total Unit + Ops</span>
+                    <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest block mb-0.5">
+                      {{ detail.pricing_mode === 'all_in' ? 'Total Tagihan Unit' : 'Total Unit + Ops' }}
+                    </span>
                     <span class="text-xl font-bold text-white">{{ formatCurrency(detailUnitTotalWithCosts(detail)) }}</span>
                     <div class="text-[11px] font-semibold text-sky-200 mt-1">
                       {{ detailUnitPriceDescription(detail) }}
                     </div>
                     <div class="text-[11px] font-semibold text-slate-300 mt-0.5">
-                      Biaya Ops: {{ formatCurrency(detailCostTotal(detail)) }}
+                      {{ detail.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya Ops' }}: {{ formatCurrency(detailBillableCostTotal(detail)) }}
                     </div>
                     <Button
                       v-if="canEditDetailTransaction(detail)"
@@ -1638,36 +1824,36 @@ const formatCurrency = (value) => {
       </div>
 
       <!-- RIGHT COLUMN: Payment Summary -->
-      <div class="lg:col-span-4 flex flex-col gap-6 lg:sticky lg:top-24">
+      <div class="detail-side-column">
 
         <!-- Financial Summary Card -->
-        <div class="financial-summary-card bg-slate-900 rounded-2xl shadow-xl p-6 text-white relative overflow-hidden">
+        <div class="financial-summary-card">
           <div class="flex items-center gap-2.5 mb-5">
-            <div class="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
-              <i class="pi pi-receipt text-sm text-cyan-300"></i>
+            <div class="summary-icon">
+              <i class="pi pi-receipt"></i>
             </div>
-            <h2 class="text-xs font-bold uppercase tracking-[0.2em] text-cyan-200">Ringkasan Keuangan</h2>
+            <h2>Ringkasan Keuangan</h2>
           </div>
           <div class="flex flex-col gap-3 relative z-10">
-            <div class="flex justify-between items-baseline">
-              <span class="text-sm text-white/50">Total Tagihan</span>
-              <span class="text-base font-bold text-white">{{ formatCurrency(bookingTotalTagihan) }}</span>
+            <div class="summary-row">
+              <span>Total Tagihan</span>
+              <strong>{{ formatCurrency(bookingTotalTagihan) }}</strong>
             </div>
-            <div class="flex justify-between items-baseline">
-              <span class="text-sm text-white/50">Total Dibayar</span>
-              <span class="text-base font-bold text-emerald-400">{{ formatCurrency(bookingTotalPayments) }}</span>
+            <div class="summary-row">
+              <span>Total Dibayar</span>
+              <strong class="summary-positive">{{ formatCurrency(bookingTotalPayments) }}</strong>
             </div>
-            <div class="h-px bg-white/10 my-1"></div>
-            <div class="p-4 bg-white/5 rounded-xl border border-white/5">
-              <span class="text-[10px] font-bold uppercase tracking-widest block mb-1"
-                :class="bookingSisaTagihan > 0 ? 'text-rose-300' : 'text-emerald-300'"
+            <div class="summary-divider"></div>
+            <div class="summary-balance">
+              <span
+                :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'"
               >Sisa Tagihan</span>
-              <span class="text-2xl font-bold tracking-tight"
-                :class="bookingSisaTagihan > 0 ? 'text-rose-300' : 'text-emerald-300'"
-              >{{ formatCurrency(bookingSisaTagihan) }}</span>
+              <strong
+                :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'"
+              >{{ formatCurrency(bookingSisaTagihan) }}</strong>
             </div>
-            <div class="flex justify-between items-center text-xs">
-              <span class="text-white/50">Status Pembayaran</span>
+            <div class="summary-status">
+              <span>Status Pembayaran</span>
               <Tag :value="isPaidOff ? 'Lunas' : 'Belum Lunas'" :severity="isPaidOff ? 'success' : 'warning'" class="rounded-md" />
             </div>
           </div>
@@ -1773,7 +1959,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showEditBookingDialog')" />
-          <Button label="Simpan" icon="pi pi-save" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitBookingEdit" :loading="loading" />
+          <Button label="Simpan" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" @click="submitBookingEdit" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -1790,16 +1976,40 @@ const formatCurrency = (value) => {
             <p class="text-sm text-slate-500">Status booking akan berubah ke <strong>Rental Unit</strong> dan status unit menjadi <strong>Out</strong>.</p>
           </div>
         </div>
+        <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs font-bold text-slate-500 uppercase">Status cek fisik keberangkatan</span>
+            <Tag
+              :value="physicalCheckStatusLabel(departurePhysicalCheck.status)"
+              :severity="physicalCheckSeverity(departurePhysicalCheck.status)"
+              class="rounded-md"
+            />
+          </div>
+          <p v-if="departureCheckDone" class="text-sm text-emerald-700 font-semibold">
+            Cek fisik sudah dilakukan. Checkout bisa dilanjutkan.
+          </p>
+          <p v-else class="text-sm text-slate-500">
+            Jika memilih lakukan cek fisik, sistem akan membuat request dan checkout belum diproses sampai hasil cek fisik disimpan.
+          </p>
+          <Button
+            v-if="!departureCheckDone"
+            label="Buka Cek Fisik"
+            icon="pi pi-camera"
+            size="small"
+            outlined
+            @click="openPhysicalCheckForm('departure')"
+          />
+        </div>
         <div class="p-4 bg-amber-50 border border-amber-100 rounded-xl">
           <p class="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
             <i class="pi pi-camera text-amber-600"></i>
-            Apakah kendaraan sudah dilakukan Cek Fisik keberangkatan?
+            Pilihan proses cek fisik keberangkatan
           </p>
           <div class="flex flex-col gap-2">
             <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-amber-100 transition-colors"
               :class="!checkoutSkip ? 'bg-amber-100 ring-1 ring-amber-300' : ''">
               <input type="radio" :value="false" v-model="checkoutSkip" class="accent-emerald-600 w-4 h-4" />
-              <span class="text-sm font-semibold text-slate-700">Ya, cek fisik sudah dilakukan</span>
+              <span class="text-sm font-semibold text-slate-700">Lakukan cek fisik sebelum checkout</span>
             </label>
             <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-amber-100 transition-colors"
               :class="checkoutSkip ? 'bg-amber-100 ring-1 ring-amber-300' : ''">
@@ -1812,13 +2022,19 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCheckoutDialog')" />
-          <Button label="Proses Checkout" icon="pi pi-sign-out" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitCheckout" :loading="loading" />
+          <Button
+            :label="!checkoutSkip && !departureCheckDone ? 'Buat Request Cek Fisik' : 'Proses Checkout'"
+            icon="pi pi-sign-out"
+            class="app-dialog-button app-dialog-button-primary"
+            @click="submitCheckout"
+            :loading="loading || physicalCheckLoading"
+          />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Selesai / Complete (E4) ======= -->
-    <Dialog :visible="showCompleteDialog" @update:visible="onDialogVisibleChange('showCompleteDialog', $event)" header="Konfirmasi Selesai Sewa" :style="{ width: '420px' }" modal class="custom-dialog">
+    <Dialog :visible="showCompleteDialog" @update:visible="onDialogVisibleChange('showCompleteDialog', $event)" header="Konfirmasi Selesai Sewa" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex items-start gap-4 p-4 bg-violet-50 border border-violet-100 rounded-xl">
           <div class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 flex-shrink-0">
@@ -1829,16 +2045,44 @@ const formatCurrency = (value) => {
             <p class="text-sm text-slate-500">Status booking berubah ke <strong>Selesai</strong> dan status unit kembali menjadi <strong>Aktif</strong>.</p>
           </div>
         </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Tanggal Unit Dikembalikan *</label>
+          <Calendar v-model="completeReturnedAt" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" />
+        </div>
+        <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs font-bold text-slate-500 uppercase">Status cek fisik kembali</span>
+            <Tag
+              :value="physicalCheckStatusLabel(returnPhysicalCheck.status)"
+              :severity="physicalCheckSeverity(returnPhysicalCheck.status)"
+              class="rounded-md"
+            />
+          </div>
+          <p v-if="returnCheckDone" class="text-sm text-emerald-700 font-semibold">
+            Cek fisik pengembalian sudah dilakukan. Sewa bisa diselesaikan.
+          </p>
+          <p v-else class="text-sm text-slate-500">
+            Jika memilih lakukan cek fisik, sistem akan membuat request dan status belum menjadi selesai sampai hasil cek fisik disimpan.
+          </p>
+          <Button
+            v-if="!returnCheckDone"
+            label="Buka Cek Fisik"
+            icon="pi pi-camera"
+            size="small"
+            outlined
+            @click="openPhysicalCheckForm('return')"
+          />
+        </div>
         <div class="p-4 bg-amber-50 border border-amber-100 rounded-xl">
           <p class="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
             <i class="pi pi-camera text-amber-600"></i>
-            Apakah kendaraan sudah dilakukan Cek Fisik kepulangan?
+            Pilihan proses cek fisik kepulangan
           </p>
           <div class="flex flex-col gap-2">
             <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-amber-100 transition-colors"
               :class="!completeSkip ? 'bg-amber-100 ring-1 ring-amber-300' : ''">
               <input type="radio" :value="false" v-model="completeSkip" class="accent-violet-600 w-4 h-4" />
-              <span class="text-sm font-semibold text-slate-700">Ya, cek fisik sudah dilakukan</span>
+              <span class="text-sm font-semibold text-slate-700">Lakukan cek fisik sebelum selesai</span>
             </label>
             <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-amber-100 transition-colors"
               :class="completeSkip ? 'bg-amber-100 ring-1 ring-amber-300' : ''">
@@ -1851,7 +2095,14 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCompleteDialog')" />
-          <Button label="Selesaikan Sewa" icon="pi pi-flag-fill" class="bg-violet-600 hover:bg-violet-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitComplete" :loading="loading" />
+          <Button
+            :label="!completeSkip && !returnCheckDone ? 'Buat Request Cek Fisik' : 'Selesaikan Sewa'"
+            icon="pi pi-flag-fill"
+            class="app-dialog-button app-dialog-button-primary"
+            @click="submitComplete"
+            :loading="loading || physicalCheckLoading"
+            :disabled="!completeReturnedAt"
+          />
         </div>
       </template>
     </Dialog>
@@ -1871,7 +2122,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showHandleConfirmDialog')" />
-          <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitHandle" :loading="loading" />
+          <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="app-dialog-button app-dialog-button-primary" @click="submitHandle" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -1937,7 +2188,7 @@ const formatCurrency = (value) => {
             <div v-if="handleForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-cyan-700">Pricing Package <span class="text-slate-400 font-normal">(opsional, atau isi manual)</span></label>
-                <Dropdown v-model="handleForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" />
+                <Dropdown v-model="handleForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onHandlePackageChange" />
               </div>
               <div v-if="!handleForm.pricing_package_id" class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-cyan-700">Harga All In (Override) *</label>
@@ -2015,7 +2266,7 @@ const formatCurrency = (value) => {
               <span class="font-semibold">{{ formatCurrency(hargaSewa) }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-white/60">Total Biaya Ops</span>
+              <span class="text-white/60">{{ handleForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Total Biaya Ops' }}</span>
               <span class="font-semibold">{{ formatCurrency(totalBiayaOps) }}</span>
             </div>
             <div class="h-px bg-white/10 my-1"></div>
@@ -2027,7 +2278,7 @@ const formatCurrency = (value) => {
               <span class="font-bold text-cyan-300">Tagihan Konsumen</span>
               <span class="text-xl font-bold text-cyan-300">{{ formatCurrency(tagihanKonsumen) }}</span>
             </div>
-            <p v-if="handleForm.pricing_mode === 'all_in'" class="text-[10px] text-slate-500 mt-1">* Tagihan konsumen = harga All In. Biaya ops hanya untuk catatan internal.</p>
+            <p v-if="handleForm.pricing_mode === 'all_in'" class="text-[10px] text-slate-500 mt-1">* Tagihan konsumen = harga All In dikurangi item diskon. Item biaya operasional lain hanya menjadi catatan internal.</p>
           </div>
         </div>
       </div>
@@ -2035,7 +2286,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showHandleDialog')" />
-          <Button label="Proses Handle" icon="pi pi-check-circle" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitHandle" :loading="loading" />
+          <Button label="Proses Handle" icon="pi pi-check-circle" class="app-dialog-button app-dialog-button-primary" @click="submitHandle" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2167,7 +2418,7 @@ const formatCurrency = (value) => {
               <SelectButton v-model="detailForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             </div>
             <div v-if="detailForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" />
+              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" @change="onDetailPackageChange" />
               <InputNumber v-if="!detailForm.pricing_package_id" v-model="detailForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In per paket sewa" class="w-full" />
               <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
@@ -2221,7 +2472,7 @@ const formatCurrency = (value) => {
           <div class="flex flex-col gap-2 text-sm">
             <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(detailHargaSewa) }}</span></div>
             <div class="flex justify-between">
-              <span class="text-white/60">Biaya/Diskon Ops</span>
+              <span class="text-white/60">{{ detailForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya/Diskon Ops' }}</span>
               <span :class="detailTotalBiayaOps < 0 ? 'text-rose-300' : ''">
                 {{ detailTotalBiayaOps < 0 ? '-' : '' }}{{ formatCurrency(Math.abs(detailTotalBiayaOps)) }}
               </span>
@@ -2234,7 +2485,7 @@ const formatCurrency = (value) => {
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showDetailDialog')" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4 btn-secondary" @click="requestCloseDialog('showDetailDialog')" />
           <Button :label="detailSubmitLabel" icon="pi pi-check" :class="detailSubmitButtonClass" @click="submitDetail" :loading="loading" />
         </div>
       </template>
@@ -2266,7 +2517,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCostDialog')" />
-          <Button :label="editingCostId ? 'Simpan Perubahan' : 'Tambahkan'" icon="pi pi-check" class="bg-blue-600 hover:bg-blue-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitCost" :loading="loading" />
+          <Button :label="editingCostId ? 'Simpan Perubahan' : 'Tambahkan'" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitCost" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2323,7 +2574,7 @@ const formatCurrency = (value) => {
             </div>
             <SelectButton v-model="extendForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             <div v-if="extendForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="extendForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" />
+              <Dropdown v-model="extendForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onExtendPackageChange" />
               <InputNumber v-if="!extendForm.pricing_package_id" v-model="extendForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
             </div>
           </div>
@@ -2345,7 +2596,7 @@ const formatCurrency = (value) => {
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Kalkulasi</p>
           <div class="flex flex-col gap-1.5 text-sm">
             <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(extendHargaSewa) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">Biaya Ops</span><span>{{ formatCurrency(extendTotalBiaya) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">{{ extendForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya Ops' }}</span><span>{{ formatCurrency(extendTotalBiaya) }}</span></div>
             <div class="h-px bg-white/10 my-1"></div>
             <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span class="text-lg font-bold text-cyan-300">{{ formatCurrency(extendTagihan) }}</span></div>
           </div>
@@ -2354,7 +2605,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showExtendDialog')" />
-          <Button label="Proses Extend" icon="pi pi-check" class="bg-amber-600 border-none text-white px-6 rounded-lg font-semibold" @click="submitExtend" :loading="loading" />
+          <Button label="Proses Extend" icon="pi pi-check" class="app-dialog-button app-dialog-button-warning" @click="submitExtend" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2431,7 +2682,7 @@ const formatCurrency = (value) => {
             </div>
             <SelectButton v-model="rollingForm.pricing_mode_lama" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             <div v-if="rollingForm.pricing_mode_lama === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" />
+              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingOldPackageChange" />
               <InputNumber v-if="!rollingForm.pricing_package_id_lama" v-model="rollingForm.harga_all_in_lama" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
             </div>
           </div>
@@ -2455,7 +2706,7 @@ const formatCurrency = (value) => {
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Kalkulasi Koreksi</p>
           <div class="flex flex-col gap-1.5 text-sm">
             <div class="flex justify-between"><span class="text-white/60">Harga Sewa Lama</span><span>{{ formatCurrency(rollingOldHargaSewa) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">Biaya Ops Lama</span><span>{{ formatCurrency(rollingOldTotalBiaya) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">{{ rollingForm.pricing_mode_lama === 'all_in' ? 'Diskon Ops Lama Dihitung' : 'Biaya Ops Lama' }}</span><span>{{ formatCurrency(rollingOldTotalBiaya) }}</span></div>
             <div class="flex justify-between"><span class="text-white/60">Sisa Lama Sewa Rolling</span><span>{{ rollingForm.lama_sewa || 0 }} {{ rollingForm.paket_sewa }}</span></div>
             <div class="h-px bg-white/10 my-1"></div>
             <div class="flex justify-between"><span class="font-bold text-sky-300">Tagihan Unit Lama</span><span class="text-lg font-bold text-sky-300">{{ formatCurrency(rollingOldTagihan) }}</span></div>
@@ -2511,7 +2762,7 @@ const formatCurrency = (value) => {
           <div class="mt-3">
             <SelectButton v-model="rollingForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             <div v-if="rollingForm.pricing_mode === 'all_in'" class="flex flex-col gap-2 mt-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" />
+              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingNewPackageChange" />
               <InputNumber v-if="!rollingForm.pricing_package_id" v-model="rollingForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
             </div>
           </div>
@@ -2533,7 +2784,7 @@ const formatCurrency = (value) => {
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Kalkulasi Unit Baru</p>
           <div class="flex flex-col gap-1.5 text-sm">
             <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(rollingHargaSewa) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">Biaya Ops</span><span>{{ formatCurrency(rollingTotalBiaya) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">{{ rollingForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya Ops' }}</span><span>{{ formatCurrency(rollingTotalBiaya) }}</span></div>
             <div class="h-px bg-white/10 my-1"></div>
             <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span class="text-lg font-bold text-cyan-300">{{ formatCurrency(rollingTagihan) }}</span></div>
           </div>
@@ -2543,9 +2794,9 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showRollingDialog')" />
-          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="bg-sky-600 hover:bg-sky-700 border-none text-white px-6 rounded-lg font-semibold" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
+          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="app-dialog-button app-dialog-button-info" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
           <Button v-if="rollingStep === 2" label="Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
-          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="bg-sky-700 hover:bg-sky-800 border-none text-white px-6 rounded-lg font-semibold" @click="submitRolling" :loading="loading" />
+          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-info" @click="submitRolling" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2569,7 +2820,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showStopEarlyDialog')" />
-          <Button label="Proses Stop" icon="pi pi-check" severity="danger" class="px-6" @click="submitStopEarly" :loading="loading" />
+          <Button label="Proses Stop" icon="pi pi-check" class="app-dialog-button app-dialog-button-danger" @click="submitStopEarly" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2602,7 +2853,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showBatalDialog')" />
-          <Button label="Ya, Batalkan Booking" icon="pi pi-ban" severity="danger" class="px-6 py-2.5 rounded-lg font-semibold" @click="submitBatal" :loading="loading" />
+          <Button label="Ya, Batalkan Booking" icon="pi pi-ban" class="app-dialog-button app-dialog-button-danger" @click="submitBatal" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2645,7 +2896,7 @@ const formatCurrency = (value) => {
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showPaymentDialog')" />
-          <Button label="Simpan Pembayaran" icon="pi pi-check" class="bg-emerald-600 hover:bg-emerald-700 border-none px-6 py-2.5 rounded-lg font-semibold text-white transition-all" @click="submitPayment" :loading="loading" />
+          <Button label="Simpan Pembayaran" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitPayment" :loading="loading" />
         </div>
       </template>
     </Dialog>
@@ -2689,7 +2940,7 @@ const formatCurrency = (value) => {
           <Button
             label="Simpan"
             icon="pi pi-check"
-            class="bg-blue-600 border-none text-white px-6"
+            class="app-dialog-button app-dialog-button-primary"
             @click="submitAdditionalCost"
             :loading="loading"
             :disabled="!additionalCostForm.cost_type_id || !additionalCostForm.amount"
@@ -2703,7 +2954,9 @@ const formatCurrency = (value) => {
 <style scoped>
 .booking-detail-container {
   animation: fadeIn 0.35s ease-out;
-  padding: 2px;
+  width: 100%;
+  padding: var(--space-2xl);
+  background: var(--page-bg);
 }
 
 @keyframes fadeIn {
@@ -2711,21 +2964,313 @@ const formatCurrency = (value) => {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.detail-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-xl);
+  margin-bottom: var(--space-2xl);
+}
+
+.detail-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.detail-subtitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.detail-subtitle i {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+
+
+.overdue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: #FCEAE9;
+  color: #B02A24;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.detail-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.detail-primary-action,
+.detail-secondary-action {
+  min-height: 34px;
+  border-radius: var(--radius-full) !important;
+  padding: 8px 16px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+
+.detail-primary-action {
+  border: none !important;
+  background: var(--text-primary) !important;
+  color: #fff !important;
+}
+
+.detail-primary-action:hover {
+  opacity: 0.92;
+}
+
+.detail-secondary-action {
+  border: 1px solid var(--surface-border) !important;
+  background: var(--surface-default) !important;
+  color: var(--text-primary) !important;
+}
+
+.detail-secondary-action:hover {
+  background: var(--card-bg-hover) !important;
+}
+
+.loading-grid,
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl);
+  align-items: start;
+}
+
+.detail-main-column,
+.detail-side-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.app-card {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-tile);
+}
+
+.app-section-header {
+  min-height: 54px;
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--surface-default);
+}
+
+.app-section-header h2,
+.app-section-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.app-section-header p {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.app-section-header :is(.w-9, .w-8) {
+  border-radius: var(--radius-default);
+  background: var(--card-bg) !important;
+  color: var(--text-secondary) !important;
+}
+
+.app-muted-panel {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.app-card :deep(.p-button.p-button-text) {
+  color: var(--text-secondary);
+}
+
+.app-card :deep(.p-button.p-button-text:hover) {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+}
+
+.app-section-header :deep(.p-button:not(.p-button-text)) {
+  border: none !important;
+  border-radius: var(--radius-full) !important;
+  background: var(--text-primary) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.app-section-header :deep(.p-button:not(.p-button-text):hover) {
+  opacity: 0.92;
+}
+
+.app-card :deep(.status-badge) {
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.app-card :deep(.status-badge.neutral) {
+  background: #E4E8F3;
+  color: #4A5060;
+}
+
+.app-card :deep(.status-badge.info) {
+  background: #E1F4F6;
+  color: #085A66;
+}
+
+.app-card :deep(.status-badge.success) {
+  background: #E6F6EC;
+  color: #147239;
+}
+
+.app-card :deep(.status-badge.error) {
+  background: #FCEAE9;
+  color: #B02A24;
+}
+
+.app-card :deep(.status-badge.warning) {
+  background: #FDF4D9;
+  color: #8C660A;
+}
+
+.financial-summary-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  padding: var(--space-xl);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-tile);
+}
+
+.financial-summary-card h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.summary-icon {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+}
+
+.summary-row,
+.summary-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.summary-row span,
+.summary-status span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.summary-row strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.summary-row .summary-positive {
+  color: var(--positive);
+}
+
+.summary-divider {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--surface-border);
+}
+
+.summary-balance {
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+  padding: var(--space-lg);
+}
+
+.summary-balance span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.summary-balance strong {
+  display: block;
+  font-family: var(--font-headline);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.summary-balance .is-due {
+  color: #B02A24;
+}
+
+.summary-balance .is-paid {
+  color: #147239;
+}
+
 /* ---- DataTable inside vehicle cards ---- */
 .custom-mini-table :deep(.p-datatable-thead > tr > th) {
-  background-color: #f8fafc;
-  color: #94a3b8;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  background-color: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
   text-transform: uppercase;
   padding: 0.625rem 0.75rem;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--surface-border);
 }
 
 .custom-mini-table :deep(.p-datatable-tbody > tr > td) {
   padding: 0.625rem 0.75rem;
-  border-bottom: 1px solid #f8fafc;
+  border-bottom: 1px solid var(--surface-border);
 }
 
 .custom-mini-table :deep(.p-datatable-tbody > tr:last-child > td) {
@@ -2742,8 +3287,8 @@ const formatCurrency = (value) => {
   padding: 1.25rem 1.5rem;
   font-weight: 700;
   font-size: 1.05rem;
-  color: #1e293b;
-  border-bottom: 1px solid #f1f5f9;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--surface-border);
 }
 
 :deep(.custom-dialog .p-dialog-content) {
@@ -2752,7 +3297,51 @@ const formatCurrency = (value) => {
 
 :deep(.custom-dialog .p-dialog-footer) {
   padding: 0.75rem 1.5rem 1.25rem 1.5rem;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--surface-border);
+}
+
+:deep(.app-dialog-button) {
+  min-height: 36px;
+  border-radius: var(--radius-full) !important;
+  padding: 8px 18px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+:deep(.app-dialog-button-primary),
+:deep(.app-dialog-button-info),
+:deep(.app-dialog-button-warning) {
+  border: none !important;
+  background: var(--text-primary) !important;
+  color: #fff !important;
+}
+
+:deep(.app-dialog-button-primary:hover),
+:deep(.app-dialog-button-info:hover),
+:deep(.app-dialog-button-warning:hover) {
+  opacity: 0.92;
+}
+
+:deep(.app-dialog-button-secondary) {
+  border: 1px solid var(--surface-border) !important;
+  background: var(--surface-default) !important;
+  color: var(--text-primary) !important;
+}
+
+:deep(.app-dialog-button-secondary:hover) {
+  background: var(--card-bg-hover) !important;
+}
+
+:deep(.app-dialog-button-danger) {
+  border: none !important;
+  background: var(--negative) !important;
+  color: #fff !important;
+}
+
+:deep(.app-dialog-button-danger:hover) {
+  opacity: 0.9;
 }
 
 /* ---- Fieldset inside dialogs ---- */
@@ -2765,15 +3354,13 @@ fieldset legend {
 }
 
 .financial-summary-card {
-  border-radius: 8px;
-  background: #0f172a;
-  box-shadow: 0 18px 34px -22px rgba(15, 23, 42, 0.85);
+  border-radius: var(--radius-default);
 }
 
 .cost-reference-card {
   border: 1px solid var(--surface-border);
-  border-radius: 8px;
-  background: #ffffff;
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
   padding: 16px;
 }
 
@@ -2782,23 +3369,81 @@ fieldset legend {
   min-width: 0;
   flex-direction: column;
   gap: 4px;
-  border: 1px solid var(--surface-border-soft);
-  border-radius: 8px;
-  background: #f8fbfe;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
   padding: 12px;
 }
 
 .cost-mini-box span {
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .cost-mini-box strong {
-  color: #0f172a;
-  font-size: 0.92rem;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+@media (min-width: 1024px) {
+  .loading-grid,
+  .detail-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(320px, 0.95fr);
+  }
+
+  .detail-main-column {
+    grid-column: 1;
+  }
+
+  .detail-side-column {
+    position: sticky;
+    top: 20px;
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 768px) {
+  .booking-detail-container {
+    padding: var(--space-lg);
+  }
+
+  .detail-page-header {
+    flex-direction: column;
+    gap: var(--space-lg);
+    margin-bottom: var(--space-xl);
+  }
+
+  .detail-title {
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-action-bar {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .detail-action-bar :deep(.p-button) {
+    flex: 1 1 calc(50% - var(--space-sm));
+  }
+
+  .detail-grid,
+  .detail-main-column,
+  .detail-side-column {
+    gap: var(--space-lg);
+  }
+
+  .app-section-header {
+    padding: var(--space-lg) !important;
+  }
+
+  .app-card > .p-6,
+  .app-card > div.p-6 {
+    padding: var(--space-lg) !important;
+  }
 }
 </style>
 

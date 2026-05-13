@@ -80,6 +80,12 @@ const router = createRouter({
           meta: { roles: ['superadmin', 'admin_branch'] }
         },
         {
+          path: '/master/cities',
+          name: 'cities',
+          component: () => import('../views/master/CityListView.vue'),
+          meta: { roles: ['superadmin', 'admin_branch', 'cs'] }
+        },
+        {
           path: '/master/pricing-packages',
           name: 'pricing-packages',
           component: () => import('../views/master/PricingPackageListView.vue'),
@@ -104,6 +110,16 @@ const router = createRouter({
           path: '/bookings/:id',
           name: 'BookingDetail',
           component: () => import('../views/bookings/BookingDetailView.vue'),
+        },
+        {
+          path: '/physical-checks',
+          name: 'PhysicalCheckList',
+          component: () => import('../views/physical-checks/PhysicalCheckListView.vue'),
+        },
+        {
+          path: '/physical-checks/:bookingId/:type',
+          name: 'PhysicalCheckForm',
+          component: () => import('../views/physical-checks/PhysicalCheckFormView.vue'),
         },
       ]
     }

@@ -26,6 +26,7 @@ class UpdateCustomerRequest extends FormRequest
             'nama'             => 'sometimes|required|string|max:150',
             'kontak_1'         => 'sometimes|required|string|max:20',
             'kontak_2'         => 'nullable|string|max:20',
+            'email'            => 'nullable|email|max:150',
             'alamat'           => 'nullable|string',
             'kota'             => 'nullable|string|max:100',
             'status'           => 'required|in:Normal,Member,Redflag,Blacklist,Corporate,Rent to Rent',

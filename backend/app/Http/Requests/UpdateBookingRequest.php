@@ -24,6 +24,7 @@ class UpdateBookingRequest extends FormRequest
             'tgl_sewa'           => ['nullable', 'date'],
             'tgl_kembali'        => ['nullable', 'date', 'after:tgl_sewa'],
             'tujuan'             => ['nullable', 'string', 'max:500'],
+            'kota'               => ['nullable', 'string', 'max:100'],
             'alamat_penjemputan' => ['nullable', 'string'],
             'catatan'            => ['nullable', 'string'],
         ];

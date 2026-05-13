@@ -30,6 +30,8 @@ class StoreBookingRequest extends FormRequest
             'customer_id' => 'nullable|exists:customers,id',
             'rental_owner_id' => 'nullable|exists:rental_owners,id',
             'customer_name' => 'required_without_all:customer_id,rental_owner_id|string|max:255',
+            'customer_email' => 'nullable|email|max:150',
+            'customer_status' => 'nullable|in:Normal,Corporate,normal,corporate',
             'customer_phone' => [
                 'required_without_all:customer_id,rental_owner_id',
                 'string',
@@ -53,6 +55,7 @@ class StoreBookingRequest extends FormRequest
             'lama_sewa' => 'nullable|integer|min:1',
             'paket_sewa' => 'nullable|in:harian,mingguan,bulanan',
             'tujuan' => 'nullable|string|max:255',
+            'kota' => 'nullable|string|max:100',
             'alamat_penjemputan' => 'nullable|string',
             'harga_dealing' => 'nullable|integer|min:0',
             'dp' => 'nullable|integer|min:0',

@@ -38,6 +38,7 @@ class BookingService
                         'nama' => $rentalOwner->nama,
                         'kontak_1' => $normalizedPhone,
                         'kontak_2' => $rentalOwner->kontak_2,
+                        'email' => $rentalOwner->email ?? null,
                         'alamat' => $rentalOwner->alamat,
                         'kota' => $rentalOwner->kota ?? '-',
                         'status' => 'Rent to Rent',
@@ -64,8 +65,9 @@ class BookingService
                         'tenant_id' => $tenantId,
                         'nama' => $data['customer_name'],
                         'kontak_1' => $normalizedPhone,
+                        'email' => $data['customer_email'] ?? null,
                         'kota' => $data['customer_city'] ?? '-',
-                        'status' => 'Normal',
+                        'status' => $this->normalizeCustomerStatus($data['customer_status'] ?? 'Normal'),
                     ]);
                     $customerId = $customer->id;
                 }
@@ -109,8 +111,11 @@ class BookingService
                 'dp' => $data['dp'] ?? null,
                 'rekening_dp_id' => $data['rekening_dp_id'] ?? null,
                 'tujuan' => $data['tujuan'] ?? null,
+                'kota' => $data['kota'] ?? null,
                 'alamat_penjemputan' => $data['alamat_penjemputan'] ?? null,
                 'catatan' => $data['catatan'] ?? null,
+                'confirmed_by' => $hasDp ? auth()->id() : null,
+                'confirmed_at' => $hasDp ? now() : null,
             ]);
 
             // 7. Create Booking Detail
@@ -142,7 +147,7 @@ class BookingService
                 ]);
             }
 
-            return $booking->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'payments']);
+            return $booking->load(['customer', 'createdBy', 'confirmedBy', 'bookingDetails.unit.rentalOwner', 'payments.creator']);
         });
     }
 
@@ -219,7 +224,10 @@ class BookingService
                 'paket_sewa'         => $data['paket_sewa'],
                 'alamat_penjemputan' => $data['alamat_penjemputan'] ?? $booking->alamat_penjemputan,
                 'tujuan'             => $data['tujuan'] ?? $booking->tujuan,
+                'kota'               => $data['kota'] ?? $booking->kota,
                 'status'             => 'waiting_list',
+                'handled_by'         => auth()->id(),
+                'handled_at'         => now(),
             ]);
 
             // 2. Update the initial booking_detail (draft) with full handle data
@@ -278,8 +286,22 @@ class BookingService
             );
         }
 
-        return DB::transaction(function () use ($booking, $skipInspection) {
-            $booking->update(['status' => 'rental_unit']);
+        $physicalCheckService = app(PhysicalCheckService::class);
+
+        if (! $skipInspection) {
+            $physicalCheckService->assertCompletedOrRequest($booking, 'departure');
+        }
+
+        return DB::transaction(function () use ($booking, $skipInspection, $physicalCheckService) {
+            if ($skipInspection) {
+                $physicalCheckService->skipForBooking($booking, 'departure');
+            }
+
+            $booking->update([
+                'status' => 'rental_unit',
+                'checked_out_by' => auth()->id(),
+                'checked_out_at' => now(),
+            ]);
 
             $activeDetail = $booking->bookingDetails()
                 ->whereIn('status', ['draft', 'aktif'])
@@ -303,7 +325,7 @@ class BookingService
      * Complete a booking (rental_unit → selesai).
      * Updates unit status back to "Aktif" and booking_detail status to "selesai".
      */
-    public function complete(Booking $booking, bool $skipInspection = false): Booking
+    public function complete(Booking $booking, bool $skipInspection = false, ?string $returnedAt = null): Booking
     {
         if ($booking->status !== 'rental_unit') {
             throw new \InvalidArgumentException(
@@ -311,8 +333,23 @@ class BookingService
             );
         }
 
-        return DB::transaction(function () use ($booking, $skipInspection) {
-            $booking->update(['status' => 'selesai']);
+        $physicalCheckService = app(PhysicalCheckService::class);
+
+        if (! $skipInspection) {
+            $physicalCheckService->assertCompletedOrRequest($booking, 'return');
+        }
+
+        return DB::transaction(function () use ($booking, $skipInspection, $returnedAt, $physicalCheckService) {
+            if ($skipInspection) {
+                $physicalCheckService->skipForBooking($booking, 'return');
+            }
+
+            $booking->update([
+                'status' => 'selesai',
+                'returned_at' => $returnedAt ? Carbon::parse($returnedAt)->format('Y-m-d H:i:s') : now(),
+                'completed_by' => auth()->id(),
+                'completed_at' => now(),
+            ]);
 
             $activeDetail = $booking->bookingDetails()
                 ->where('status', 'aktif')
@@ -346,10 +383,35 @@ class BookingService
             );
         }
 
-        $booking->update([
+        $updates = [
             'status'         => $data['status'],
             'catatan_status' => $data['catatan_status'] ?? $booking->catatan_status,
-        ]);
+        ];
+
+        if ($data['status'] === 'confirm') {
+            $updates['confirmed_by'] = auth()->id();
+            $updates['confirmed_at'] = now();
+        }
+
+        if ($data['status'] === 'waiting_list') {
+            $updates['handled_by'] = auth()->id();
+            $updates['handled_at'] = now();
+        }
+
+        if ($data['status'] === 'rental_unit') {
+            $updates['checked_out_by'] = auth()->id();
+            $updates['checked_out_at'] = now();
+        }
+
+        if ($data['status'] === 'selesai') {
+            $updates['returned_at'] = isset($data['returned_at'])
+                ? Carbon::parse($data['returned_at'])->format('Y-m-d H:i:s')
+                : now();
+            $updates['completed_by'] = auth()->id();
+            $updates['completed_at'] = now();
+        }
+
+        $booking->update($updates);
 
         return $booking->fresh();
     }
@@ -363,5 +425,10 @@ class BookingService
             'rental_unit'  => ['selesai', 'batal'],
             default        => [],
         };
+    }
+
+    private function normalizeCustomerStatus(string $status): string
+    {
+        return strtolower($status) === 'corporate' ? 'Corporate' : 'Normal';
     }
 }

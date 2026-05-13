@@ -29,7 +29,17 @@ class BookingPaymentService
         $data['created_by'] = Auth::id();
         $data['paid_at'] = $data['paid_at'] ?? now();
 
-        return BookingPayment::create($data);
+        $payment = BookingPayment::create($data);
+
+        if (($data['payment_type'] ?? null) === 'dp') {
+            $booking->update([
+                'status' => $booking->status === 'follow_up' ? 'confirm' : $booking->status,
+                'confirmed_by' => Auth::id(),
+                'confirmed_at' => now(),
+            ]);
+        }
+
+        return $payment;
     }
 
     /**

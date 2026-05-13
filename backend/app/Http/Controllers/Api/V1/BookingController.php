@@ -22,6 +22,20 @@ class BookingController extends Controller
     use AuthorizesRequests;
 
     protected $bookingService;
+    private array $bookingRelations = [
+        'customer',
+        'createdBy',
+        'confirmedBy',
+        'handledBy',
+        'checkedOutBy',
+        'completedBy',
+        'bookingDetails.unit.rentalOwner',
+        'bookingDetails.driver',
+        'bookingDetails.costs.costType',
+        'payments.creator',
+        'refunds',
+        'physicalChecks',
+    ];
 
     public function __construct(BookingService $bookingService)
     {
@@ -36,7 +50,7 @@ class BookingController extends Controller
         $this->authorize('viewAny', Booking::class);
 
         $bookings = Booking::query()
-            ->with(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'payments'])
+            ->with(collect($this->bookingRelations)->reject(fn($relation) => $relation === 'refunds')->all())
             ->when($request->status, fn($q, $v) => $q->where('status', $v))
             ->when($request->date_from, fn($q, $v) => $q->whereDate('created_at', '>=', $v))
             ->when($request->date_to,   fn($q, $v) => $q->whereDate('created_at', '<=', $v))
@@ -71,7 +85,7 @@ class BookingController extends Controller
     public function show(Booking $booking): BookingResource
     {
         $this->authorize('view', $booking);
-        $booking->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']);
+        $booking->load($this->bookingRelations);
         return new BookingResource($booking);
     }
 
@@ -88,6 +102,7 @@ class BookingController extends Controller
             'dp',
             'rekening_dp_id',
             'tujuan',
+            'kota',
             'alamat_penjemputan',
             'catatan',
         ])->all());
@@ -110,7 +125,7 @@ class BookingController extends Controller
             }
         }
 
-        return new BookingResource($booking->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
+        return new BookingResource($booking->load($this->bookingRelations));
     }
 
     /**
@@ -120,7 +135,7 @@ class BookingController extends Controller
     {
         $this->authorize('updateStatus', $booking);
         $updated = $this->bookingService->changeStatus($booking, $request->validated());
-        return new BookingResource($updated->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
+        return new BookingResource($updated->load($this->bookingRelations));
     }
 
     /**
@@ -130,7 +145,7 @@ class BookingController extends Controller
     {
         $this->authorize('update', $booking);
         $handled = $this->bookingService->handleBooking($booking, $request->validated());
-        return new BookingResource($handled->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
+        return new BookingResource($handled->load($this->bookingRelations));
     }
 
     /**
@@ -142,7 +157,7 @@ class BookingController extends Controller
         $this->authorize('checkout', $booking);
         $skipInspection = $request->boolean('skip_inspection', false);
         $updated = $this->bookingService->checkout($booking, $skipInspection);
-        return new BookingResource($updated->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
+        return new BookingResource($updated->load($this->bookingRelations));
     }
 
     /**
@@ -153,7 +168,8 @@ class BookingController extends Controller
     {
         $this->authorize('complete', $booking);
         $skipInspection = $request->boolean('skip_inspection', false);
-        $updated = $this->bookingService->complete($booking, $skipInspection);
-        return new BookingResource($updated->load(['customer', 'createdBy', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
+        $validated = $request->validated();
+        $updated = $this->bookingService->complete($booking, $skipInspection, $validated['returned_at'] ?? null);
+        return new BookingResource($updated->load($this->bookingRelations));
     }
 }

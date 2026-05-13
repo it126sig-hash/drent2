@@ -24,16 +24,30 @@ class BookingResource extends JsonResource
             'dp'                  => (int) $this->dp,
             'rekening_dp_id'      => $this->rekening_dp_id,
             'tujuan'              => $this->tujuan,
+            'kota'                => $this->kota,
             'alamat_penjemputan'  => $this->alamat_penjemputan,
             'catatan'             => $this->catatan,
             'catatan_status'      => $this->catatan_status,
             'branch_id'           => $this->branch_id,
+            'confirmed_at'        => $this->confirmed_at?->toISOString(),
+            'handled_at'          => $this->handled_at?->toISOString(),
+            'checked_out_at'      => $this->checked_out_at?->toISOString(),
+            'returned_at'         => $this->returned_at?->toISOString(),
+            'completed_at'        => $this->completed_at?->toISOString(),
             'created_at'          => $this->created_at?->toISOString(),
             'created_by_user'     => $this->whenLoaded('createdBy', fn() => $this->createdBy ? [
                 'id'   => $this->createdBy->id,
                 'name' => $this->createdBy->name,
                 'role' => $this->createdBy->role,
             ] : null),
+            'confirmed_by_user'   => $this->stageUser('confirmedBy'),
+            'handled_by_user'     => $this->stageUser('handledBy'),
+            'checked_out_by_user' => $this->stageUser('checkedOutBy'),
+            'completed_by_user'   => $this->stageUser('completedBy'),
+            'physical_check_summary' => $this->whenLoaded('physicalChecks', fn() => [
+                'departure' => $this->physicalCheckSummary('departure'),
+                'return' => $this->physicalCheckSummary('return'),
+            ]),
 
             // C8: Computed financial fields
             'total_payments'      => $this->whenLoaded('payments', fn() =>
@@ -59,6 +73,8 @@ class BookingResource extends JsonResource
             'customer'            => [
                 'id'     => $this->customer?->id,
                 'nama'   => $this->customer?->nama,
+                'email'  => $this->customer?->email,
+                'kota'   => $this->customer?->kota,
                 'status' => $this->customer?->status,
             ],
             'booking_details'     => $this->whenLoaded('bookingDetails', function () {
@@ -123,6 +139,10 @@ class BookingResource extends JsonResource
                     'reallocated_from_id'   => $p->reallocated_from_id,
                     'created_by'            => $p->created_by,
                     'created_at'            => $p->created_at?->toISOString(),
+                    'creator'               => $p->relationLoaded('creator') && $p->creator ? [
+                        'id'   => $p->creator->id,
+                        'name' => $p->creator->name,
+                    ] : null,
                 ]);
             }),
             'refunds'             => $this->whenLoaded('refunds', function () {
@@ -136,6 +156,35 @@ class BookingResource extends JsonResource
                     'created_at'         => $r->created_at?->toISOString(),
                 ]);
             }),
+        ];
+    }
+
+    private function stageUser(string $relation)
+    {
+        return $this->whenLoaded($relation, function () use ($relation) {
+            $user = $this->{$relation};
+
+            return $user ? [
+                'id'   => $user->id,
+                'name' => $user->name,
+                'role' => $user->role,
+            ] : null;
+        });
+    }
+
+    private function physicalCheckSummary(string $type): array
+    {
+        $check = $this->physicalChecks
+            ->where('type', $type)
+            ->sortByDesc('id')
+            ->first();
+
+        return [
+            'id' => $check?->id,
+            'status' => $check?->status ?? 'not_requested',
+            'requested_at' => $check?->requested_at?->toISOString(),
+            'inspected_at' => $check?->inspected_at?->toISOString(),
+            'skipped_at' => $check?->skipped_at?->toISOString(),
         ];
     }
 
@@ -156,6 +205,14 @@ class BookingResource extends JsonResource
             $duration = $d->lama_sewa ?? 1;
             if ($d->pricing_mode === 'all_in') {
                 $total += (int) (($d->harga_all_in ?? 0) * $duration);
+
+                if ($d->relationLoaded('costs')) {
+                    $total += $d->costs
+                        ->where('type', 'diskon')
+                        ->sum(fn($cost) =>
+                            -((int) $cost->amount)
+                        );
+                }
             } else {
                 $total += (int) (($d->harga_mobil - $d->diskon_mobil) * $duration);
 

@@ -7,6 +7,7 @@ import { useCustomer } from '../../composables/useCustomer';
 import { useRentalOwner } from '../../composables/useRentalOwner';
 import { useUnit } from '../../composables/useUnit';
 import { usePaymentAccount } from '../../composables/usePaymentAccount';
+import { useCity } from '../../composables/useCity';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Dropdown from 'primevue/dropdown';
@@ -25,6 +26,7 @@ const { store, fetchOne, updateBooking, loading: bookingLoading } = useBooking()
 const { customers, fetchAll: fetchCustomers, loading: customersLoading } = useCustomer();
 const { rentalOwners, fetchAll: fetchRentalOwners, loading: rentalOwnersLoading } = useRentalOwner();
 const { units, fetchAll: fetchUnits, loading: unitsLoading } = useUnit();
+const { cities, fetchAll: fetchCities, loading: citiesLoading } = useCity();
 
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
 const isEditMode = computed(() => route.name === 'BookingEdit');
@@ -42,12 +44,19 @@ const lamaSewaOptions = Array.from({ length: 99 }, (_, index) => ({
   value: index + 1,
 }));
 
+const newCustomerStatusOptions = [
+  { label: 'Normal', value: 'Normal' },
+  { label: 'Corporate', value: 'Corporate' },
+];
+
 const form = ref({
   customer_mode: 'existing',
   customer_id: null,
   customer_name: '',
   customer_phone: '',
+  customer_email: '',
   customer_city: '',
+  customer_status: 'Normal',
 
   unit_mode: 'existing',
   unit_id: null,
@@ -58,6 +67,7 @@ const form = ref({
   lama_sewa: 1,
   paket_sewa: 'harian',
   tujuan: '',
+  kota: '',
   alamat_penjemputan: '',
   harga_dealing: null,
   dp: null,
@@ -96,6 +106,7 @@ onMounted(() => {
   fetchRentalOwners({ per_page: 200 });
   fetchUnits({ per_page: 200 });
   fetchAccounts({ per_page: 100 });
+  fetchCities({ per_page: 200, is_active: true });
 
   if (isEditMode.value) {
     loadBookingForEdit();
@@ -134,7 +145,9 @@ const loadBookingForEdit = async () => {
       customer_id: booking.customer?.id ? `customer:${booking.customer.id}` : null,
       customer_name: booking.customer?.nama || '',
       customer_phone: '',
+      customer_email: booking.customer?.email || '',
       customer_city: booking.customer?.kota || '',
+      customer_status: booking.customer?.status || 'Normal',
 
       unit_mode: detail?.unit_id ? 'existing' : 'placeholder',
       unit_id: detail?.unit_id || null,
@@ -145,6 +158,7 @@ const loadBookingForEdit = async () => {
       lama_sewa: detail?.lama_sewa || booking.lama_sewa || 1,
       paket_sewa: detail?.paket_sewa || booking.paket_sewa || 'harian',
       tujuan: booking.tujuan || '',
+      kota: booking.kota || '',
       alamat_penjemputan: booking.alamat_penjemputan || '',
       harga_dealing: booking.harga_dealing ?? null,
       dp: booking.dp ?? null,
@@ -191,7 +205,9 @@ const handleSubmit = async () => {
 
       delete payload.customer_name;
       delete payload.customer_phone;
+      delete payload.customer_email;
       delete payload.customer_city;
+      delete payload.customer_status;
     } else {
       delete payload.customer_id;
       delete payload.rental_owner_id;
@@ -321,7 +337,9 @@ const resetForm = () => {
     customer_id: null,
     customer_name: '',
     customer_phone: '',
+    customer_email: '',
     customer_city: '',
+    customer_status: 'Normal',
     unit_mode: 'existing',
     unit_id: null,
     unit_placeholder: '',
@@ -330,6 +348,7 @@ const resetForm = () => {
     lama_sewa: 1,
     paket_sewa: 'harian',
     tujuan: '',
+    kota: '',
     alamat_penjemputan: '',
     harga_dealing: null,
     dp: null,
@@ -396,6 +415,16 @@ const unitOptions = computed(() => {
     }));
 });
 
+const cityOptions = computed(() =>
+  cities.value
+    .filter(city => city.is_active)
+    .map(city => ({
+      label: city.provinsi ? `${city.nama} - ${city.provinsi}` : city.nama,
+      value: city.nama,
+      searchableLabel: [city.nama, city.provinsi].filter(Boolean).join(' ')
+    }))
+);
+
 const customerOptions = computed(() => {
     const customerItems = customers.value.map(c => ({
         id: c.id,
@@ -406,6 +435,7 @@ const customerOptions = computed(() => {
         nama: c.nama,
         kota: c.kota || '-',
         kontak_1: c.kontak_1 || '-',
+        email: c.email || '-',
         status: c.status || 'Normal',
         catatan: c.catatan || '',
         member_expired_at: c.member_expired_at || null,
@@ -413,6 +443,7 @@ const customerOptions = computed(() => {
           c.nama,
           c.kota,
           c.kontak_1,
+          c.email,
           c.status,
           c.catatan,
           c.member_expired_at,
@@ -430,6 +461,7 @@ const customerOptions = computed(() => {
         nama: owner.nama,
         kota: owner.kota || '-',
         kontak_1: owner.kontak_1 || '-',
+        email: '-',
         status: 'Rent to Rent',
         catatan: owner.alamat || '',
         member_expired_at: null,
@@ -473,18 +505,19 @@ const formatDate = (value) => {
 
 <template>
   <div class="booking-create-container">
-    <div class="page-header mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <div>
-        <h1 class="text-xl font-bold text-slate-900 tracking-tight">{{ isEditMode ? 'Edit Booking' : 'Buat Booking Baru' }}</h1>
-        <p class="mt-1 text-sm text-slate-500">
-          {{ isEditMode ? 'Perbarui data transaksi tanpa mengubah konsumen.' : 'Input awal transaksi sebelum masuk proses handle booking.' }}
-        </p>
-      </div>
-      <Button label="Batal" icon="pi pi-times" size="small" class="p-button-text p-button-secondary self-start md:self-auto" @click="router.back()" />
-    </div>
+     <div class="detail-page-header mb-3">
+      <div class="flex items-center gap-3">
+        <Button icon="pi pi-arrow-left" text rounded @click="router.back()" class="back-button" />
+        <div>
+          <div class="flex flex-wrap items-center gap-3 mb-1">
+            <h1 class="booking-page-title">{{ isEditMode ? 'Edit Booking' : 'Buat Booking Baru' }}</h1>  
+          </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-      <div class="md:col-span-8 flex flex-col gap-4">
+        </div>
+      </div>
+    </div>
+    <div class="booking-layout-grid">
+      <div class="booking-form-column">
         <Card class="premium-card">
           <template #title>
             <div class="section-title">
@@ -493,7 +526,7 @@ const formatDate = (value) => {
             </div>
           </template>
           <template #content>
-            <div class="flex flex-col gap-4">
+            <div class="section-stack">
               <Message v-if="isEditMode" severity="info" icon="pi pi-lock" class="!m-0">
                 Konsumen dikunci saat edit booking.
               </Message>
@@ -514,7 +547,7 @@ const formatDate = (value) => {
                   :options="customerOptions"
                   optionLabel="searchableLabel"
                   optionValue="value"
-                  placeholder="Nama, kota, nomor, atau status..."
+                  placeholder="Nama, kota, nomor, email, atau status..."
                   filter
                   :filterFields="['searchableLabel']"
                   :loading="customersLoading || rentalOwnersLoading"
@@ -523,7 +556,7 @@ const formatDate = (value) => {
                 >
                   <template #value="slotProps">
                     <div v-if="slotProps.value" class="selected-inline">
-                      <span class="font-semibold text-slate-800">{{ customerOptions.find(c => c.value === slotProps.value)?.nama }}</span>
+                      <span class="option-title">{{ customerOptions.find(c => c.value === slotProps.value)?.nama }}</span>
                       <Tag
                         v-if="customerOptions.find(c => c.value === slotProps.value)"
                         :value="customerOptions.find(c => c.value === slotProps.value)?.status"
@@ -536,12 +569,12 @@ const formatDate = (value) => {
                   <template #option="slotProps">
                     <div class="option-row">
                       <div class="flex min-w-0 flex-col">
-                        <span class="font-semibold text-slate-800 truncate">{{ slotProps.option.nama }}</span>
-                        <span class="text-xs text-slate-500 truncate">{{ slotProps.option.kontak_1 }} - {{ slotProps.option.kota }}</span>
-                        <span v-if="slotProps.option.status === 'Member' && slotProps.option.member_expired_at" class="text-xs text-emerald-700 truncate">
+                        <span class="option-title truncate">{{ slotProps.option.nama }}</span>
+                        <span class="option-meta truncate">{{ slotProps.option.kontak_1 }} - {{ slotProps.option.email }} - {{ slotProps.option.kota }}</span>
+                        <span v-if="slotProps.option.status === 'Member' && slotProps.option.member_expired_at" class="option-positive truncate">
                           Exp {{ formatDate(slotProps.option.member_expired_at) }}
                         </span>
-                        <span v-if="slotProps.option.status === 'Redflag' && slotProps.option.catatan" class="text-xs text-amber-700 truncate">
+                        <span v-if="slotProps.option.status === 'Redflag' && slotProps.option.catatan" class="option-warning truncate">
                           {{ slotProps.option.catatan }}
                         </span>
                       </div>
@@ -562,6 +595,8 @@ const formatDate = (value) => {
                     <div class="info-grid">
                       <span>Kontak</span>
                       <strong>{{ selectedCustomer.kontak_1 || '-' }}</strong>
+                      <span>Email</span>
+                      <strong>{{ selectedCustomer.email || '-' }}</strong>
                       <span>Kota</span>
                       <strong>{{ selectedCustomer.kota || '-' }}</strong>
                       <span>Sumber</span>
@@ -586,7 +621,7 @@ const formatDate = (value) => {
                 </transition>
               </div>
 
-              <div v-else-if="!isEditMode" class="new-customer-form grid grid-cols-1 md:grid-cols-3 gap-3 animate-fade-in">
+              <div v-else-if="!isEditMode" class="new-customer-form grid grid-cols-1 md:grid-cols-2 gap-3 animate-fade-in">
                 <div class="form-field-vertical">
                   <label class="field-label">Nama lengkap *</label>
                   <InputText v-model="form.customer_name" placeholder="Nama pelanggan" class="w-full premium-input" />
@@ -596,8 +631,34 @@ const formatDate = (value) => {
                   <InputText v-model="form.customer_phone" placeholder="08xxxxxxxxxx" class="w-full premium-input" />
                 </div>
                 <div class="form-field-vertical">
+                  <label class="field-label">Email</label>
+                  <InputText v-model="form.customer_email" type="email" placeholder="nama@email.com" class="w-full premium-input" />
+                </div>
+                <div class="form-field-vertical">
+                  <label class="field-label">Status pelanggan *</label>
+                  <Dropdown
+                    v-model="form.customer_status"
+                    :options="newCustomerStatusOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Pilih status"
+                    class="w-full premium-input"
+                  />
+                </div>
+                <div class="form-field-vertical md:col-span-2">
                   <label class="field-label">Asal kota *</label>
-                  <InputText v-model="form.customer_city" placeholder="Kota" class="w-full premium-input" />
+                  <Dropdown
+                    v-model="form.customer_city"
+                    :options="cityOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Pilih kota pelanggan"
+                    filter
+                    :filterFields="['searchableLabel']"
+                    :loading="citiesLoading"
+                    class="w-full premium-input"
+                    :empty-message="'Belum ada kota aktif'"
+                  />
                 </div>
               </div>
             </div>
@@ -612,7 +673,7 @@ const formatDate = (value) => {
             </div>
           </template>
           <template #content>
-            <div class="flex flex-col gap-4">
+            <div class="section-stack">
               <SelectButton
                 v-model="form.unit_mode"
                 :options="[{label: 'Unit Ready', value: 'existing'}, {label: 'Placeholder', value: 'placeholder'}]"
@@ -637,7 +698,7 @@ const formatDate = (value) => {
                 >
                   <template #value="slotProps">
                     <div v-if="slotProps.value" class="selected-inline">
-                      <span class="font-semibold text-slate-800">{{ unitOptions.find(u => u.id === slotProps.value)?.label }}</span>
+                      <span class="option-title">{{ unitOptions.find(u => u.id === slotProps.value)?.label }}</span>
                       <Tag
                         v-if="unitOptions.find(u => u.id === slotProps.value)"
                         :value="unitStatusMeta(unitOptions.find(u => u.id === slotProps.value)?.status).label"
@@ -650,8 +711,8 @@ const formatDate = (value) => {
                   <template #option="slotProps">
                     <div class="option-row">
                       <div class="flex min-w-0 flex-col">
-                        <span class="font-semibold text-slate-800 truncate">{{ slotProps.option.label }}</span>
-                        <span class="text-xs text-slate-500 truncate">{{ slotProps.option.sublabel }}</span>
+                        <span class="option-title truncate">{{ slotProps.option.label }}</span>
+                        <span class="option-meta truncate">{{ slotProps.option.sublabel }}</span>
                       </div>
                       <Tag
                         :value="unitStatusMeta(slotProps.option.status).label"
@@ -758,6 +819,22 @@ const formatDate = (value) => {
               </div>
 
               <div class="form-field-vertical md:col-span-2">
+                <label class="field-label">Kota booking</label>
+                <Dropdown
+                  v-model="form.kota"
+                  :options="cityOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Pilih kota tujuan/operasional"
+                  filter
+                  :filterFields="['searchableLabel']"
+                  :loading="citiesLoading"
+                  class="w-full premium-input"
+                  :empty-message="'Belum ada kota aktif'"
+                />
+              </div>
+
+              <div class="form-field-vertical md:col-span-2">
                 <label class="field-label">Alamat jemput</label>
                 <Textarea v-model="form.alamat_penjemputan" rows="2" placeholder="Input alamat lengkap penjemputan..." class="w-full premium-input" />
               </div>
@@ -800,11 +877,22 @@ const formatDate = (value) => {
         </Card>
       </div>
 
-      <aside class="md:col-span-4">
+      <aside class="booking-summary-column">
         <div class="summary-panel">
-          <div class="section-title mb-4">
+          <div class="summary-heading">
             <i class="pi pi-clipboard text-tosca"></i>
             <span>Ringkasan</span>
+          </div>
+
+          <div class="summary-kpis">
+            <div class="summary-kpi">
+              <span>Durasi</span>
+              <strong>{{ selectedDurationLabel }}</strong>
+            </div>
+            <div class="summary-kpi">
+              <span>Estimasi</span>
+              <strong>{{ formatCurrency(form.harga_dealing) }}</strong>
+            </div>
           </div>
 
           <div class="summary-list">
@@ -815,7 +903,12 @@ const formatDate = (value) => {
             <div>
               <span>Status pelanggan</span>
               <Tag v-if="selectedCustomer" :value="selectedCustomer.status" :severity="getStatusSeverity(selectedCustomer.status)" class="premium-tag" />
+              <Tag v-else-if="form.customer_mode === 'new'" :value="form.customer_status" :severity="getStatusSeverity(form.customer_status)" class="premium-tag" />
               <strong v-else>-</strong>
+            </div>
+            <div>
+              <span>Kota pelanggan</span>
+              <strong>{{ selectedCustomer?.kota || form.customer_city || '-' }}</strong>
             </div>
             <div>
               <span>Unit</span>
@@ -844,17 +937,21 @@ const formatDate = (value) => {
               <strong>{{ selectedDurationLabel }}</strong>
             </div>
             <div>
+              <span>Kota booking</span>
+              <strong>{{ form.kota || '-' }}</strong>
+            </div>
+            <div>
               <span>Harga dealing</span>
-              <strong>{{ formatCurrency(form.harga_dealing) }}</strong>
+              <strong class="numeric-value">{{ formatCurrency(form.harga_dealing) }}</strong>
             </div>
             <div>
               <span>DP</span>
-              <strong>{{ formatCurrency(form.dp) }}</strong>
+              <strong class="numeric-value">{{ formatCurrency(form.dp) }}</strong>
             </div>
           </div>
 
           <div class="summary-actions">
-            <Button v-if="!isEditMode" label="Reset" class="p-button-text p-button-secondary" @click="resetForm" />
+            <Button v-if="!isEditMode" label="Reset" icon="pi pi-refresh" class="button-secondary" @click="resetForm" />
             <Button
               :label="isEditMode ? 'Simpan Perubahan' : 'Simpan Booking'"
               icon="pi pi-check"
@@ -872,69 +969,149 @@ const formatDate = (value) => {
 
 <style scoped>
 .booking-create-container {
-  max-width: 1280px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding-bottom: 12px;
+  padding: var(--space-md) var(--space-md) var(--space-2xl);
+}
+
+.booking-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--surface-default);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  box-shadow: var(--shadow-tile);
+}
+
+.booking-page-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.booking-page-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.booking-layout-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.booking-form-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.booking-summary-column {
+  min-width: 0;
+}
+
+.section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
 }
 
 .premium-card {
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 8px 18px -14px rgba(15, 23, 42, 0.45);
-  background: white;
+  border-radius: var(--radius-default);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--shadow-tile);
+  background: var(--surface-default);
 }
 
 :deep(.premium-card .p-card-body) {
-  padding: 14px 16px 16px;
+  padding: 0;
 }
 
 :deep(.premium-card .p-card-title) {
-  margin-bottom: 12px;
+  margin: 0;
+  padding: var(--space-lg) var(--space-xl) var(--space-md);
+  border-bottom: 1px solid var(--surface-border);
 }
 
 :deep(.premium-card .p-card-content) {
-  padding: 0;
+  padding: var(--space-lg) var(--space-xl) var(--space-xl);
 }
 
 .section-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #0f172a;
-  font-size: 0.86rem;
-  font-weight: 800;
+  gap: var(--space-sm);
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.section-title i,
+.summary-heading i {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: #E1F4F6;
+  color: #085A66;
+  font-size: 12px;
 }
 
 .form-field-vertical {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-sm);
 }
 
 .field-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
-.text-tosca { color: #06b6d4; }
+.text-tosca { color: #0D8091; }
 
 :deep(.premium-input .p-inputtext), 
 :deep(.premium-calendar .p-inputtext),
 :deep(.premium-input.p-dropdown) {
-  border-radius: 8px;
+  width: 100%;
+  border-radius: var(--radius-default);
   padding: 8px 12px;
-  border: 1.5px solid #e2e8f0;
-  background: #fff;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-default);
   transition: all 0.2s;
-  font-size: 0.86rem;
+  color: var(--text-primary);
+  font-size: 13px;
   min-height: 38px;
 }
 
+:deep(.premium-input .p-inputtext:hover),
+:deep(.premium-calendar .p-inputtext:hover),
+:deep(.premium-input.p-dropdown:not(.p-disabled):hover) {
+  background: var(--card-bg-hover);
+  border-color: var(--neutral-4);
+}
+
 :deep(.premium-calendar .p-datepicker-trigger) {
-  width: 2.35rem;
+  width: 38px;
+  border-radius: 0 var(--radius-default) var(--radius-default) 0;
 }
 
 :deep(.premium-input.p-dropdown .p-dropdown-label) {
@@ -947,32 +1124,41 @@ const formatDate = (value) => {
 }
 
 :deep(.p-button) {
-  font-size: 0.86rem;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 :deep(.p-message) {
-  font-size: 0.82rem;
+  border-radius: var(--radius-default);
+  font-size: 12px;
 }
 
 :deep(.premium-input .p-inputtext:focus),
 :deep(.premium-input.p-dropdown.p-focus) {
-  border-color: #06b6d4;
-  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+  border-color: #0D8091;
+  box-shadow: 0 0 0 3px rgba(13, 128, 145, 0.12);
 }
 
 :deep(.custom-selectbutton .p-button) {
   flex: 1;
-  background: #f1f5f9;
-  border: none;
-  color: #475569;
-  border-radius: 8px !important;
-  font-weight: 700;
-  font-size: 0.8rem;
+  background: var(--card-bg);
+  border: 1px solid var(--surface-border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-full) !important;
+  font-weight: 600;
+  font-size: 12px;
   padding: 8px;
 }
 
+:deep(.custom-selectbutton .p-button:hover) {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+}
+
 :deep(.custom-selectbutton .p-button.p-highlight) {
-  background: #0f172a;
+  background: var(--text-primary);
+  border-color: var(--text-primary);
   color: white;
 }
 
@@ -986,18 +1172,43 @@ const formatDate = (value) => {
   min-width: 0;
 }
 
+.option-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.option-meta,
+.option-source {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.option-positive {
+  color: #147239;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.option-warning {
+  color: #8C660A;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .preview-panel {
-  background: #f8fafc;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  background: var(--card-bg);
+  padding: var(--space-md);
+  border-radius: var(--radius-default);
+  border: 1px solid var(--surface-border);
 }
 
 .preview-heading {
   margin-bottom: 10px;
-  color: #0f172a;
-  font-weight: 800;
-  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .info-grid,
@@ -1007,36 +1218,87 @@ const formatDate = (value) => {
 }
 
 .info-grid {
-  grid-template-columns: minmax(92px, 0.42fr) 1fr;
-  font-size: 0.8rem;
+  grid-template-columns: minmax(96px, 0.38fr) 1fr;
+  font-size: 12px;
 }
 
 .info-grid span,
 .summary-list span {
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .info-grid strong,
 .summary-list strong {
-  color: #0f172a;
+  color: var(--text-primary);
   font-weight: 700;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.info-grid strong {
+  text-align: left;
 }
 
 .payment-account-panel {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  padding: var(--space-md);
 }
 
 .summary-panel {
   position: sticky;
-  top: 14px;
-  padding: 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 18px -14px rgba(15, 23, 42, 0.45);
+  top: var(--space-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-tile);
+}
+
+.summary-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.summary-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.summary-kpi {
+  min-width: 0;
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.summary-kpi span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.summary-kpi strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .summary-list > div {
@@ -1044,34 +1306,66 @@ const formatDate = (value) => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid #f1f5f9;
-  padding-bottom: 8px;
-  font-size: 0.8rem;
-}
-
-.summary-list > div:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  font-size: 12px;
 }
 
 .summary-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: stretch;
   gap: 8px;
   margin-top: 16px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--surface-border);
   padding-top: 12px;
 }
 
+.summary-actions :deep(.p-button) {
+  flex: 1;
+  justify-content: center;
+  min-height: 38px;
+}
+
 .premium-tag {
-  border-radius: 4px;
-  padding: 2px 7px;
-  font-size: 0.62rem;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+:deep(.premium-tag.p-tag-success) {
+  background: #E6F6EC;
+  color: #147239;
+}
+
+:deep(.premium-tag.p-tag-danger) {
+  background: #FCEAE9;
+  color: #B02A24;
+}
+
+:deep(.premium-tag.p-tag-warning) {
+  background: #FDF4D9;
+  color: #8C660A;
+}
+
+:deep(.premium-tag.p-tag-info),
+:deep(.premium-tag.p-tag-help) {
+  background: #E1F4F6;
+  color: #085A66;
+}
+
+:deep(.premium-tag.p-tag-secondary) {
+  background: #E4E8F3;
+  color: #4A5060;
 }
 
 .option-source {
-  color: #94a3b8;
-  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
   text-transform: uppercase;
@@ -1084,14 +1378,60 @@ const formatDate = (value) => {
 @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
 .p-button-tosca {
-  background-color: #06b6d4 !important;
-  border-color: #06b6d4 !important;
+  background-color: var(--text-primary) !important;
+  border-color: var(--text-primary) !important;
   color: white !important;
 }
 
-@media (max-width: 767px) {
+.p-button-tosca:hover {
+  background-color: #2A2F46 !important;
+  border-color: #2A2F46 !important;
+}
+
+.button-secondary {
+  background: var(--surface-default) !important;
+  border: 1px solid var(--surface-border) !important;
+  color: var(--text-primary) !important;
+}
+
+.button-secondary:hover {
+  background: var(--card-bg-hover) !important;
+  border-color: var(--surface-border) !important;
+}
+
+.numeric-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:deep(.p-inputtext::placeholder) {
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 1024px) {
+  .booking-layout-grid {
+    grid-template-columns: 1fr;
+  }
+
   .summary-panel {
     position: static;
+  }
+}
+
+@media (max-width: 767px) {
+  .booking-create-container {
+    padding: var(--space-sm);
+  }
+
+  .booking-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: var(--space-md);
+  }
+
+  .summary-kpis {
+    grid-template-columns: 1fr;
   }
 
   .summary-actions {
@@ -1099,5 +1439,3 @@ const formatDate = (value) => {
   }
 }
 </style>
-
-
