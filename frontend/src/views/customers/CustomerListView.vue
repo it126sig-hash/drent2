@@ -37,6 +37,8 @@ const selectedCustomer = ref(null)
 const statusOptions = [
   { label: 'Semua Status', value: null },
   { label: 'Normal', value: 'Normal' },
+  { label: 'Member', value: 'Member' },
+  { label: 'Rent to Rent', value: 'Rent to Rent' },
   { label: 'Corporate', value: 'Corporate' },
   { label: 'Redflag', value: 'Redflag' },
   { label: 'Blacklist', value: 'Blacklist' }
@@ -123,6 +125,8 @@ const confirmDelete = (customer) => {
 
 const getStatusSeverity = (status) => {
   if (status === 'Normal') return 'success'
+  if (status === 'Member') return 'info'
+  if (status === 'Rent to Rent') return 'secondary'
   if (status === 'Corporate') return 'help'
   if (status === 'Redflag') return 'warning'
   if (status === 'Blacklist') return 'danger'
@@ -159,7 +163,7 @@ const getStatusSeverity = (status) => {
             <i class="pi pi-search" />
             <InputText 
               v-model="searchQuery" 
-              placeholder="Cari nama, kontak, atau kota..." 
+              placeholder="Cari nama, kontak, email, atau kota..." 
               @input="onSearch"
               class="w-full"
             />
@@ -210,6 +214,12 @@ const getStatusSeverity = (status) => {
               <span>{{ data.kontak_1 }}</span>
               <small v-if="data.kontak_2" class="text-gray-500">{{ data.kontak_2 }}</small>
             </div>
+          </template>
+        </Column>
+
+        <Column field="email" header="Email" style="min-width: 180px">
+          <template #body="{ data }">
+            {{ data.email || '-' }}
           </template>
         </Column>
 

@@ -43,7 +43,7 @@ Menyimpan data mitra penyedia kendaraan (untuk rent-to-rent) maupun perusahaan s
 | `harga_1_hari`, `harga_1_minggu`, `harga_1_bulan` | Harga jual ke konsumen. |
 | `modal_1_hari`, `modal_1_minggu`, `modal_1_bulan` | Harga modal (dasar pembayaran ke pemilik untuk rent-to-rent). |
 | `foto` | Upload foto unit (multiple). |
-| `status` | `Aktif` / `Tidak Aktif` / `Dalam Servis`. |
+| `status` | `Aktif` / `Tidak Aktif` / `Dalam Servis` / `Out`. Status `Out` diset otomatis saat unit sedang disewa (checkout). |
 
 ### 4.3 Data Supir (Driver)
 
@@ -107,7 +107,49 @@ Data member adalah perluasan dari Data Pelanggan untuk pelanggan yang mengajukan
 
 > Pengisian formulir member penuh dilakukan oleh Surveyor. Dalam kasus tertentu, Admin dapat langsung mengaktifkan status member tanpa melalui proses pengisian lengkap (**fast-track activation**).
 
-### 4.6 Database Schema — Data Master
+### 4.6 Data Akun Pembayaran
+
+Menyimpan daftar rekening / akun pembayaran yang digunakan per branch untuk menerima DP, cicilan, pelunasan, dan refund.
+
+| Field | Keterangan |
+|-------|------------|
+| `nama_bank` | Nama bank atau metode pembayaran (misal: BCA, Mandiri, Cash). |
+| `nomor_rekening` | Nomor rekening bank. Kosong jika metode cash. |
+| `atas_nama` | Nama pemilik rekening. |
+| `branch_id` | Relasi ke branch. Setiap branch memiliki daftar akun sendiri. |
+| `is_active` | Boolean. Akun yang tidak aktif tidak muncul di dropdown pembayaran. |
+
+### 4.7 Data Tipe Biaya Operasional
+
+Master kategori biaya operasional yang digunakan saat handle booking. Tabel ini memungkinkan penambahan kategori baru tanpa perubahan kode.
+
+| Field | Keterangan |
+|-------|------------|
+| `nama` | Nama kategori (misal: Driver, BBM, Tol, Parkir, Penginapan, Uang Makan, Antar Jemput, Lainnya). |
+| `kode` | Slug unik untuk identifikasi sistem (misal: `driver`, `bbm`, `tol`). |
+| `require_description` | Boolean. Jika `true`, CS **wajib** mengisi keterangan saat menambahkan biaya tipe ini. Berlaku untuk tipe "Lainnya". |
+| `is_active` | Boolean. Tipe yang tidak aktif tidak muncul di dropdown. |
+| `sort_order` | Urutan tampil di dropdown. |
+
+> **Seeder default:** Driver, BBM, Tol, Uang Makan, Penginapan, Parkir, Antar Jemput, Lainnya.
+
+### 4.8 Data Paket Harga All In
+
+Master paket harga All In per branch. Digunakan saat CS memilih mode harga "All In" pada proses handle booking.
+
+| Field | Keterangan |
+|-------|------------|
+| `nama_paket` | Nama deskriptif paket (misal: "All In Avanza 2025 Bandung Tour"). |
+| `harga` | Harga All In dalam IDR (integer). |
+| `keterangan` | Deskripsi include/exclude (misal: "include bbm, tol, supir, makan supir. exclude: parkir"). |
+| `branch_id` | Relasi ke branch. Paket bisa berbeda antar branch. |
+| `is_active` | Boolean. Paket yang tidak aktif tidak muncul di dropdown. |
+
+> **Contoh data:**
+> - "All In Avanza 2025 Bandung Tour" | Rp 1.000.000 | include: bbm, tol, supir, makan supir; exclude: parkir
+> - "All In Innova Jakarta" | Rp 1.500.000 | include: bbm, tol, supir; exclude: parkir, penginapan
+
+### 4.9 Database Schema — Data Master
 
 ```mermaid
 erDiagram
@@ -133,7 +175,37 @@ erDiagram
         int tahun
         decimal harga_1_hari
         decimal modal_1_hari
-        string status
+        string status "Aktif|Tidak Aktif|Dalam Servis|Out"
+    }
+
+    payment_accounts {
+        int id PK
+        int tenant_id FK
+        int branch_id FK
+        string nama_bank
+        string nomor_rekening
+        string atas_nama
+        boolean is_active
+    }
+
+    cost_types {
+        int id PK
+        int tenant_id FK
+        string nama
+        string kode
+        boolean require_description
+        boolean is_active
+        int sort_order
+    }
+
+    pricing_packages {
+        int id PK
+        int tenant_id FK
+        int branch_id FK
+        string nama_paket
+        decimal harga
+        text keterangan
+        boolean is_active
     }
 
     drivers {
@@ -169,6 +241,8 @@ erDiagram
 
     rental_owners ||--o{ units : "owns"
     customers ||--o| members : "has member data"
+    branches ||--o{ payment_accounts : "has accounts"
+    branches ||--o{ pricing_packages : "has packages"
 ```
 
 ---

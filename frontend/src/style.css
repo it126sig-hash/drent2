@@ -1,42 +1,267 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 @import "primeicons/primeicons.css";
 
 @theme {
-  --color-primary: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
+  --color-primary: #1A1D2E;
 }
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  /* === Drent Design Tokens === */
+  /* Surface */
+  --page-bg: #F5F6FA;
+  --surface-default: #FFFFFF;
+  --card-bg: #F0F2F8;
+  --card-bg-hover: #E4E8F3;
+  --surface-border: #DDE1EE;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  /* Text */
+  --text-primary: #1A1D2E;
+  --text-secondary: #5A6070;
+  --text-tertiary: #9AA0B0;
+  --text-white: #FFFFFF;
+  --neutral-4: #CDD2DF;
+  --neutral-6: #A8AEBB;
+
+  /* Status */
+  --positive: #27A858;
+  --negative: #E5534B;
+  --info-cyan: #0B7A8A;
+  --warning: #F79009;
+  --primary: #1A1D2E;
+  --neutral: #6e6e6e;
+  --secondary: #d2d5d9;
+
+  /* Elevation */
+  --shadow-tile: 0 1px 3px 0 rgba(26, 29, 46, 0.08);
+  --shadow-card-big: 0 4px 24px 0 rgba(26, 29, 46, 0.12);
+  --shadow-modal: 0 8px 32px 0 rgba(26, 29, 46, 0.16);
+  --card-border: 1px solid rgba(26, 29, 46, 0.07);
+
+  /* Typography */
+  --font-headline: 'Sora', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Spacing */
+  --space-xs: 3px;
+  --space-sm: 6px;
+  --space-md: 10px;
+  --space-lg: 14px;
+  --space-xl: 16px;
+  --space-2xl: 20px;
+  --space-3xl: 28px;
+
+  /* Radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-default: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+
+  color-scheme: light;
+  color: var(--text-primary);
+  background-color: var(--page-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+.back-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--surface-border) !important;
+  background: var(--surface-default) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: var(--shadow-tile);
+}
 
+.back-button:hover {
+  background: var(--card-bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+.status-badge {
+  display: inline-block;
+  padding: 3px 6px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.status-badge.neutral { background: var(--secondary); color: var(--primary); }
+.status-badge.info { background: var(--info-cyan); color: var(--text-white); }
+.status-badge.success { background: var(--positive); color: var(--text-white); }
+.status-badge.error { background: var(--negative); color: var(--text-white); }
+.status-badge.warning { background: var(--warning); color: var(--text-white); }
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  font-family: var(--font-body);
+  background-color: var(--page-bg);
+  color: var(--text-primary);
+}
+.text-positive {
+  color: var(--positive);
+}
+.text-negative {
+  color: var(--negative);
+}
+.text-info-cyan {
+  color: var(--info-cyan);
 }
 
-#app {
-  width: 100%;
+.layout-content {
+  background-color: var(--page-bg);
 }
 
-@media (prefers-color-scheme: light) {
+/* === Typography Classes === */
+.font-headline { font-family: var(--font-headline); }
+.font-mono-numeric { font-family: var(--font-mono); }
+
+h1, .text-h1 { font-family: var(--font-headline); font-size: 20px; font-weight: 700; line-height: 1.25; color: var(--text-primary); }
+h2, .text-h2 { font-family: var(--font-headline); font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--text-primary); }
+
+/* === Button Reset === */
+.btn-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-pill-compact { padding: 6px 14px; }
+
+.btn-primary {
+  background-color: var(--text-primary);
+  color: #FFFFFF;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background-color: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border);
+}
+
+.btn-secondary:hover {
+  background-color: var(--card-bg-hover);
+}
+
+.app-dialog-button {
+  min-height: 36px;
+  border-radius: var(--radius-full) !important;
+  padding: 8px 18px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.app-dialog-button-primary,
+.app-dialog-button-info,
+.app-dialog-button-warning {
+  border: none !important;
+  background: var(--text-primary) !important;
+  color: #fff !important;
+}
+
+.app-dialog-button-primary:hover,
+.app-dialog-button-info:hover,
+.app-dialog-button-warning:hover {
+  opacity: 0.92;
+}
+
+.app-dialog-button-secondary {
+  border: 1px solid var(--surface-border) !important;
+  background: var(--surface-default) !important;
+  color: var(--text-primary) !important;
+}
+
+.app-dialog-button-secondary:hover {
+  background: var(--card-bg-hover) !important;
+}
+
+.app-dialog-button-danger {
+  border: none !important;
+  background: var(--negative) !important;
+  color: #fff !important;
+}
+
+.app-dialog-button-danger:hover {
+  opacity: 0.9;
+}
+
+/* === PrimeVue Overrides === */
+.p-component {
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.p-datatable .p-datatable-thead > tr > th {
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--surface-border);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.p-datatable .p-datatable-tbody > tr {
+  background: var(--surface-default);
+  transition: background-color 0.2s;
+}
+
+.p-datatable .p-datatable-tbody > tr:hover {
+  background: var(--card-bg-hover) !important;
+}
+
+.p-datatable .p-datatable-tbody > tr > td {
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.p-inputtext, .p-dropdown, .p-datepicker input {
+  border-radius: var(--radius-default);
+  border-color: var(--surface-border);
+  font-size: 13px;
+}
+
+.p-tabview .p-tabview-nav {
+  background: transparent;
+  border: none;
+}
+
+/* === Custom Layout Utilities === */
+.surface-card {
+  background: var(--surface-default);
+  border: var(--card-border);
+  border-radius: var(--radius-default);
+  box-shadow: var(--shadow-tile);
+}
+
+@media (max-width: 768px) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    --space-2xl: 12px;
+    --space-lg: 10px;
   }
 }

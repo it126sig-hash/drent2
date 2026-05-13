@@ -22,10 +22,13 @@
 ### 6.1 Piutang
 
 - Finance dapat melihat seluruh transaksi yang masih memiliki sisa tagihan (piutang).
+- **Sisa tagihan per booking** dihitung dari: total tagihan (berdasarkan `pricing_mode`: All In → `harga_all_in`, Non All In → sum biaya) dikurangi total `booking_payments`.
 - Finance dapat generate invoice dari **satu atau beberapa transaksi sekaligus**.
 - Satu transaksi yang sudah dibuatkan invoice tidak dapat dibuatkan invoice lain kecuali invoice sebelumnya berstatus `Void`.
 - Invoice dapat dibayar **sebagian (partial payment)**. Sistem mencatat riwayat pembayaran.
 - Sistem mencatat kapan invoice terakhir di-generate dan kapan terakhir dikirim/diunduh.
+
+> **Catatan:** Pembayaran booking (DP, cicilan) dicatat di tabel `booking_payments` (lihat [Part 4](DRENT_PRD_04_booking_transaksi.md)). Pembayaran invoice dicatat di tabel `payments` di bawah ini. Kedua tabel ini terpisah — `booking_payments` untuk tracking pembayaran langsung ke booking, `payments` untuk pembayaran formal via invoice.
 
 ### 6.2 Rent-to-Rent (Hutang ke Rental Lain)
 
@@ -108,9 +111,31 @@ erDiagram
         int id PK
         int invoice_id FK
         decimal amount
-        string rekening_id
+        int payment_account_id FK
         datetime paid_at
-        string created_by
+        int created_by FK
+    }
+
+    booking_payments {
+        int id PK
+        int booking_id FK
+        int payment_account_id FK
+        decimal amount
+        string payment_type "dp|cicilan|pelunasan"
+        string catatan
+        datetime paid_at
+        int reallocated_from_id FK "nullable"
+        int created_by FK
+    }
+
+    refunds {
+        int id PK
+        int booking_id FK
+        int payment_account_id FK
+        decimal amount
+        string keterangan
+        datetime refunded_at
+        int created_by FK
     }
 
     rent_to_rent_debts {
@@ -145,7 +170,14 @@ erDiagram
 
     invoices ||--o{ invoice_bookings : "covers"
     invoices ||--o{ payments : "has payments"
+    payments }o--|| payment_accounts : "paid to"
+    booking_payments }o--|| payment_accounts : "paid to"
+    refunds }o--|| payment_accounts : "refunded from"
 ```
+
+> **Relasi ke modul lain:**
+> - `booking_payments` dan `refunds` → lihat detail di [Part 4 — Booking & Transaksi](DRENT_PRD_04_booking_transaksi.md)
+> - `payment_accounts` → lihat detail di [Part 3 — Data Master](DRENT_PRD_03_data_master.md)
 
 ---
 

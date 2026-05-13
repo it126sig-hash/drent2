@@ -10,6 +10,7 @@ class CustomerService
     public function getAll(array $filters = [])
     {
         $query = Customer::query()
+            ->with('member')
             ->where('tenant_id', Auth::user()->tenant_id);
 
         if (isset($filters['status'])) {
@@ -24,6 +25,7 @@ class CustomerService
             $query->where(function ($q) use ($filters) {
                 $q->where('nama', 'like', '%' . $filters['search'] . '%')
                   ->orWhere('kontak_1', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('email', 'like', '%' . $filters['search'] . '%')
                   ->orWhere('kota', 'like', '%' . $filters['search'] . '%');
             });
         }

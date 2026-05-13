@@ -26,9 +26,10 @@ class StoreCustomerRequest extends FormRequest
             'nama'             => 'required|string|max:150',
             'kontak_1'         => 'required|string|max:20',
             'kontak_2'         => 'nullable|string|max:20',
+            'email'            => 'nullable|email|max:150',
             'alamat'           => 'nullable|string',
             'kota'             => 'nullable|string|max:100',
-            'status'           => 'required|in:Normal,Redflag,Blacklist,Corporate',
+            'status'           => 'required|in:Normal,Member,Redflag,Blacklist,Corporate,Rent to Rent',
             'has_apply_member' => 'boolean',
             'catatan'          => 'nullable|string',
         ];

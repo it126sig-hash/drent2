@@ -8,6 +8,18 @@ use App\Http\Controllers\Api\V1\DriverController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\MemberController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\BookingController;
+use App\Http\Controllers\Api\V1\BookingDetailController;
+use App\Http\Controllers\Api\V1\BookingCostController;
+use App\Http\Controllers\Api\V1\BookingModificationController;
+use App\Http\Controllers\Api\V1\PaymentAccountController;
+use App\Http\Controllers\Api\V1\CostTypeController;
+use App\Http\Controllers\Api\V1\CityController;
+use App\Http\Controllers\Api\V1\PricingPackageController;
+use App\Http\Controllers\Api\V1\BookingPaymentController;
+use App\Http\Controllers\Api\V1\RefundController;
+use App\Http\Controllers\Api\V1\PhysicalCheckController;
+use App\Http\Controllers\Api\V1\PhysicalCheckItemController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -42,5 +54,47 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('members', MemberController::class);
         Route::patch('members/{member}/activate', [MemberController::class, 'activate']);
         Route::get('members/{member}/documents/{type}', [MemberController::class, 'showDocument']);
+
+        // Master Data: Payment Accounts, Cost Types, Pricing Packages
+        Route::apiResource('payment-accounts', PaymentAccountController::class);
+        Route::apiResource('cities', CityController::class);
+        Route::apiResource('cost-types', CostTypeController::class);
+        Route::apiResource('pricing-packages', PricingPackageController::class);
+
+        // Physical Checks
+        Route::get('physical-check-items', [PhysicalCheckItemController::class, 'index']);
+        Route::get('physical-checks/bookings', [PhysicalCheckController::class, 'bookings']);
+        Route::post('physical-checks/request', [PhysicalCheckController::class, 'request']);
+        Route::post('physical-checks', [PhysicalCheckController::class, 'store']);
+        Route::get('bookings/{booking}/physical-checks/{type}', [PhysicalCheckController::class, 'showByBooking']);
+        Route::get('physical-checks/{physicalCheck}', [PhysicalCheckController::class, 'show']);
+
+        // Booking Payments (C1)
+        Route::get('bookings/{booking}/payments', [BookingPaymentController::class, 'index']);
+        Route::post('bookings/{booking}/payments', [BookingPaymentController::class, 'store']);
+        Route::post('booking-payments/{bookingPayment}/reallocate', [BookingPaymentController::class, 'reallocate']);
+
+        // Refunds (C2)
+        Route::get('bookings/{booking}/refunds', [RefundController::class, 'index']);
+        Route::post('bookings/{booking}/refund', [RefundController::class, 'store']);
+
+        // Bookings
+        Route::patch('bookings/{booking}/status', [BookingController::class, 'updateStatus']);
+        Route::patch('bookings/{booking}/handle', [BookingController::class, 'handle']);
+        Route::post('bookings/{booking}/checkout', [BookingController::class, 'checkout']);
+        Route::post('bookings/{booking}/complete', [BookingController::class, 'complete']);
+        Route::post('bookings/{booking}/details', [BookingDetailController::class, 'store']);
+        Route::patch('booking-details/{bookingDetail}', [BookingDetailController::class, 'update']);
+        Route::post('booking-details/{bookingDetail}/costs', [BookingCostController::class, 'store']);
+        Route::patch('booking-costs/{bookingCost}', [BookingCostController::class, 'update']);
+        
+        // Modification routes
+        Route::post('bookings/{booking}/extend', [BookingModificationController::class, 'extend']);
+        Route::post('bookings/{booking}/rolling', [BookingModificationController::class, 'rolling']);
+        Route::post('bookings/{booking}/stop-early', [BookingModificationController::class, 'stopEarly']);
+        Route::post('bookings/{booking}/cancel', [BookingModificationController::class, 'cancel']);
+        Route::post('bookings/{booking}/costs', [BookingCostController::class, 'storeAdditionalCost']);
+
+        Route::apiResource('bookings', BookingController::class);
     });
 });

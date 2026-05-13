@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Member;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -25,29 +26,63 @@ class MemberService
 
     public function createMember(array $data)
     {
-        $data = $this->handleFileUploads($data);
-        return Member::create($data);
+        return DB::transaction(function () use ($data) {
+            $data = $this->handleFileUploads($data);
+            $member = Member::create($data);
+            $this->syncCustomerMembershipStatus($member);
+
+            return $member;
+        });
     }
 
     public function updateMember(Member $member, array $data)
     {
-        $data = $this->handleFileUploads($data, $member);
-        $member->update($data);
-        return $member;
+        return DB::transaction(function () use ($member, $data) {
+            $data = $this->handleFileUploads($data, $member);
+            $member->update($data);
+            $this->syncCustomerMembershipStatus($member->refresh());
+
+            return $member;
+        });
     }
 
     public function activateMember(Member $member)
     {
-        if (!$member->id_member) {
-            $member->id_member = 'MBR-' . date('Y') . '-' . strtoupper(Str::random(4));
+        return DB::transaction(function () use ($member) {
+            if (!$member->id_member) {
+                $member->id_member = 'MBR-' . date('Y') . '-' . strtoupper(Str::random(4));
+            }
+
+            $member->status_member = 'Aktif';
+            $member->tanggal_aktif = now();
+            $member->tanggal_exp = now()->addYear();
+            $member->save();
+
+            $this->syncCustomerMembershipStatus($member->refresh());
+
+            return $member;
+        });
+    }
+
+    protected function syncCustomerMembershipStatus(Member $member): void
+    {
+        $member->loadMissing('customer');
+
+        if (!$member->customer) {
+            return;
         }
 
-        $member->status_member = 'Aktif';
-        $member->tanggal_aktif = now();
-        $member->tanggal_exp = now()->addYear();
-        $member->save();
+        $updates = ['has_apply_member' => true];
 
-        return $member;
+        if ($member->status_member === 'Aktif') {
+            if (!in_array($member->customer->status, ['Redflag', 'Blacklist'], true)) {
+                $updates['status'] = 'Member';
+            }
+        } elseif ($member->customer->status === 'Member') {
+            $updates['status'] = 'Normal';
+        }
+
+        $member->customer->forceFill($updates)->save();
     }
 
     protected function handleFileUploads(array $data, Member $member = null)

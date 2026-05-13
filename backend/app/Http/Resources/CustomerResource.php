@@ -19,10 +19,13 @@ class CustomerResource extends JsonResource
             'nama'             => $this->nama,
             'kontak_1'         => $this->kontak_1,
             'kontak_2'         => $this->kontak_2,
+            'email'            => $this->email,
             'alamat'           => $this->alamat,
             'kota'             => $this->kota,
             'status'           => $this->status,
             'has_apply_member' => $this->has_apply_member,
+            'member_status'    => $this->whenLoaded('member', fn() => $this->member?->status_member),
+            'member_expired_at' => $this->whenLoaded('member', fn() => $this->member?->tanggal_exp?->format('Y-m-d')),
             'catatan'          => $this->catatan,
             'created_at'       => $this->created_at?->toIso8601String(),
         ];

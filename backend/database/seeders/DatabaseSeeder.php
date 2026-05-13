@@ -36,5 +36,13 @@ class DatabaseSeeder extends Seeder
             'password' => bcrypt('admin123'),
             'role' => 'superadmin',
         ]);
+
+        $this->call([
+            PaymentAccountSeeder::class,
+            CostTypeSeeder::class,
+            PhysicalCheckItemSeeder::class,
+            PricingPackageSeeder::class,
+            BookingSeeder::class,
+        ]);
     }
 }

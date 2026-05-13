@@ -121,14 +121,14 @@
 - Tombol aktivasi member oleh Admin
 - Integrasi ke `src/api/member.js`
 
-### 1.11 — MDM: User & Permission (Backend)
+### 1.11 — MDM: User & Permission (Backend) (SELESAI)
 - CRUD user: `GET/POST /api/v1/users`, `GET/PUT/DELETE /api/v1/users/{id}`
 - Assign role ke user
 - Endpoint: `GET /api/v1/roles` — list semua role
 - Migration tabel `role_permissions` dan `user_permission_overrides`
 - `UserResource` untuk response
 
-### 1.12 — MDM: User & Permission (Frontend)
+### 1.12 — MDM: User & Permission (Frontend) (SELESAI)
 - Halaman list user dengan DataTable
 - Dialog form tambah/edit user (pilih role, assign branch)
 - Tampilkan role badge per user
@@ -140,46 +140,46 @@
 
 > Tujuan: CS bisa membuat dan mengelola booking dari awal sampai selesai.
 
-### 2.1 — Booking: Database Schema & Migration
+### 2.1 — Booking: Database Schema & Migration (SELESAI)
 - Migration tabel `bookings` (field: tenant_id, branch_id, customer_id, status, harga_dealing, dp, rekening_dp_id, tujuan, alamat_penjemputan, catatan, soft-delete)
 - Migration tabel `booking_details` (field: booking_id, unit_id, driver_id, tgl_sewa, tgl_kembali, harga_mobil, diskon_mobil, detail_type, status)
 - Migration tabel `booking_costs` (field: booking_detail_id, type, label, amount)
 - Tambahkan seeder data dummy untuk testing
 
-### 2.2 — Booking: Buat Booking Awal (Backend)
+### 2.2 — Booking: Buat Booking Awal (Backend) (SELESAI)
 - Endpoint `POST /api/v1/bookings` — buat booking baru (status: Follow Up atau Confirm)
 - `StoreBookingRequest`: validasi customer, tanggal, harga_dealing, dp
 - `BookingService::createBooking()` — logic: set status berdasarkan ada/tidak dp
 - `BookingResource` untuk response
 - Policy: hanya CS dan Admin yang bisa buat booking
 
-### 2.3 — Booking: Form Buat Booking (Frontend)
+### 2.3 — Booking: Form Buat Booking (Frontend) (SELESAI)
 - Halaman form booking baru
 - Autocomplete pilih pelanggan (warning risiko jika Redflag, error/blokir jika Blacklist)
 - Input: tanggal sewa & kembali, tujuan, harga dealing, dp (opsional)
 - Submit → status otomatis Follow Up atau Confirm
 - Integrasi ke `src/api/booking.js`
 
-### 2.4 — Booking: List & Status (Backend)
+### 2.4 — Booking: List & Status (Backend) (ON PROGRESS)
 - Endpoint `GET /api/v1/bookings` — list booking (filter: status, branch, tanggal)
 - Endpoint `GET /api/v1/bookings/{id}` — detail booking
 - Endpoint `PATCH /api/v1/bookings/{id}/status` — ubah status manual
 - Branch scope wajib ada di semua query
 
-### 2.5 — Booking: List & Kalender (Frontend)
+### 2.5 — Booking: List & Kalender (Frontend) (ON PROGRESS)
 - Halaman list booking dengan DataTable + filter status
 - Badge status booking (warna per status)
 - Kalender Timeline (Gantt-style): 1 baris per unit, 30 hari view
 - Klik sel kosong → buka form booking dengan unit & tanggal pre-filled
 - Integrasi ke `src/api/booking.js`
 
-### 2.6 — Booking: Handle Booking — Detail & Biaya (Backend)
+### 2.6 — Booking: Handle Booking — Detail & Biaya (Backend) (ON PROGRESS)
 - Endpoint `POST /api/v1/bookings/{id}/details` — tambah booking_detail (pilih unit, driver, tanggal)
 - Endpoint `POST /api/v1/booking-details/{id}/costs` — tambah komponen biaya
 - `HandleBookingService::assignDetail()` — logic: otomatis catat hutang rent-to-rent jika unit bukan milik sendiri
 - Endpoint `PATCH /api/v1/bookings/{id}/handle` — pindah status ke Waiting List
 
-### 2.7 — Booking: Handle Booking (Frontend)
+### 2.7 — Booking: Handle Booking (Frontend) (ON PROGRESS)
 - Halaman detail booking
 - Section "Handle Booking": pilih unit, driver, tanggal detail
 - Section "Komponen Biaya": input biaya operasional (driver, BBM, tol, dll)

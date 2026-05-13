@@ -1,26 +1,26 @@
-import axios from 'axios'
+import axios from "axios";
 
 const instance = axios.create({
-  baseURL: 'http://localhost/drent-vibe/backend/public/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL,
   headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  }
-})
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
+});
 
 // Add a request interceptor
 instance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem("token");
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      config.headers.Authorization = `Bearer ${token}`;
     }
-    return config
+    return config;
   },
   (error) => {
-    return Promise.reject(error)
-  }
-)
+    return Promise.reject(error);
+  },
+);
 
 // Add a response interceptor
 instance.interceptors.response.use(
@@ -28,13 +28,13 @@ instance.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       // Clear auth and redirect to login if unauthorized
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      localStorage.removeItem('branch')
-      window.location.href = '/login'
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("branch");
+      window.location.href = "/login";
     }
-    return Promise.reject(error)
-  }
-)
+    return Promise.reject(error);
+  },
+);
 
-export default instance
+export default instance;

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Drent Vibe</string>
+    <string name="title_activity_main">Drent Vibe</string>
+    <string name="package_name">com.drent.vibe</string>
+    <string name="custom_url_scheme">com.drent.vibe</string>
+</resources>

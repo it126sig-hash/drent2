@@ -17,6 +17,7 @@ class Customer extends Model
         'nama',
         'kontak_1',
         'kontak_2',
+        'email',
         'alamat',
         'kota',
         'status',
@@ -27,4 +28,9 @@ class Customer extends Model
     protected $casts = [
         'has_apply_member' => 'boolean'
     ];
+
+    public function member()
+    {
+        return $this->hasOne(Member::class);
+    }
 }

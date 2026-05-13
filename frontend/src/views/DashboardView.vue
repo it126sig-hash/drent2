@@ -1,14 +1,20 @@
 <script setup>
 import { useAuthStore } from '../stores/auth'
+import Button from 'primevue/button'
+import { useRouter } from 'vue-router'
 
 const authStore = useAuthStore()
+const router = useRouter()
 </script>
 
 <template>
   <div class="dashboard-container">
-    <div class="welcome-section">
-      <h2>Selamat Datang, {{ authStore.user?.name }}</h2>
-      <p class="subtitle">Anda masuk sebagai <span class="role-badge">{{ authStore.user?.role }}</span></p>
+    <div class="welcome-section flex justify-between items-center">
+      <div>
+        <h2>Selamat Datang, {{ authStore.user?.name }}</h2>
+        <p class="subtitle">Anda masuk sebagai <span class="role-badge">{{ authStore.user?.role }}</span></p>
+      </div>
+      <Button label="Buat Booking" icon="pi pi-plus" @click="router.push({ name: 'BookingCreate' })" class="p-button-lg" />
     </div>
     
     <div class="stats-grid">

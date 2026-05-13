@@ -9,10 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/ios": "^8.3.4",
     "@primevue/themes": "^4.5.4",
     "@vueuse/core": "^14.3.0",
     "autoprefixer": "^10.5.0",
     "axios": "^1.16.0",
+    "date-fns": "^4.1.0",
     "pinia": "^3.0.4",
     "postcss": "^8.5.14",
     "primeicons": "^7.0.0",
@@ -22,6 +26,8 @@
     "vue-router": "^5.0.6"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.3.4",
+    "@tailwindcss/vite": "^4.3.0",
     "@vitejs/plugin-vue": "^6.0.6",
     "vite": "^8.0.10"
   }
