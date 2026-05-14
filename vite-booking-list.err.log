@@ -1,0 +1,163 @@
+[2m15.53.22[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mDeprecated since v4. Use Select component instead.
+[2m15.53.22[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mDeprecated since v4. Use Select component instead.
+[2m15.53.22[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mDeprecated since v4. Use Select component instead.
+[2m15.53.22[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22mDeprecated since v4. Use Select component instead.
+[2m15.53.23[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mAxiosError[22m: Request failed with status code 500
+[39m > settle node_modules/axios/lib/core/settle.js:19:11
+ > XMLHttpRequest.onloadend node_modules/axios/lib/adapters/xhr.js:62:8
+
+[2m15.53.23[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mAxiosError[22m: Request failed with status code 500
+[39m > settle node_modules/axios/lib/core/settle.js:19:11
+ > XMLHttpRequest.onloadend node_modules/axios/lib/adapters/xhr.js:62:8
+
+[2m15.55.01[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: injection "Symbol(router)" not found.
+[2m15.55.01[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: injection "Symbol()" not found.
+[2m15.55.01[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Unhandled error during execution of setup function 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m15.55.01[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Unhandled error during execution of component update 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m15.55.01[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mError[22m: No PrimeVue Toast provided!
+[39m > useToast ../../../../../../../node_modules/.vite/deps/primevue_usetoast.js?v=555b83b6:6:28
+ > useBooking src/composables/useBooking.js:6:17
+    4  |  
+    5  |  export function useBooking() {
+    6  |    const toast = useToast()
+       |                   ^
+    7  |    const bookings = ref([])
+    8  |    const loading = ref(false)
+ > setup src/views/bookings/BookingListView.vue:27:5
+ > callWithErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:199:18
+ > setupStatefulComponent node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:8140:24
+ > setupComponent node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:8102:35
+ > mountComponent node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:6023:6
+ > processComponent node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:5989:8
+ > patch node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:5488:10
+ > ReactiveEffect.componentUpdateFn [as fn] node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:6217:8
+
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: injection "Symbol(router)" not found.
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveDirective can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Wrong type passed as event handler to onLabel - did you forget @ or : in front of your prop?
+Expected function or array of functions, received type string. 
+  at <SelectButton modelValue= [] onUpdate:modelValue=fn options= [{"label":"Follow Up","value":"follow_up"},{"label":"Confirm","value":"confirm"},{"label":"Waiting List","value":"waiting_list"},{"label":"Rental Unit","value":"rental_unit"}]  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Wrong type passed as event handler to onLabel - did you forget @ or : in front of your prop?
+Expected function or array of functions, received type string. 
+  at <SelectButton modelValue= [] onUpdate:modelValue=fn options= [{"label":"Follow Up","value":"follow_up"},{"label":"Confirm","value":"confirm"},{"label":"Waiting List","value":"waiting_list"},{"label":"Rental Unit","value":"rental_unit"}]  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Wrong type passed as event handler to onLabel - did you forget @ or : in front of your prop?
+Expected function or array of functions, received type string. 
+  at <SelectButton modelValue= [] onUpdate:modelValue=fn options= [{"label":"Follow Up","value":"follow_up"},{"label":"Confirm","value":"confirm"},{"label":"Waiting List","value":"waiting_list"},{"label":"Rental Unit","value":"rental_unit"}]  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Wrong type passed as event handler to onLabel - did you forget @ or : in front of your prop?
+Expected function or array of functions, received type string. 
+  at <SelectButton modelValue= [] onUpdate:modelValue=fn options= [{"label":"Follow Up","value":"follow_up"},{"label":"Confirm","value":"confirm"},{"label":"Waiting List","value":"waiting_list"},{"label":"Rental Unit","value":"rental_unit"}]  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveDirective can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Missing ref owner context. ref cannot be used on hoisted vnodes. A vnode with ref must be created inside the render function. 
+  at <DatePicker modelValue=null onUpdate:modelValue=fn dateFormat="yy-mm-dd"  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Missing ref owner context. ref cannot be used on hoisted vnodes. A vnode with ref must be created inside the render function. 
+  at <DatePicker modelValue=null onUpdate:modelValue=fn dateFormat="yy-mm-dd"  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveDirective can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Missing ref owner context. ref cannot be used on hoisted vnodes. A vnode with ref must be created inside the render function. 
+  at <DatePicker modelValue=null onUpdate:modelValue=fn dateFormat="yy-mm-dd"  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Missing ref owner context. ref cannot be used on hoisted vnodes. A vnode with ref must be created inside the render function. 
+  at <DatePicker modelValue=null onUpdate:modelValue=fn dateFormat="yy-mm-dd"  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveComponent can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: resolveDirective can only be used in render() or setup().
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Unhandled error during execution of render function 
+  at <Dropdown modelValue=null onUpdate:modelValue=fn options= []  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Unhandled error during execution of component update 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement. 
+  at <Dropdown modelValue=null onUpdate:modelValue=fn options= []  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue warn]: Unhandled error during execution of mounted hook 
+  at <DatePicker modelValue=null onUpdate:modelValue=fn dateFormat="yy-mm-dd"  ... > 
+  at <BookingListView onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <AppLayout onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< {} > > 
+  at <RouterView> 
+  at <App>
+[2m16.03.05[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31m[Unhandled rejection] [1mTypeError[22m: Cannot set properties of undefined (setting 'value')
+[39m > Proxy.mounted ../../../../../../../node_modules/.vite/deps/datepicker-H1BDbKDj.js?v=90c0a309:707:21
+ > node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:3096:39
+ > callWithErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:199:18
+ > callWithAsyncErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:206:16
+ > hook.__weh.hook.__weh node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:3076:18
+ > flushPostFlushCbs node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:385:27
+ > flushJobs node_modules/@vue/runtime-core/dist/runtime-core.esm-bundler.js:427:4
+
+[2m18.29.14[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue Router warn]: No match found for location with path "/finance"
+[2m18.29.14[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[Vue Router warn]: No match found for location with path "/finance"

@@ -40,12 +40,12 @@ Halaman acuan: `src/views/bookings/BookingDetailView.vue`.
 ## Tombol
 
 - Tombol aksi halaman:
-  - Primary: `.detail-primary-action`.
-  - Secondary: `.detail-secondary-action`.
+  - Primary: `.btn-pill.btn-primary`.
+  - Secondary: `.btn-pill.btn-secondary`.
 - Tombol dialog dan konfirmasi:
-  - Default submit: `.app-dialog-button app-dialog-button-primary`.
-  - Secondary/cancel pada ConfirmDialog: `.app-dialog-button app-dialog-button-secondary`.
-  - Destructive: `.app-dialog-button app-dialog-button-danger`.
+  - Default submit: `.app-dialog-button.app-dialog-button-primary`.
+  - Secondary/cancel pada ConfirmDialog: `.app-dialog-button.app-dialog-button-secondary`.
+  - Destructive: `.app-dialog-button.app-dialog-button-danger`.
   - Info/warning flow boleh memakai `.app-dialog-button-info` atau `.app-dialog-button-warning`, tetapi warnanya tetap mengikuti primary agar konsisten.
 - Hindari inline class seperti `bg-blue-600`, `bg-emerald-600`, `bg-sky-700` untuk tombol modal.
 

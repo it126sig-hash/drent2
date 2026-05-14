@@ -92,6 +92,7 @@ class UserController extends Controller
         $roles = [
             ['value' => 'superadmin',   'label' => 'Super Admin'],
             ['value' => 'admin_branch', 'label' => 'Admin Branch'],
+            ['value' => 'supervisor',   'label' => 'Supervisor'],
             ['value' => 'finance',      'label' => 'Finance'],
             ['value' => 'driver_tetap', 'label' => 'Driver Tetap'],
             ['value' => 'cs',           'label' => 'Customer Service'],

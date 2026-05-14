@@ -14,11 +14,44 @@ export function useBooking() {
     last_page: 1
   })
   const filters = ref({
-    status: null,
+    status: [],
     date_from: null,
     date_to: null,
-    customer_id: null
+    customer_id: null,
+    search: '',
+    sort_by: 'created_at',
+    sort_direction: 'desc',
+    rental_owner_id: null,
+    kota: null
   })
+
+  const toApiDate = (value) => {
+    if (!value) return null
+    if (value instanceof Date) {
+      const year = value.getFullYear()
+      const month = String(value.getMonth() + 1).padStart(2, '0')
+      const day = String(value.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    return value
+  }
+
+  const buildFilterParams = () => {
+    const params = {
+      ...filters.value,
+      date_from: toApiDate(filters.value.date_from),
+      date_to: toApiDate(filters.value.date_to)
+    }
+
+    Object.keys(params).forEach((key) => {
+      const value = params[key]
+      if (value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+        delete params[key]
+      }
+    })
+
+    return params
+  }
 
   const store = async (data) => {
     loading.value = true
@@ -39,7 +72,7 @@ export function useBooking() {
     error.value = null
     try {
       const params = {
-        ...filters.value,
+        ...buildFilterParams(),
         page,
         per_page: pagination.value.per_page
       }
@@ -195,6 +228,96 @@ export function useBooking() {
     }
   }
 
+  const requestReturnToRentalUnit = async (id, reason) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.requestRentalUnitReturn(id, { reason })
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request kembali ke rental unit dikirim ke supervisor', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengirim request kembali ke rental unit'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const approveReturnToRentalUnit = async (id) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.approveRentalUnitReturn(id)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Booking dikembalikan ke status rental unit', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menyetujui request'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const rejectReturnToRentalUnit = async (id, data = {}) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.rejectRentalUnitReturn(id, data)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request kembali ke rental unit ditolak', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menolak request'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const requestVoidPayment = async (paymentId, data) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.requestVoidBookingPayment(paymentId, data)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request void pembayaran dikirim ke supervisor', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengajukan void pembayaran'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const approveVoidPayment = async (paymentId) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.approveVoidBookingPayment(paymentId)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Void pembayaran disetujui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menyetujui void pembayaran'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const rejectVoidPayment = async (paymentId, data = {}) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.rejectVoidBookingPayment(paymentId, data)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request void pembayaran ditolak', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menolak void pembayaran'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   const addDetail = async (bookingId, data) => {
     loading.value = true
     try {
@@ -331,7 +454,13 @@ export function useBooking() {
     checkout,
     complete,
     cancel,
+    requestReturnToRentalUnit,
+    approveReturnToRentalUnit,
+    rejectReturnToRentalUnit,
     addPayment,
+    requestVoidPayment,
+    approveVoidPayment,
+    rejectVoidPayment,
     addDetail,
     addCost,
     extend,

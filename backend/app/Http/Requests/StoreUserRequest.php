@@ -25,7 +25,7 @@ class StoreUserRequest extends FormRequest
             'name'      => 'required|string|max:255',
             'email'     => 'required|email|unique:users,email',
             'password'  => 'required|string|min:8',
-            'role'      => 'required|in:superadmin,admin_branch,finance,driver_tetap,cs,teknisi',
+            'role'      => 'required|in:superadmin,admin_branch,supervisor,finance,driver_tetap,cs,teknisi',
             'branch_id' => 'required|exists:branches,id',
             'is_active' => 'sometimes|boolean',
         ];

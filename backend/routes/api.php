@@ -20,11 +20,18 @@ use App\Http\Controllers\Api\V1\BookingPaymentController;
 use App\Http\Controllers\Api\V1\RefundController;
 use App\Http\Controllers\Api\V1\PhysicalCheckController;
 use App\Http\Controllers\Api\V1\PhysicalCheckItemController;
+use App\Http\Controllers\Api\V1\ReceivableController;
+use App\Http\Controllers\Api\V1\SupervisorRequestController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
+    Route::get('public/invoices/{token}', [ReceivableController::class, 'publicInvoice']);
+    Route::get('public/physical-checks/{token}', [PhysicalCheckController::class, 'publicShow']);
+    Route::post('public/physical-checks/{token}/otp', [PhysicalCheckController::class, 'publicRequestOtp']);
+    Route::post('public/physical-checks/{token}/activities', [PhysicalCheckController::class, 'publicActivity']);
+    Route::post('public/physical-checks/{token}/submit', [PhysicalCheckController::class, 'publicStore']);
 
     Route::middleware(['auth:sanctum', 'branch.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
@@ -73,16 +80,33 @@ Route::prefix('v1')->group(function () {
         Route::get('bookings/{booking}/payments', [BookingPaymentController::class, 'index']);
         Route::post('bookings/{booking}/payments', [BookingPaymentController::class, 'store']);
         Route::post('booking-payments/{bookingPayment}/reallocate', [BookingPaymentController::class, 'reallocate']);
+        Route::post('booking-payments/{bookingPayment}/request-void', [BookingPaymentController::class, 'requestVoid']);
+        Route::post('booking-payments/{bookingPayment}/approve-void', [BookingPaymentController::class, 'approveVoid']);
+        Route::post('booking-payments/{bookingPayment}/reject-void', [BookingPaymentController::class, 'rejectVoid']);
 
         // Refunds (C2)
         Route::get('bookings/{booking}/refunds', [RefundController::class, 'index']);
         Route::post('bookings/{booking}/refund', [RefundController::class, 'store']);
+
+        // Receivables & Invoices
+        Route::get('receivables', [ReceivableController::class, 'index']);
+        Route::post('receivables/invoices', [ReceivableController::class, 'generateInvoice']);
+        Route::get('invoices', [ReceivableController::class, 'invoices']);
+        Route::get('invoices/{invoice}/pdf', [ReceivableController::class, 'invoicePdf']);
+        Route::post('invoices/{invoice}/mark-sent', [ReceivableController::class, 'markInvoiceSent']);
+        Route::post('invoices/{invoice}/payments', [ReceivableController::class, 'storeInvoicePayment']);
+
+        // Supervisor approval inbox
+        Route::get('supervisor-requests', [SupervisorRequestController::class, 'index']);
 
         // Bookings
         Route::patch('bookings/{booking}/status', [BookingController::class, 'updateStatus']);
         Route::patch('bookings/{booking}/handle', [BookingController::class, 'handle']);
         Route::post('bookings/{booking}/checkout', [BookingController::class, 'checkout']);
         Route::post('bookings/{booking}/complete', [BookingController::class, 'complete']);
+        Route::post('bookings/{booking}/request-rental-unit-return', [BookingController::class, 'requestRentalUnitReturn']);
+        Route::post('bookings/{booking}/approve-rental-unit-return', [BookingController::class, 'approveRentalUnitReturn']);
+        Route::post('bookings/{booking}/reject-rental-unit-return', [BookingController::class, 'rejectRentalUnitReturn']);
         Route::post('bookings/{booking}/details', [BookingDetailController::class, 'store']);
         Route::patch('booking-details/{bookingDetail}', [BookingDetailController::class, 'update']);
         Route::post('booking-details/{bookingDetail}/costs', [BookingCostController::class, 'store']);

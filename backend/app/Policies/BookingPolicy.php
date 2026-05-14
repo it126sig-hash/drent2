@@ -9,7 +9,7 @@ class BookingPolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'cs', 'finance']);
+        return in_array($user->role, ['superadmin', 'admin_branch', 'supervisor', 'cs', 'finance']);
     }
 
     public function view(User $user, Booking $booking): bool
@@ -40,8 +40,27 @@ class BookingPolicy
     public function managePayments(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
+        return in_array($user->role, ['admin_branch', 'supervisor', 'cs', 'finance'])
+            && $user->branch_id === $booking->branch_id;
+    }
+
+    public function approvePaymentVoid(User $user, Booking $booking): bool
+    {
+        if ($user->role === 'superadmin') return true;
+        return $user->role === 'supervisor' && $user->branch_id === $booking->branch_id;
+    }
+
+    public function requestRentalUnitReturn(User $user, Booking $booking): bool
+    {
+        if ($user->role === 'superadmin') return true;
         return in_array($user->role, ['admin_branch', 'cs', 'finance'])
             && $user->branch_id === $booking->branch_id;
+    }
+
+    public function approveRentalUnitReturn(User $user, Booking $booking): bool
+    {
+        if ($user->role === 'superadmin') return true;
+        return $user->role === 'supervisor' && $user->branch_id === $booking->branch_id;
     }
 
     public function manageRefunds(User $user, Booking $booking): bool

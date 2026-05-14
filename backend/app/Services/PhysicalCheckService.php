@@ -4,10 +4,14 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\PhysicalCheck;
+use App\Models\PhysicalCheckItem;
 use App\Models\PhysicalCheckPhoto;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
@@ -25,6 +29,7 @@ class PhysicalCheckService
         'photos',
         'checklists',
         'signatures',
+        'activities.user',
     ];
 
     public function listOperationalBookings(array $filters = [])
@@ -83,18 +88,29 @@ class PhysicalCheckService
             ->first();
 
         if ($existing) {
+            if (! $existing->public_token) {
+                $existing->forceFill(['public_token' => $this->makePublicToken()])->save();
+            }
+
+            $this->recordActivity($existing, 'request_reused', ['type' => $type]);
+
             return $existing->load(self::RELATIONS);
         }
 
-        return $booking->physicalChecks()->create([
+        $check = $booking->physicalChecks()->create([
             'tenant_id' => $booking->tenant_id,
             'branch_id' => $booking->branch_id,
             'booking_detail_id' => $this->displayDetail($booking)?->id,
             'type' => $type,
             'status' => 'requested',
+            'public_token' => $this->makePublicToken(),
             'requested_at' => now(),
             'requested_by' => Auth::id(),
-        ])->load(self::RELATIONS);
+        ]);
+
+        $this->recordActivity($check, 'requested', ['type' => $type]);
+
+        return $check->load(self::RELATIONS);
     }
 
     public function skipForBooking(Booking $booking, string $type): PhysicalCheck
@@ -133,14 +149,22 @@ class PhysicalCheckService
             ->exists();
     }
 
-    public function storeCompleted(array $data): PhysicalCheck
+    public function storeCompleted(array $data, ?Request $request = null, ?PhysicalCheck $publicCheck = null): PhysicalCheck
     {
         $booking = Booking::with(['bookingDetails'])->findOrFail($data['booking_id']);
         $this->ensureBookingStatusMatchesType($booking, $data['type']);
         $this->ensureWithinInspectionWindow($booking, $data['type']);
 
-        return DB::transaction(function () use ($booking, $data) {
-            $check = $booking->physicalChecks()
+        if ($publicCheck) {
+            if ($publicCheck->booking_id !== $booking->id || $publicCheck->type !== $data['type']) {
+                throw new UnprocessableEntityHttpException('Link cek fisik tidak sesuai dengan data yang dikirim.');
+            }
+
+            $this->verifyOtp($publicCheck, $data['customer_email'] ?? null, $data['otp_code'] ?? null, $request);
+        }
+
+        return DB::transaction(function () use ($booking, $data, $request, $publicCheck) {
+            $check = $publicCheck ?: $booking->physicalChecks()
                 ->where('type', $data['type'])
                 ->latest()
                 ->first();
@@ -150,6 +174,7 @@ class PhysicalCheckService
                     'tenant_id' => $booking->tenant_id,
                     'branch_id' => $booking->branch_id,
                     'type' => $data['type'],
+                    'public_token' => $this->makePublicToken(),
                     'requested_at' => now(),
                     'requested_by' => Auth::id(),
                 ]);
@@ -190,8 +215,81 @@ class PhysicalCheckService
 
             $this->replaceSignatures($check, $data['signatures']);
 
+            $this->recordActivity($check, $publicCheck ? 'public_submitted' : 'submitted', [
+                'photos_count' => count($data['photos'] ?? []),
+                'checklist_count' => count($data['checklist'] ?? []),
+            ], $request, $publicCheck ? 'customer' : null);
+
             return $check->load(self::RELATIONS);
         });
+    }
+
+    public function findPublic(string $token): PhysicalCheck
+    {
+        $check = PhysicalCheck::query()
+            ->with(self::RELATIONS)
+            ->where('public_token', $token)
+            ->firstOrFail();
+
+        $check->forceFill(['public_last_opened_at' => now()])->save();
+        $this->recordActivity($check, 'public_opened', [], request(), 'customer');
+
+        return $check;
+    }
+
+    public function publicItems(PhysicalCheck $check)
+    {
+        return PhysicalCheckItem::query()
+            ->where('tenant_id', $check->tenant_id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function requestOtp(PhysicalCheck $check, Request $request): void
+    {
+        $email = $check->booking?->customer?->email;
+        if (! $email) {
+            throw new UnprocessableEntityHttpException('Email penyewa belum tersedia pada data customer.');
+        }
+
+        $code = (string) random_int(100000, 999999);
+
+        $check->otps()->whereNull('consumed_at')->update(['consumed_at' => now()]);
+        $check->otps()->create([
+            'email' => $email,
+            'code_hash' => Hash::make($code),
+            'expires_at' => now()->addMinutes(10),
+            'requested_ip' => $request->ip(),
+            'requested_user_agent' => (string) $request->userAgent(),
+        ]);
+
+        Mail::raw(
+            "Kode OTP cek fisik DRENT untuk booking {$check->booking?->kode_booking}: {$code}. Kode berlaku 10 menit.",
+            fn($message) => $message->to($email)->subject('Kode OTP Cek Fisik DRENT')
+        );
+
+        $this->recordActivity($check, 'otp_requested', ['email' => $this->maskEmail($email)], $request, 'customer');
+    }
+
+    public function recordActivity(
+        PhysicalCheck $check,
+        string $event,
+        array $context = [],
+        ?Request $request = null,
+        ?string $actorType = null
+    ): void {
+        $user = Auth::user();
+
+        $check->activities()->create([
+            'user_id' => $user?->id,
+            'actor_type' => $actorType ?: ($user ? 'user' : 'system'),
+            'event' => $event,
+            'context' => $context ?: null,
+            'ip_address' => $request?->ip(),
+            'user_agent' => $request ? (string) $request->userAgent() : null,
+        ]);
     }
 
     public function assertCompletedOrRequest(Booking $booking, string $type): void
@@ -307,6 +405,52 @@ class PhysicalCheckService
         Storage::disk('public')->put($path, $binary);
 
         return $path;
+    }
+
+    private function verifyOtp(PhysicalCheck $check, ?string $email, ?string $code, ?Request $request): void
+    {
+        $expectedEmail = $check->booking?->customer?->email;
+        if (! $expectedEmail || ! $email || strcasecmp($expectedEmail, $email) !== 0) {
+            $this->recordActivity($check, 'otp_failed', ['reason' => 'email_mismatch'], $request, 'customer');
+            throw new UnprocessableEntityHttpException('Email OTP tidak sesuai dengan email penyewa.');
+        }
+
+        $otp = $check->otps()
+            ->where('email', $expectedEmail)
+            ->whereNull('consumed_at')
+            ->latest()
+            ->first();
+
+        if (! $otp || $otp->expires_at->isPast()) {
+            $this->recordActivity($check, 'otp_failed', ['reason' => 'expired_or_missing'], $request, 'customer');
+            throw new UnprocessableEntityHttpException('Kode OTP sudah kedaluwarsa. Kirim ulang OTP.');
+        }
+
+        if ($otp->attempts >= 5 || ! $code || ! Hash::check($code, $otp->code_hash)) {
+            $otp->increment('attempts');
+            $this->recordActivity($check, 'otp_failed', ['reason' => 'invalid_code'], $request, 'customer');
+            throw new UnprocessableEntityHttpException('Kode OTP tidak valid.');
+        }
+
+        $otp->forceFill(['consumed_at' => now()])->save();
+        $this->recordActivity($check, 'otp_verified', ['email' => $this->maskEmail($email)], $request, 'customer');
+    }
+
+    private function makePublicToken(): string
+    {
+        do {
+            $token = Str::random(48);
+        } while (PhysicalCheck::where('public_token', $token)->exists());
+
+        return $token;
+    }
+
+    private function maskEmail(string $email): string
+    {
+        [$name, $domain] = array_pad(explode('@', $email, 2), 2, '');
+        $prefix = Str::substr($name, 0, 2);
+
+        return $prefix . '***@' . $domain;
     }
 
     private function ensureBookingStatusMatchesType(Booking $booking, string $type): void

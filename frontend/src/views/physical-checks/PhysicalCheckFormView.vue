@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import { useToast } from 'primevue/usetoast'
@@ -10,8 +10,6 @@ import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue
 import fuelGaugeImage from '../../assets/fuel-gauge.svg'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
-import Column from 'primevue/column'
-import DataTable from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
 import Dropdown from 'primevue/dropdown'
 import InputNumber from 'primevue/inputnumber'
@@ -20,12 +18,24 @@ import Message from 'primevue/message'
 import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
 import Textarea from 'primevue/textarea'
+import Toast from 'primevue/toast'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { fetchOne } = useBooking()
-const { loading, items, fetchItems, fetchByBooking, requestCheck, store } = usePhysicalCheck()
+const {
+  loading,
+  items,
+  fetchItems,
+  fetchByBooking,
+  requestCheck,
+  store,
+  fetchPublic,
+  requestPublicOtp,
+  storePublic,
+  logPublicActivity
+} = usePhysicalCheck()
 
 const booking = ref(null)
 const existingCheck = ref(null)
@@ -35,9 +45,13 @@ const fuelMarker = ref(null)
 const generalNotes = ref('')
 const inspectorName = ref('')
 const customerName = ref('')
+const customerEmail = ref('')
+const otpCode = ref('')
+const otpSent = ref(false)
 const inspectorSignature = ref('')
 const customerSignature = ref('')
 const checklistRows = ref([])
+const activeStep = ref(0)
 
 const sections = ref([
   { key: 'front', label: 'Tampak depan', notes: '', photos: [] },
@@ -46,15 +60,26 @@ const sections = ref([
   { key: 'rear', label: 'Tampak belakang', notes: '', photos: [] },
   { key: 'interior', label: 'Interior', notes: '', photos: [] },
   { key: 'km', label: 'Foto KM terakhir', notes: '', photos: [] },
+  { key: 'handover_selfie', label: 'Foto bersama penyewa', notes: '', photos: [] },
 ])
 
-const photoRequiredSections = ['front', 'left', 'right', 'rear', 'interior', 'km']
-const type = computed(() => route.params.type)
-const bookingId = computed(() => route.params.bookingId)
+const photoRequiredSections = ['front', 'left', 'right', 'rear', 'interior', 'km', 'handover_selfie']
+const publicToken = computed(() => route.params.token)
+const isPublicMode = computed(() => route.name === 'PublicPhysicalCheckForm')
+const type = computed(() => isPublicMode.value ? existingCheck.value?.type : route.params.type)
+const bookingId = computed(() => isPublicMode.value ? booking.value?.id : route.params.bookingId)
 const isReturn = computed(() => type.value === 'return')
 const title = computed(() => isReturn.value ? 'Cek Fisik Pengembalian' : 'Cek Fisik Keberangkatan')
 const readonly = computed(() => ['completed', 'skipped'].includes(existingCheck.value?.status))
 const canSubmit = computed(() => !readonly.value && eligibility.value.allowed)
+
+const steps = computed(() => [
+  { key: 'photos', label: 'Foto', icon: 'pi pi-camera', complete: photoRequiredSections.every(hasSectionPhoto) },
+  { key: 'meter', label: 'KM & BBM', icon: 'pi pi-gauge', complete: (kmOdometer.value || kmOdometer.value === 0) && !!fuelMarker.value },
+  { key: 'checklist', label: 'Perlengkapan', icon: 'pi pi-list-check', complete: checklistRows.value.length > 0 },
+  { key: 'signatures', label: 'TTD', icon: 'pi pi-pencil', complete: !!inspectorSignature.value && !!customerSignature.value },
+  { key: 'review', label: 'Kirim', icon: 'pi pi-send', complete: isPublicMode.value ? !!otpCode.value : true },
+])
 
 const activeDetail = computed(() => {
   const details = booking.value?.booking_details || []
@@ -68,6 +93,18 @@ const vehicleTitle = computed(() => {
   const unit = activeDetail.value?.unit
   if (unit) return [unit.merk, unit.tipe].filter(Boolean).join(' ') || 'Unit tanpa nama'
   return activeDetail.value?.unit_placeholder || 'Belum ditentukan'
+})
+
+const maskedEmail = computed(() => {
+  const email = booking.value?.customer?.email || customerEmail.value
+  if (!email || !email.includes('@')) return email || '-'
+  const [name, domain] = email.split('@')
+  return `${name.slice(0, 2)}***@${domain}`
+})
+
+const publicLink = computed(() => {
+  if (!existingCheck.value?.public_token) return ''
+  return `${window.location.origin}/physical-checks/public/${existingCheck.value.public_token}`
 })
 
 const statusText = (status) => ({
@@ -101,9 +138,8 @@ const addDays = (date, days) => {
 }
 
 const eligibility = computed(() => {
-  if (!booking.value || !activeDetail.value) {
-    return { allowed: false, reason: 'Detail kendaraan belum tersedia.' }
-  }
+  if (readonly.value) return { allowed: true, reason: null }
+  if (!booking.value || !activeDetail.value) return { allowed: false, reason: 'Detail kendaraan belum tersedia.' }
 
   if (!isReturn.value && booking.value.status !== 'waiting_list') {
     return { allowed: false, reason: 'Cek keberangkatan hanya untuk booking Waiting List.' }
@@ -114,9 +150,7 @@ const eligibility = computed(() => {
   }
 
   const targetDate = isReturn.value ? activeDetail.value.tgl_kembali : activeDetail.value.tgl_sewa
-  if (!targetDate) {
-    return { allowed: false, reason: 'Tanggal sewa/kembali belum tersedia.' }
-  }
+  if (!targetDate) return { allowed: false, reason: 'Tanggal sewa/kembali belum tersedia.' }
 
   const target = dayOnly(targetDate)
   const start = isReturn.value ? target : addDays(target, -1)
@@ -144,21 +178,35 @@ const eligibility = computed(() => {
   return { allowed: true, reason: null }
 })
 
-const loadData = async () => {
-  booking.value = await fetchOne(bookingId.value)
-  await fetchItems()
-  existingCheck.value = await fetchByBooking(bookingId.value, type.value)
+const fuelOptions = ['E', '1/8', '1/4', '3/8', '1/2', '5/8', '3/4', '7/8', 'F']
 
-  if (!existingCheck.value) {
-    try {
-      existingCheck.value = await requestCheck(bookingId.value, type.value)
-    } catch (err) {
-      existingCheck.value = null
+function hasSectionPhoto(key) {
+  return !!sections.value.find(section => section.key === key)?.photos?.length
+}
+
+const loadData = async () => {
+  if (isPublicMode.value) {
+    const payload = await fetchPublic(publicToken.value)
+    booking.value = payload.booking
+    existingCheck.value = payload.check
+    items.value = payload.items || []
+  } else {
+    booking.value = await fetchOne(bookingId.value)
+    await fetchItems()
+    existingCheck.value = await fetchByBooking(bookingId.value, type.value)
+
+    if (!existingCheck.value) {
+      try {
+        existingCheck.value = await requestCheck(bookingId.value, type.value)
+      } catch (err) {
+        existingCheck.value = null
+      }
     }
   }
 
   initializeChecklist()
   hydrateExistingCheck()
+  logStepOpened()
 }
 
 const initializeChecklist = () => {
@@ -180,6 +228,7 @@ const hydrateExistingCheck = () => {
     ? { x: Number(check.fuel_marker_x), y: Number(check.fuel_marker_y) }
     : null
   generalNotes.value = check.notes || ''
+  customerEmail.value = booking.value?.customer?.email || ''
 
   for (const section of sections.value) {
     const storedSection = check.sections?.find(item => item.section === section.key)
@@ -221,7 +270,7 @@ const compressImage = (file) => {
       const img = new Image()
       img.onerror = reject
       img.onload = () => {
-        const maxSide = 1600
+        const maxSide = 1280
         const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
         const canvas = document.createElement('canvas')
         canvas.width = Math.max(1, Math.round(img.width * scale))
@@ -230,7 +279,7 @@ const compressImage = (file) => {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        resolve(canvas.toDataURL('image/jpeg', 0.78))
+        resolve(canvas.toDataURL('image/jpeg', 0.68))
       }
       img.src = reader.result
     }
@@ -257,11 +306,13 @@ const onPhotoSelect = async (event, section) => {
   }
 
   event.target.value = ''
+  logFillActivity('photo_added', { section: section.key, count: files.length })
 }
 
 const removePhoto = (section, photo) => {
   if (readonly.value) return
   section.photos = section.photos.filter(item => item.id !== photo.id)
+  logFillActivity('photo_removed', { section: section.key })
 }
 
 const annotatorVisible = ref(false)
@@ -360,10 +411,11 @@ const resetAnnotation = () => {
 
 const saveAnnotation = () => {
   if (!annotatorPhoto.value || !annotatorCanvas.value) return
-  const dataUrl = annotatorCanvas.value.toDataURL('image/jpeg', 0.82)
+  const dataUrl = annotatorCanvas.value.toDataURL('image/jpeg', 0.76)
   annotatorPhoto.value.annotated_base64 = dataUrl
   annotatorPhoto.value.preview = dataUrl
   annotatorVisible.value = false
+  logFillActivity('photo_annotated')
 }
 
 const setFuelMarker = (event) => {
@@ -375,118 +427,195 @@ const setFuelMarker = (event) => {
     x: Math.max(0, Math.min(100, ((point.clientX - rect.left) / rect.width) * 100)),
     y: Math.max(0, Math.min(100, ((point.clientY - rect.top) / rect.height) * 100))
   }
+  logFillActivity('fuel_marked')
 }
 
-const fuelOptions = [
-  'E',
-  '1/8',
-  '1/4',
-  '3/8',
-  '1/2',
-  '5/8',
-  '3/4',
-  '7/8',
-  'F'
-]
+const validateStep = (index = activeStep.value) => {
+  if (index === 0) {
+    const missingPhoto = photoRequiredSections.find(key => !hasSectionPhoto(key))
+    if (missingPhoto) {
+      const section = sections.value.find(item => item.key === missingPhoto)
+      toast.add({ severity: 'warn', summary: 'Foto belum lengkap', detail: `Tambahkan foto untuk ${section.label}.`, life: 4000 })
+      return false
+    }
+  }
 
-const validateForm = () => {
-  if (!kmOdometer.value && kmOdometer.value !== 0) {
-    toast.add({ severity: 'warn', summary: 'KM belum diisi', detail: 'Isi kilometer terakhir secara manual.', life: 4000 })
+  if (index === 1) {
+    if (!kmOdometer.value && kmOdometer.value !== 0) {
+      toast.add({ severity: 'warn', summary: 'KM belum diisi', detail: 'Isi kilometer terakhir secara manual.', life: 4000 })
+      return false
+    }
+
+    if (!fuelMarker.value) {
+      toast.add({ severity: 'warn', summary: 'BBM belum ditandai', detail: 'Ketuk gambar indikator BBM untuk menandai posisi.', life: 4000 })
+      return false
+    }
+  }
+
+  if (index === 3 && (!inspectorSignature.value || !customerSignature.value)) {
+    toast.add({ severity: 'warn', summary: 'Tanda tangan belum lengkap', detail: 'Lengkapi tanda tangan tim cek fisik dan penyewa.', life: 4000 })
     return false
   }
 
-  const missingPhoto = photoRequiredSections.find(key => {
-    const section = sections.value.find(item => item.key === key)
-    return !section?.photos?.length
-  })
-
-  if (missingPhoto) {
-    const section = sections.value.find(item => item.key === missingPhoto)
-    toast.add({ severity: 'warn', summary: 'Foto belum lengkap', detail: `Tambahkan foto untuk ${section.label}.`, life: 4000 })
-    return false
-  }
-
-  if (!fuelMarker.value) {
-    toast.add({ severity: 'warn', summary: 'BBM belum ditandai', detail: 'Ketuk gambar indikator BBM untuk menandai posisi.', life: 4000 })
-    return false
-  }
-
-  if (!inspectorSignature.value || !customerSignature.value) {
-    toast.add({ severity: 'warn', summary: 'Tanda tangan belum lengkap', detail: 'Lengkapi tanda tangan tim cek fisik dan user/driver.', life: 4000 })
+  if (index === 4 && isPublicMode.value && !otpCode.value) {
+    toast.add({ severity: 'warn', summary: 'OTP belum diisi', detail: 'Masukkan kode OTP dari email penyewa.', life: 4000 })
     return false
   }
 
   return true
 }
 
+const validateForm = () => steps.value.every((_, index) => validateStep(index))
+
+const goToStep = (index) => {
+  if (readonly.value || index <= activeStep.value || validateStep(activeStep.value)) {
+    activeStep.value = index
+  }
+}
+
+const nextStep = () => {
+  if (!validateStep()) return
+  activeStep.value = Math.min(activeStep.value + 1, steps.value.length - 1)
+}
+
+const previousStep = () => {
+  activeStep.value = Math.max(activeStep.value - 1, 0)
+}
+
+const buildPayload = () => ({
+  booking_id: Number(bookingId.value),
+  type: type.value,
+  km_odometer: kmOdometer.value,
+  fuel_level: fuelLevel.value,
+  fuel_marker_x: fuelMarker.value?.x,
+  fuel_marker_y: fuelMarker.value?.y,
+  notes: generalNotes.value,
+  customer_email: customerEmail.value,
+  otp_code: otpCode.value,
+  sections: sections.value.map(section => ({
+    section: section.key,
+    notes: section.notes
+  })),
+  photos: sections.value.flatMap(section =>
+    section.photos
+      .filter(photo => !photo.fromServer)
+      .map(photo => ({
+        section: section.key,
+        image_base64: photo.image_base64,
+        annotated_base64: photo.annotated_base64 || null,
+        notes: photo.notes
+      }))
+  ),
+  checklist: checklistRows.value.map(item => ({
+    physical_check_item_id: item.physical_check_item_id,
+    item_label: item.item_label,
+    is_present: item.is_present,
+    notes: item.notes
+  })),
+  signatures: [
+    {
+      signer_type: 'inspector',
+      signer_name: inspectorName.value,
+      signature_base64: inspectorSignature.value
+    },
+    {
+      signer_type: 'customer_driver',
+      signer_name: customerName.value,
+      signature_base64: customerSignature.value
+    }
+  ]
+})
+
+const sendOtp = async () => {
+  if (!isPublicMode.value) return
+  await requestPublicOtp(publicToken.value)
+  otpSent.value = true
+  logFillActivity('otp_requested_from_form')
+}
+
+const copyPublicLink = async () => {
+  if (!publicLink.value) return
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(publicLink.value)
+  } else {
+    const input = document.createElement('input')
+    input.value = publicLink.value
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+  }
+  toast.add({ severity: 'success', summary: 'Link disalin', detail: 'Link anonim penyewa sudah disalin.', life: 3000 })
+}
+
 const submit = async () => {
   if (!validateForm()) return
+  const payload = buildPayload()
 
-  const payload = {
-    booking_id: Number(bookingId.value),
-    type: type.value,
-    km_odometer: kmOdometer.value,
-    fuel_level: fuelLevel.value,
-    fuel_marker_x: fuelMarker.value?.x,
-    fuel_marker_y: fuelMarker.value?.y,
-    notes: generalNotes.value,
-    sections: sections.value.map(section => ({
-      section: section.key,
-      notes: section.notes
-    })),
-    photos: sections.value.flatMap(section =>
-      section.photos
-        .filter(photo => !photo.fromServer)
-        .map(photo => ({
-          section: section.key,
-          image_base64: photo.image_base64,
-          annotated_base64: photo.annotated_base64 || null,
-          notes: photo.notes
-        }))
-    ),
-    checklist: checklistRows.value.map(item => ({
-      physical_check_item_id: item.physical_check_item_id,
-      item_label: item.item_label,
-      is_present: item.is_present,
-      notes: item.notes
-    })),
-    signatures: [
-      {
-        signer_type: 'inspector',
-        signer_name: inspectorName.value,
-        signature_base64: inspectorSignature.value
-      },
-      {
-        signer_type: 'customer_driver',
-        signer_name: customerName.value,
-        signature_base64: customerSignature.value
-      }
-    ]
+  if (isPublicMode.value) {
+    await storePublic(publicToken.value, payload)
+    existingCheck.value = { ...existingCheck.value, status: 'completed' }
+    logFillActivity('submit_completed')
+    activeStep.value = steps.value.length - 1
+    return
   }
 
   await store(payload)
   router.push({ name: 'PhysicalCheckList' })
 }
 
+const logFillActivity = (event, context = {}) => {
+  if (!isPublicMode.value || !publicToken.value || readonly.value) return
+  logPublicActivity(publicToken.value, event, context)
+}
+
+const logStepOpened = () => {
+  logFillActivity('step_opened', { step: steps.value[activeStep.value]?.key })
+}
+
+watch(activeStep, logStepOpened)
+watch([inspectorSignature, customerSignature], () => logFillActivity('signature_updated'))
+
 onMounted(loadData)
 </script>
 
 <template>
-  <div class="app-page check-form-page">
-    <div class="form-head">
-      <Button icon="pi pi-arrow-left" text rounded aria-label="Kembali" @click="router.push({ name: 'PhysicalCheckList' })" />
-      <div class="head-main">
-        <p class="eyebrow">{{ title }}</p>
-        <h1>{{ booking?.kode_booking || 'Memuat booking...' }}</h1>
+  <div class="app-page check-form-page" :class="{ 'public-page': isPublicMode }">
+    <Toast />
+    <div class="detail-page-header">
+      <div class="header-main">
+        <Button
+          v-if="!isPublicMode"
+          icon="pi pi-arrow-left"
+          text
+          rounded
+          class="back-button"
+          aria-label="Kembali"
+          @click="router.push({ name: 'PhysicalCheckList' })"
+        />
+        <div class="title-block">
+          <p class="eyebrow">{{ title }}</p>
+          <h1>{{ booking?.kode_booking || 'Memuat booking...' }}</h1>
+          <span>{{ isPublicMode ? 'Form penyewa' : 'Form internal CS' }}</span>
+        </div>
       </div>
-      <Tag
-        v-if="existingCheck"
-        :value="statusText(existingCheck.status)"
-        :severity="statusSeverity(existingCheck.status)"
-      />
+      <div class="header-actions">
+        <Button
+          v-if="!isPublicMode && publicLink"
+          label="Salin Link Penyewa"
+          icon="pi pi-link"
+          class="btn-pill btn-primary"
+          @click="copyPublicLink"
+        />
+        <Tag
+          v-if="existingCheck"
+          :value="statusText(existingCheck.status)"
+          :severity="statusSeverity(existingCheck.status)"
+        />
+      </div>
     </div>
 
-    <div v-if="!booking" class="app-card p-5">
+    <div v-if="!booking" class="app-card loading-card">
       <Skeleton height="120px" />
     </div>
 
@@ -498,16 +627,16 @@ onMounted(loadData)
           <small>{{ activeDetail?.unit?.no_polisi || 'No polisi belum tersedia' }}</small>
         </div>
         <div class="summary-item">
-          <span>Pelanggan</span>
+          <span>Penyewa</span>
           <strong>{{ booking.customer?.nama || '-' }}</strong>
-          <small>{{ booking.customer?.status || '-' }}</small>
+          <small>{{ maskedEmail }}</small>
         </div>
         <div class="summary-item">
-          <span>Status</span>
+          <span>Status booking</span>
           <BookingStatusBadge :status="booking.status" />
         </div>
         <div class="summary-item">
-          <span>Sewa</span>
+          <span>Periode</span>
           <strong>{{ formatDateTime(activeDetail?.tgl_sewa) }}</strong>
           <small>{{ formatDateTime(activeDetail?.tgl_kembali) }}</small>
         </div>
@@ -521,185 +650,270 @@ onMounted(loadData)
         Data cek fisik ini sudah {{ statusText(existingCheck.status).toLowerCase() }} dan ditampilkan dalam mode lihat.
       </Message>
 
-      <section class="app-card form-section">
-        <div class="section-title">
-          <i class="pi pi-camera"></i>
-          <div>
-            <h2>Foto Kondisi Kendaraan</h2>
-            <p>Foto bisa lebih dari satu per bagian dan bisa diberi coretan/notasi.</p>
-          </div>
-        </div>
+      <div class="wizard-shell">
+        <aside class="app-card step-card">
+          <button
+            v-for="(step, index) in steps"
+            :key="step.key"
+            class="step-button"
+            :class="{ active: activeStep === index, complete: step.complete }"
+            type="button"
+            @click="goToStep(index)"
+          >
+            <i :class="step.icon"></i>
+            <span>{{ step.label }}</span>
+            <small>{{ index + 1 }}</small>
+          </button>
+        </aside>
 
-        <div class="section-grid">
-          <article v-for="section in sections" :key="section.key" class="photo-panel">
-            <div class="panel-head">
-              <strong>{{ section.label }}</strong>
-              <label v-if="!readonly" class="photo-trigger">
+        <main class="wizard-content">
+          <section v-if="activeStep === 0" class="app-card form-section">
+            <div class="app-section-header">
+              <div class="section-heading">
                 <i class="pi pi-camera"></i>
-                <span>Tambah</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  multiple
-                  @change="onPhotoSelect($event, section)"
-                />
-              </label>
-            </div>
-
-            <Textarea
-              v-model="section.notes"
-              rows="2"
-              autoResize
-              :readonly="readonly"
-              placeholder="Keterangan bagian ini..."
-              class="w-full"
-            />
-
-            <div v-if="section.photos.length" class="photo-grid">
-              <div v-for="photo in section.photos" :key="photo.id" class="photo-card">
-                <img :src="photo.preview" :alt="section.label" />
-                <Textarea
-                  v-model="photo.notes"
-                  rows="1"
-                  autoResize
-                  :readonly="readonly"
-                  placeholder="Catatan foto..."
-                  class="w-full"
-                />
-                <div v-if="!readonly" class="photo-actions">
-                  <Button icon="pi pi-pencil" text rounded aria-label="Coret foto" @click="openAnnotator(photo)" />
-                  <Button icon="pi pi-trash" text rounded severity="danger" aria-label="Hapus foto" @click="removePhoto(section, photo)" />
+                <div>
+                  <h2>Foto Kondisi Kendaraan</h2>
+                  <p>Ambil foto tiap sisi kendaraan, KM, dan foto bersama penyewa.</p>
                 </div>
               </div>
             </div>
-            <div v-else class="empty-photo">
-              <i class="pi pi-image"></i>
-              <span>Belum ada foto</span>
+
+            <div class="section-body">
+              <div class="section-grid">
+                <article v-for="section in sections" :key="section.key" class="photo-panel">
+                  <div class="panel-head">
+                    <strong>{{ section.label }}</strong>
+                    <label v-if="!readonly" class="photo-trigger btn-pill btn-primary">
+                      <i class="pi pi-camera"></i>
+                      <span>Ambil</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        :capture="section.key === 'handover_selfie' ? 'user' : 'environment'"
+                        multiple
+                        @change="onPhotoSelect($event, section)"
+                      />
+                    </label>
+                  </div>
+
+                  <Textarea
+                    v-model="section.notes"
+                    rows="2"
+                    autoResize
+                    :readonly="readonly"
+                    placeholder="Keterangan bagian ini..."
+                    class="full-control"
+                  />
+
+                  <div v-if="section.photos.length" class="photo-grid">
+                    <div v-for="photo in section.photos" :key="photo.id" class="photo-card">
+                      <img :src="photo.preview" :alt="section.label" />
+                      <Textarea
+                        v-model="photo.notes"
+                        rows="1"
+                        autoResize
+                        :readonly="readonly"
+                        placeholder="Catatan foto..."
+                        class="full-control"
+                      />
+                      <div v-if="!readonly" class="photo-actions">
+                        <Button icon="pi pi-pencil" text rounded aria-label="Coret foto" @click="openAnnotator(photo)" />
+                        <Button icon="pi pi-trash" text rounded severity="danger" aria-label="Hapus foto" @click="removePhoto(section, photo)" />
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="empty-photo">
+                    <i class="pi pi-image"></i>
+                    <span>Belum ada foto</span>
+                  </div>
+                </article>
+              </div>
             </div>
-          </article>
-        </div>
-      </section>
+          </section>
 
-      <section class="meter-grid">
-        <div class="app-card form-section">
-          <div class="section-title">
-            <i class="pi pi-gauge"></i>
-            <div>
-              <h2>Kilometer</h2>
-              <p>Gunakan foto bagian KM dan isi angka manual.</p>
+          <section v-else-if="activeStep === 1" class="meter-grid">
+            <div class="app-card form-section">
+              <div class="app-section-header">
+                <div class="section-heading">
+                  <i class="pi pi-gauge"></i>
+                  <div>
+                    <h2>Kilometer</h2>
+                    <p>Isi angka KM terakhir sesuai foto odometer.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="section-body">
+                <InputNumber
+                  v-model="kmOdometer"
+                  :disabled="readonly"
+                  :min="0"
+                  inputId="km_odometer"
+                  class="full-control"
+                  suffix=" km"
+                  placeholder="KM terakhir"
+                  @blur="logFillActivity('km_filled')"
+                />
+              </div>
             </div>
-          </div>
-          <InputNumber
-            v-model="kmOdometer"
-            :disabled="readonly"
-            :min="0"
-            inputId="km_odometer"
-            class="w-full"
-            suffix=" km"
-            placeholder="KM terakhir"
-          />
-        </div>
 
-        <div class="app-card form-section">
-          <div class="section-title">
-            <i class="pi pi-compass"></i>
-            <div>
-              <h2>Indikator BBM</h2>
-              <p>Ketuk posisi jarum/indikator pada gambar.</p>
+            <div class="app-card form-section">
+              <div class="app-section-header">
+                <div class="section-heading">
+                  <i class="pi pi-compass"></i>
+                  <div>
+                    <h2>Indikator BBM</h2>
+                    <p>Ketuk posisi jarum atau indikator pada gambar.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="section-body">
+                <div class="fuel-wrap" @click="setFuelMarker" @touchstart.prevent="setFuelMarker">
+                  <img :src="fuelGaugeImage" alt="Indikator BBM" />
+                  <span
+                    v-if="fuelMarker"
+                    class="fuel-marker"
+                    :style="{ left: `${fuelMarker.x}%`, top: `${fuelMarker.y}%` }"
+                  ></span>
+                </div>
+                <Dropdown
+                  v-model="fuelLevel"
+                  :options="fuelOptions"
+                  :disabled="readonly"
+                  editable
+                  placeholder="Label BBM"
+                  class="full-control"
+                  @change="logFillActivity('fuel_label_changed')"
+                />
+              </div>
             </div>
-          </div>
-          <div class="fuel-wrap" @click="setFuelMarker" @touchstart.prevent="setFuelMarker">
-            <img :src="fuelGaugeImage" alt="Indikator BBM" />
-            <span
-              v-if="fuelMarker"
-              class="fuel-marker"
-              :style="{ left: `${fuelMarker.x}%`, top: `${fuelMarker.y}%` }"
-            ></span>
-          </div>
-          <Dropdown
-            v-model="fuelLevel"
-            :options="fuelOptions"
-            :disabled="readonly"
-            editable
-            placeholder="Label BBM"
-            class="w-full"
-          />
-        </div>
-      </section>
+          </section>
 
-      <section class="app-card form-section">
-        <div class="section-title">
-          <i class="pi pi-list-check"></i>
-          <div>
-            <h2>Perlengkapan</h2>
-            <p>Daftar item berasal dari master perlengkapan cek fisik.</p>
-          </div>
-        </div>
+          <section v-else-if="activeStep === 2" class="app-card form-section">
+            <div class="app-section-header">
+              <div class="section-heading">
+                <i class="pi pi-list-check"></i>
+                <div>
+                  <h2>Perlengkapan</h2>
+                  <p>Centang item yang tersedia dan beri catatan bila perlu.</p>
+                </div>
+              </div>
+            </div>
 
-        <DataTable :value="checklistRows" dataKey="item_label" responsiveLayout="scroll" class="checklist-table">
-          <Column header="Ada" style="width: 80px">
-            <template #body="{ data }">
-              <Checkbox v-model="data.is_present" :binary="true" :disabled="readonly" />
-            </template>
-          </Column>
-          <Column field="item_label" header="Item" style="min-width: 180px">
-            <template #body="{ data }">
-              <strong>{{ data.item_label }}</strong>
-            </template>
-          </Column>
-          <Column header="Keterangan" style="min-width: 240px">
-            <template #body="{ data }">
-              <InputText v-model="data.notes" :readonly="readonly" placeholder="Keterangan..." class="w-full" />
-            </template>
-          </Column>
-        </DataTable>
-      </section>
+            <div class="section-body checklist-list">
+              <article v-for="row in checklistRows" :key="row.item_label" class="checklist-row">
+                <Checkbox v-model="row.is_present" :binary="true" :disabled="readonly" @change="logFillActivity('checklist_changed', { item: row.item_label })" />
+                <div>
+                  <strong>{{ row.item_label }}</strong>
+                  <InputText v-model="row.notes" :readonly="readonly" placeholder="Keterangan..." class="full-control" />
+                </div>
+              </article>
+            </div>
+          </section>
 
-      <section class="app-card form-section">
-        <div class="section-title">
-          <i class="pi pi-pencil"></i>
-          <div>
-            <h2>Tanda Tangan</h2>
-            <p>Tim cek fisik dan user/driver yang menerima atau mengembalikan mobil.</p>
-          </div>
-        </div>
-        <div class="signature-grid">
-          <div>
-            <InputText v-model="inspectorName" :readonly="readonly" placeholder="Nama tim cek fisik" class="w-full mb-2" />
-            <SignaturePad v-model="inspectorSignature" label="Tim Cek Fisik" :disabled="readonly" />
-          </div>
-          <div>
-            <InputText v-model="customerName" :readonly="readonly" placeholder="Nama user/driver" class="w-full mb-2" />
-            <SignaturePad v-model="customerSignature" label="User / Driver" :disabled="readonly" />
-          </div>
-        </div>
-      </section>
+          <section v-else-if="activeStep === 3" class="app-card form-section">
+            <div class="app-section-header">
+              <div class="section-heading">
+                <i class="pi pi-pencil"></i>
+                <div>
+                  <h2>Tanda Tangan</h2>
+                  <p>TTD tim cek fisik dan penyewa yang menerima atau mengembalikan unit.</p>
+                </div>
+              </div>
+            </div>
 
-      <section class="app-card form-section">
-        <div class="section-title">
-          <i class="pi pi-align-left"></i>
-          <div>
-            <h2>Catatan Akhir</h2>
-            <p>Tambahkan kondisi khusus atau temuan penting.</p>
-          </div>
-        </div>
-        <Textarea
-          v-model="generalNotes"
-          rows="3"
-          autoResize
-          :readonly="readonly"
-          placeholder="Catatan umum cek fisik..."
-          class="w-full"
-        />
-      </section>
+            <div class="section-body signature-grid">
+              <div class="signature-panel">
+                <InputText v-model="inspectorName" :readonly="readonly" placeholder="Nama tim cek fisik" class="full-control" />
+                <SignaturePad v-model="inspectorSignature" label="Tim Cek Fisik" :disabled="readonly" />
+              </div>
+              <div class="signature-panel">
+                <InputText v-model="customerName" :readonly="readonly" placeholder="Nama penyewa" class="full-control" />
+                <SignaturePad v-model="customerSignature" label="Penyewa" :disabled="readonly" />
+              </div>
+            </div>
+          </section>
 
-      <div class="sticky-actions">
-        <Button label="Kembali" icon="pi pi-arrow-left" outlined @click="router.push({ name: 'PhysicalCheckList' })" />
+          <section v-else class="app-card form-section">
+            <div class="app-section-header">
+              <div class="section-heading">
+                <i class="pi pi-send"></i>
+                <div>
+                  <h2>Review & Kirim</h2>
+                  <p>Periksa catatan akhir sebelum cek fisik dikirim.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-body review-grid">
+              <div>
+                <label class="field-label" for="general_notes">Catatan akhir</label>
+                <Textarea
+                  id="general_notes"
+                  v-model="generalNotes"
+                  rows="4"
+                  autoResize
+                  :readonly="readonly"
+                  placeholder="Catatan umum cek fisik..."
+                  class="full-control"
+                  @blur="logFillActivity('notes_filled')"
+                />
+              </div>
+
+              <div v-if="isPublicMode && !readonly" class="app-muted-panel otp-panel">
+                <div>
+                  <strong>Verifikasi OTP penyewa</strong>
+                  <span>Kode dikirim ke {{ maskedEmail }} dan berlaku 10 menit.</span>
+                </div>
+                <Button
+                  :label="otpSent ? 'Kirim Ulang OTP' : 'Kirim OTP'"
+                  icon="pi pi-envelope"
+                  class="btn-pill btn-primary"
+                  :loading="loading"
+                  @click="sendOtp"
+                />
+                <InputText
+                  v-model="otpCode"
+                  inputmode="numeric"
+                  maxlength="6"
+                  placeholder="6 digit OTP"
+                  class="full-control otp-input"
+                  @blur="logFillActivity('otp_entered')"
+                />
+              </div>
+
+              <div class="review-summary">
+                <div><span>Foto</span><strong>{{ sections.reduce((sum, section) => sum + section.photos.length, 0) }}</strong></div>
+                <div><span>Checklist</span><strong>{{ checklistRows.length }}</strong></div>
+                <div><span>KM</span><strong>{{ kmOdometer ?? '-' }}</strong></div>
+                <div><span>BBM</span><strong>{{ fuelLevel || '-' }}</strong></div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <div v-if="!readonly" class="sticky-actions">
         <Button
-          v-if="!readonly"
-          label="Simpan Cek Fisik"
-          icon="pi pi-save"
+          label="Sebelumnya"
+          icon="pi pi-arrow-left"
+          class="btn-pill btn-secondary"
+          :disabled="activeStep === 0 || loading"
+          @click="previousStep"
+        />
+        <Button
+          v-if="activeStep < steps.length - 1"
+          label="Lanjut"
+          icon="pi pi-arrow-right"
+          iconPos="right"
+          class="btn-pill btn-primary"
+          :disabled="!canSubmit || loading"
+          @click="nextStep"
+        />
+        <Button
+          v-else
+          label="Kirim Cek Fisik"
+          icon="pi pi-send"
+          class="btn-pill btn-primary"
           :disabled="!canSubmit"
           :loading="loading"
           @click="submit"
@@ -707,7 +921,14 @@ onMounted(loadData)
       </div>
     </template>
 
-    <Dialog v-model:visible="annotatorVisible" header="Coret / Notasi Foto" modal :style="{ width: 'min(920px, 96vw)' }" :breakpoints="{ '720px': '96vw' }">
+    <Dialog
+      v-model:visible="annotatorVisible"
+      header="Coret / Notasi Foto"
+      modal
+      class="custom-dialog"
+      :style="{ width: 'min(920px, 96vw)' }"
+      :breakpoints="{ '720px': '96vw' }"
+    >
       <div class="annotator">
         <canvas
           ref="annotatorCanvas"
@@ -721,8 +942,8 @@ onMounted(loadData)
         ></canvas>
       </div>
       <template #footer>
-        <Button label="Reset" icon="pi pi-refresh" text @click="resetAnnotation" />
-        <Button label="Simpan Coretan" icon="pi pi-check" @click="saveAnnotation" />
+        <Button label="Reset" icon="pi pi-refresh" class="app-dialog-button app-dialog-button-secondary" @click="resetAnnotation" />
+        <Button label="Simpan Coretan" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="saveAnnotation" />
       </template>
     </Dialog>
   </div>
@@ -732,243 +953,460 @@ onMounted(loadData)
 .check-form-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding-bottom: 78px;
+  gap: var(--space-lg);
+  min-height: 100vh;
+  padding: var(--space-2xl);
+  padding-bottom: 92px;
+  background: var(--page-bg);
 }
 
-.form-head {
+.public-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.detail-page-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: var(--space-lg);
 }
 
-.head-main {
-  flex: 1;
+.header-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
   min-width: 0;
 }
 
-.head-main h1 {
+.title-block {
+  min-width: 0;
+}
+
+.title-block h1,
+.title-block p,
+.title-block span {
   margin: 0;
-  font-weight: 800;
-  color: #0f172a;
+}
+
+.title-block h1 {
+  overflow-wrap: anywhere;
+}
+
+.title-block span,
+.eyebrow {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .eyebrow {
-  margin: 0 0 4px;
-  color: #0891b2;
-  font-weight: 800;
-  letter-spacing: 0;
+  color: var(--info-cyan);
   text-transform: uppercase;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.app-card {
+  overflow: hidden;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-tile);
+}
+
+.loading-card {
+  padding: var(--space-xl);
 }
 
 .summary-band {
   display: grid;
   grid-template-columns: 1.4fr 1fr auto 1.2fr;
-  gap: 10px;
+  gap: var(--space-md);
 }
 
 .summary-item {
-  background: #ffffff;
-  border: 1px solid #dbe4ee;
-  border-radius: 8px;
-  padding: 12px;
-  min-width: 0;
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-tile);
 }
 
 .summary-item span,
 .summary-item small {
-  color: #64748b;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .summary-item strong {
-  color: #0f172a;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.wizard-shell {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.step-card {
+  position: sticky;
+  top: var(--space-lg);
+  display: grid;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+}
+
+.step-button {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-default);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.step-button i {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+}
+
+.step-button span {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.step-button small {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--card-bg);
+  font-size: 11px;
+}
+
+.step-button.active,
+.step-button.complete {
+  border-color: var(--surface-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.step-button.active i,
+.step-button.complete small {
+  background: var(--text-primary);
+  color: var(--text-white);
+}
+
+.wizard-content {
+  min-width: 0;
 }
 
 .form-section {
-  padding: 14px;
+  min-width: 0;
 }
 
-.section-title {
+.app-section-header {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 12px;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-bottom: 1px solid var(--surface-border);
 }
 
-.section-title i {
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+.section-heading > i {
+  display: grid;
   width: 34px;
   height: 34px;
-  border-radius: 8px;
-  background: #e0f2fe;
-  color: #0369a1;
-  display: grid;
+  flex: 0 0 auto;
   place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  color: var(--info-cyan);
 }
 
-.section-title h2 {
+.section-heading h2,
+.section-heading p {
   margin: 0;
-  font-weight: 800;
-  color: #0f172a;
 }
 
-.section-title p {
-  margin: 3px 0 0;
-  color: #64748b;
+.section-heading p {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.section-body {
+  padding: var(--space-lg);
 }
 
 .section-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-md);
 }
 
 .photo-panel {
-  border: 1px solid #e7edf4;
-  border-radius: 8px;
-  background: #f8fbfe;
-  padding: 10px;
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
 }
 
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-sm);
+}
+
+.panel-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .photo-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   min-height: 34px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: #0891b2;
-  color: #ffffff;
-  font-weight: 700;
-  cursor: pointer;
+  padding: 8px 12px;
 }
 
 .photo-trigger input {
   display: none;
 }
 
+.full-control,
+.full-control :deep(input) {
+  width: 100%;
+}
+
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 10px;
+  gap: var(--space-md);
 }
 
 .photo-card {
-  border: 1px solid #dbe4ee;
-  border-radius: 8px;
   overflow: hidden;
-  background: #ffffff;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
 }
 
 .photo-card img {
+  display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;
-  display: block;
 }
 
 .photo-card :deep(.p-textarea) {
-  border-radius: 0;
-  border-left: 0;
   border-right: 0;
+  border-left: 0;
+  border-radius: 0;
 }
 
 .photo-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
 }
 
 .empty-photo {
-  min-height: 92px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
   display: grid;
+  min-height: 92px;
   place-items: center;
-  color: #94a3b8;
-  gap: 4px;
+  gap: var(--space-xs);
+  border: 1px dashed var(--neutral-4);
+  border-radius: var(--radius-default);
+  color: var(--text-tertiary);
 }
 
 .meter-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
-  gap: 12px;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(300px, 1.2fr);
+  gap: var(--space-lg);
 }
 
 .fuel-wrap {
   position: relative;
   width: 100%;
   max-width: 520px;
-  margin: 0 auto 12px;
-  border: 1px solid #dbe4ee;
-  border-radius: 8px;
+  margin: 0 auto var(--space-md);
   overflow: hidden;
-  background: #ffffff;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
   cursor: crosshair;
   touch-action: none;
 }
 
 .fuel-wrap img {
-  width: 100%;
   display: block;
+  width: 100%;
 }
 
 .fuel-marker {
   position: absolute;
   width: 22px;
   height: 22px;
-  border: 3px solid #ef4444;
-  background: rgba(239, 68, 68, 0.18);
-  border-radius: 999px;
+  border: 3px solid var(--negative);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--negative) 18%, transparent);
+  box-shadow: 0 0 0 4px var(--surface-default);
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.86);
 }
 
-.signature-grid {
+.checklist-list {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.checklist-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: var(--space-md);
+  align-items: start;
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.checklist-row strong {
+  display: block;
+  margin-bottom: var(--space-sm);
+}
+
+.signature-grid,
+.review-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-md);
+}
+
+.signature-panel {
+  display: grid;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-muted-panel {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.otp-panel span {
+  display: block;
+  margin-top: var(--space-xs);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.otp-input :deep(input),
+.otp-input {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.review-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.review-summary div {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.review-summary span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.review-summary strong {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .sticky-actions {
   position: sticky;
-  bottom: 12px;
+  bottom: var(--space-md);
   z-index: 20;
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #dbe4ee;
-  border-radius: 8px;
-  box-shadow: 0 18px 45px -28px rgba(15, 23, 42, 0.65);
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: color-mix(in srgb, var(--surface-default) 92%, transparent);
+  box-shadow: var(--shadow-card-big);
   backdrop-filter: blur(12px);
 }
 
 .annotator {
   width: 100%;
-  border: 1px solid #dbe4ee;
-  border-radius: 8px;
-  background: #0f172a;
   overflow: hidden;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--text-primary);
 }
 
 .annotator canvas {
-  width: 100%;
   display: block;
+  width: 100%;
   touch-action: none;
 }
 
@@ -976,35 +1414,72 @@ onMounted(loadData)
   .summary-band {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .wizard-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .step-card {
+    position: static;
+    grid-template-columns: repeat(5, minmax(88px, 1fr));
+    overflow-x: auto;
+  }
+
+  .step-button {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .step-button small {
+    display: none;
+  }
 }
 
 @media (max-width: 820px) {
+  .check-form-page {
+    padding: var(--space-lg);
+    padding-bottom: 112px;
+  }
+
+  .detail-page-header,
+  .header-main {
+    align-items: flex-start;
+  }
+
+  .detail-page-header,
+  .summary-band,
   .section-grid,
   .meter-grid,
-  .signature-grid {
+  .signature-grid,
+  .review-grid {
     grid-template-columns: 1fr;
   }
 
-  .summary-band {
-    grid-template-columns: 1fr;
+  .detail-page-header {
+    display: grid;
   }
 
-  .sticky-actions {
-    bottom: 8px;
+  .step-card {
+    display: flex;
+  }
+
+  .step-button {
+    min-width: 92px;
   }
 }
 
 @media (max-width: 540px) {
-  .form-head {
-    align-items: flex-start;
-  }
-
-  .photo-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .photo-grid,
+  .review-summary {
+    grid-template-columns: 1fr;
   }
 
   .sticky-actions {
-    flex-direction: column;
+    right: var(--space-lg);
+    left: var(--space-lg);
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .sticky-actions :deep(.p-button) {

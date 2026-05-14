@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\RequestPhysicalCheckRequest;
 use App\Http\Requests\StorePhysicalCheckRequest;
 use App\Http\Resources\PhysicalCheckBookingResource;
+use App\Http\Resources\PhysicalCheckItemResource;
 use App\Http\Resources\PhysicalCheckResource;
 use App\Models\Booking;
 use App\Models\PhysicalCheck;
@@ -78,8 +79,85 @@ class PhysicalCheckController extends Controller
         $booking = Booking::findOrFail($request->validated('booking_id'));
         $this->authorize('view', $booking);
 
-        $check = $this->service->storeCompleted($request->validated());
+        $check = $this->service->storeCompleted($request->validated(), $request);
 
         return new PhysicalCheckResource($check);
+    }
+
+    public function publicShow(string $token)
+    {
+        $check = $this->service->findPublic($token);
+        $booking = $check->booking->loadMissing(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver']);
+
+        return response()->json([
+            'data' => [
+                'check' => new PhysicalCheckResource($check),
+                'booking' => [
+                    'id' => $booking->id,
+                    'kode_booking' => $booking->kode_booking,
+                    'status' => $booking->status,
+                    'customer' => [
+                        'id' => $booking->customer?->id,
+                        'nama' => $booking->customer?->nama,
+                        'email' => $booking->customer?->email,
+                        'status' => $booking->customer?->status,
+                    ],
+                    'booking_details' => $booking->bookingDetails->map(fn($detail) => [
+                        'id' => $detail->id,
+                        'unit_placeholder' => $detail->unit_placeholder,
+                        'tgl_sewa' => $detail->tgl_sewa,
+                        'tgl_kembali' => $detail->tgl_kembali,
+                        'detail_type' => $detail->detail_type,
+                        'status' => $detail->status,
+                        'unit' => $detail->unit ? [
+                            'id' => $detail->unit->id,
+                            'no_polisi' => $detail->unit->no_polisi,
+                            'merk' => $detail->unit->merk,
+                            'tipe' => $detail->unit->tipe,
+                        ] : null,
+                    ])->values(),
+                ],
+                'items' => PhysicalCheckItemResource::collection($this->service->publicItems($check))->resolve(),
+            ],
+            'message' => 'ok',
+            'errors' => null,
+        ]);
+    }
+
+    public function publicRequestOtp(string $token, Request $request)
+    {
+        $check = $this->service->findPublic($token);
+        $this->service->requestOtp($check, $request);
+
+        return response()->json([
+            'data' => ['sent' => true],
+            'message' => 'Kode OTP dikirim ke email penyewa.',
+            'errors' => null,
+        ]);
+    }
+
+    public function publicActivity(string $token, Request $request)
+    {
+        $request->validate([
+            'event' => ['required', 'string', 'max:80'],
+            'context' => ['nullable', 'array'],
+        ]);
+
+        $check = $this->service->findPublic($token);
+        $this->service->recordActivity($check, $request->input('event'), $request->input('context', []), $request, 'customer');
+
+        return response()->json([
+            'data' => ['recorded' => true],
+            'message' => 'ok',
+            'errors' => null,
+        ]);
+    }
+
+    public function publicStore(string $token, StorePhysicalCheckRequest $request): PhysicalCheckResource
+    {
+        $check = $this->service->findPublic($token);
+        $stored = $this->service->storeCompleted($request->validated(), $request, $check);
+
+        return new PhysicalCheckResource($stored);
     }
 }

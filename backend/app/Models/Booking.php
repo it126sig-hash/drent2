@@ -34,6 +34,16 @@ class Booking extends Model
         'returned_at',
         'completed_at',
         'completed_by',
+        'rental_unit_return_status',
+        'rental_unit_return_reason',
+        'rental_unit_return_requested_by',
+        'rental_unit_return_requested_at',
+        'rental_unit_return_approved_by',
+        'rental_unit_return_approved_at',
+        'rental_unit_return_rejected_by',
+        'rental_unit_return_rejected_at',
+        'rental_unit_return_rejection_note',
+        'due_date',
     ];
 
     protected $casts = [
@@ -43,6 +53,10 @@ class Booking extends Model
         'checked_out_at' => 'datetime',
         'returned_at' => 'datetime',
         'completed_at' => 'datetime',
+        'rental_unit_return_requested_at' => 'datetime',
+        'rental_unit_return_approved_at' => 'datetime',
+        'rental_unit_return_rejected_at' => 'datetime',
+        'due_date' => 'datetime',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
@@ -78,6 +92,21 @@ class Booking extends Model
         return $this->belongsTo(User::class, 'completed_by');
     }
 
+    public function rentalUnitReturnRequester()
+    {
+        return $this->belongsTo(User::class, 'rental_unit_return_requested_by');
+    }
+
+    public function rentalUnitReturnApprover()
+    {
+        return $this->belongsTo(User::class, 'rental_unit_return_approved_by');
+    }
+
+    public function rentalUnitReturnRejecter()
+    {
+        return $this->belongsTo(User::class, 'rental_unit_return_rejected_by');
+    }
+
     public function bookingDetails()
     {
         return $this->hasMany(BookingDetail::class);
@@ -106,5 +135,12 @@ class Booking extends Model
     public function physicalChecks()
     {
         return $this->hasMany(PhysicalCheck::class);
+    }
+
+    public function invoices()
+    {
+        return $this->belongsToMany(Invoice::class, 'invoice_bookings')
+            ->withPivot('amount')
+            ->withTimestamps();
     }
 }

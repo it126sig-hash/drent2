@@ -23,6 +23,9 @@ const statusMap = {
   'Member':       { class: 'success', label: 'Member' },
   'rental_lain':  { class: 'info', label: props.text  },
   'pemilik_rental': { class: 'success', label: props.text },
+  'generated':    { class: 'success', label: props.text },
+  'not_generated':{ class: 'warning', label: props.text },
+  'lunas':{ class: 'success', label: "Lunas" },
 };
 
 const config = computed(() => {
