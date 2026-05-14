@@ -3,6 +3,8 @@ import { ref, onMounted, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
 import { useUnit } from '../../composables/useUnit';
+import { useRentalOwner } from '../../composables/useRentalOwner';
+import { useCity } from '../../composables/useCity';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import BookingCalendar from '../../components/bookings/BookingCalendar.vue';
 import { format, addMonths, subMonths, startOfMonth } from 'date-fns';
@@ -10,6 +12,8 @@ import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Dropdown from 'primevue/dropdown';
+import SelectButton from 'primevue/selectbutton';
+import InputText from 'primevue/inputtext';
 import DatePicker from 'primevue/datepicker';
 import Dialog from 'primevue/dialog';
 import Textarea from 'primevue/textarea';
@@ -19,19 +23,23 @@ import ContextMenu from 'primevue/contextmenu';
 const router = useRouter();
 const { 
   bookings, loading, pagination, filters, 
-  fetchAll, fetchForCalendar, changeStatus, statusLoading 
+  fetchAll, fetchForCalendar, changeStatus, requestReturnToRentalUnit, statusLoading 
 } = useBooking();
 
 const { units, loading: unitsLoading, fetchAll: fetchUnits } = useUnit();
+const { rentalOwners, fetchAll: fetchRentalOwners } = useRentalOwner();
+const { cities, fetchAll: fetchCities } = useCity();
 
 const activeTab = ref(0);
 const calendarStart = ref(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
 const calendarBookings = ref([]);
 
 const showStatusDialog = ref(false);
+const showReturnRequestDialog = ref(false);
 const selectedBooking = ref(null);
 const newStatus = ref('');
 const statusNote = ref('');
+const returnRequestReason = ref('');
 const bookingContextMenu = ref(null);
 const contextMenuSelection = ref(null);
 const contextMenuItems = ref([]);
@@ -50,8 +58,34 @@ const statusOptions = [
   { label: 'Batal', value: 'batal' },
 ];
 
+const mainTabStatusValues = ['follow_up', 'confirm', 'waiting_list', 'rental_unit'];
+const closedTabStatusValues = ['selesai', 'batal'];
+const activeStatusOptions = statusOptions.filter(option => mainTabStatusValues.includes(option.value));
+
+const sortOptions = [
+  { label: 'Terbaru dibuat', value: 'created_at:desc' },
+  { label: 'Kode A-Z', value: 'kode_booking:asc' },
+  { label: 'Kode Z-A', value: 'kode_booking:desc' },
+  { label: 'Sewa terdekat', value: 'tgl_sewa:asc' },
+  { label: 'Sewa terbaru', value: 'tgl_sewa:desc' },
+];
+
+const selectedSort = ref('created_at:desc');
+
+const loadFilterOptions = async () => {
+  await Promise.allSettled([
+    fetchRentalOwners({ per_page: 100 }),
+    fetchCities({ per_page: 100, is_active: true }),
+  ]);
+};
+
 const loadData = async () => {
   if (activeTab.value === 0) {
+    const activeStatuses = filters.value.status.filter(status => mainTabStatusValues.includes(status));
+    filters.value.status = activeStatuses.length ? activeStatuses : [...mainTabStatusValues];
+    await fetchAll(pagination.value.current_page);
+  } else if (activeTab.value === 1) {
+    filters.value.status = [...closedTabStatusValues];
     await fetchAll(pagination.value.current_page);
   } else {
     await fetchUnits({ per_page: 100 }); // Get all units for calendar
@@ -61,6 +95,7 @@ const loadData = async () => {
 };
 
 onMounted(() => {
+  loadFilterOptions();
   loadData();
   window.addEventListener('resize', handleResize);
 });
@@ -77,8 +112,28 @@ const onPage = (event) => {
 };
 
 const applyFilters = () => {
+  const [sortBy, sortDirection] = selectedSort.value.split(':');
+  filters.value.sort_by = sortBy;
+  filters.value.sort_direction = sortDirection;
+  if (activeTab.value === 0) {
+    const activeStatuses = filters.value.status.filter(status => mainTabStatusValues.includes(status));
+    filters.value.status = activeStatuses.length ? activeStatuses : [...mainTabStatusValues];
+  } else if (activeTab.value === 1) {
+    filters.value.status = [...closedTabStatusValues];
+  }
   pagination.value.current_page = 1;
   fetchAll(1);
+};
+
+const resetFilters = () => {
+  filters.value.status = activeTab.value === 1 ? [...closedTabStatusValues] : [...mainTabStatusValues];
+  filters.value.date_from = null;
+  filters.value.date_to = null;
+  filters.value.search = '';
+  filters.value.rental_owner_id = null;
+  filters.value.kota = null;
+  selectedSort.value = 'created_at:desc';
+  applyFilters();
 };
 
 const openStatusDialog = (booking) => {
@@ -90,6 +145,11 @@ const openStatusDialog = (booking) => {
 
 const canUpdateStatus = (booking) => {
   return booking && !['selesai', 'batal'].includes(booking.status);
+};
+
+const canRequestReturnToRentalUnit = (booking) => {
+  return booking?.status === 'selesai'
+    && booking?.rental_unit_return_request?.status !== 'pending';
 };
 
 const getAllowedNextStatuses = (currentStatus) => {
@@ -111,6 +171,20 @@ const saveStatus = async () => {
   } catch (err) {
     console.error(err);
   }
+};
+
+const openReturnRequestDialog = (booking) => {
+  selectedBooking.value = booking;
+  returnRequestReason.value = '';
+  showReturnRequestDialog.value = true;
+};
+
+const submitReturnRequest = async () => {
+  if (!selectedBooking.value || !returnRequestReason.value.trim()) return;
+
+  await requestReturnToRentalUnit(selectedBooking.value.id, returnRequestReason.value.trim());
+  showReturnRequestDialog.value = false;
+  await fetchAll(pagination.value.current_page);
 };
 
 const prevMonth = () => {
@@ -144,6 +218,12 @@ const onRowContextMenu = (event) => {
       icon: 'pi pi-sync',
       disabled: !canUpdateStatus(event.data),
       command: () => openStatusDialog(event.data),
+    },
+    {
+      label: 'Request Kembali Rental Unit',
+      icon: 'pi pi-undo',
+      disabled: !canRequestReturnToRentalUnit(event.data),
+      command: () => openReturnRequestDialog(event.data),
     },
   ];
   bookingContextMenu.value.show(event.originalEvent);
@@ -338,7 +418,7 @@ const getBookingCardClass = (booking) => {
 </script>
 
 <template>
-  <div class="page-container" :class="{ 'booking-list-active': activeTab === 0 }">
+  <div class="page-container" :class="{ 'booking-list-active': activeTab !== 2 }">
     <!-- Page Header -->
     <div class="page-header">
       <div class="header-left">
@@ -367,18 +447,39 @@ const getBookingCardClass = (booking) => {
           :class="{ active: activeTab === 1 }" 
           @click="activeTab = 1"
         >
+          Booking Selesai
+        </button>
+        <button 
+          class="toggle-item" 
+          :class="{ active: activeTab === 2 }" 
+          @click="activeTab = 2"
+        >
           Kalender Unit
         </button>
       </div>
     </div>
 
-    <div v-if="activeTab === 0" class="tab-content booking-list-tab">
+    <div v-if="activeTab === 0 || activeTab === 1" class="tab-content booking-list-tab">
       <!-- Filter Bar -->
       <div class="filter-bar surface-card">
         <div class="filter-groups">
-          <div class="filter-group">
+          <div class="filter-group filter-group-wide">
+            <label>Cari</label>
+            <span class="p-input-icon-left filter-search">
+              <i class="pi pi-search"></i>
+              <InputText v-model="filters.search" placeholder="Kode, pelanggan, tujuan..." class="w-full" @keyup.enter="applyFilters" />
+            </span>
+          </div>
+          <div v-if="activeTab === 0" class="filter-group filter-group-status">
             <label>Status</label>
-            <Dropdown v-model="filters.status" :options="statusOptions" optionLabel="label" optionValue="value" placeholder="Semua Status" showClear class="w-full md:w-44" />
+            <SelectButton
+              v-model="filters.status"
+              :options="activeStatusOptions"
+              optionLabel="label"
+              optionValue="value"
+              multiple
+              class="status-filter-buttons"
+            />
           </div>
           <div class="filter-group">
             <label>Mulai</label>
@@ -388,10 +489,27 @@ const getBookingCardClass = (booking) => {
             <label>Sampai</label>
             <DatePicker v-model="filters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai Tanggal" class="w-full md:w-36" />
           </div>
+          <div class="filter-group">
+            <label>Pemilik</label>
+            <Dropdown v-model="filters.rental_owner_id" :options="rentalOwners" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" showClear filter class="w-full md:w-48" />
+          </div>
+          <div class="filter-group">
+            <label>Kota</label>
+            <Dropdown v-model="filters.kota" :options="cities" optionLabel="nama" optionValue="nama" placeholder="Semua Kota" showClear filter class="w-full md:w-40" />
+          </div>
+          <div class="filter-group">
+            <label>Sort</label>
+            <Dropdown v-model="selectedSort" :options="sortOptions" optionLabel="label" optionValue="value" class="w-full md:w-44" />
+          </div>
         </div>
-        <button class="btn-pill btn-primary btn-pill-compact" @click="applyFilters" :disabled="loading">
-          <i class="pi pi-filter"></i> Filter
-        </button>
+        <div class="filter-actions">
+          <button class="btn-pill btn-secondary btn-pill-compact" @click="resetFilters" :disabled="loading">
+            <i class="pi pi-refresh"></i> Reset
+          </button>
+          <button class="btn-pill btn-primary btn-pill-compact" @click="applyFilters" :disabled="loading">
+            <i class="pi pi-filter"></i> Filter
+          </button>
+        </div>
       </div>
 
       <ContextMenu ref="bookingContextMenu" :model="contextMenuItems" />
@@ -420,14 +538,23 @@ const getBookingCardClass = (booking) => {
             <template #body="{ data }">
                <div class="action-pill-group">
                   <button class="action-btn" @click.stop="goToDetail(data.id)"><i class="pi pi-eye"></i></button>
-                  <button class="action-btn" @click.stop="openStatusDialog(data)" :disabled="!canUpdateStatus(data)"><i class="pi pi-sync"></i></button>
+                  <button
+                    v-if="data.status === 'selesai'"
+                    class="action-btn"
+                    :disabled="!canRequestReturnToRentalUnit(data)"
+                    @click.stop="openReturnRequestDialog(data)"
+                    v-tooltip.top="'Request kembali ke Rental Unit'"
+                  >
+                    <i class="pi pi-undo"></i>
+                  </button>
+                  <!-- <button class="action-btn" @click.stop="openStatusDialog(data)" :disabled="!canUpdateStatus(data)"><i class="pi pi-sync"></i></button> -->
                </div>
             </template>
           </Column>
           <Column header="Kode" style="min-width: 9rem">
             <template #body="{ data }">
               <div class="flex flex-col items-start gap-1">
-                <span class="font-bold">{{ data.kode_booking }}</span>
+                <span class="font-semibold text-xs">{{ data.kode_booking }}</span>
                 <BookingStatusBadge :status="data.status" />
               </div>
             </template>
@@ -444,7 +571,7 @@ const getBookingCardClass = (booking) => {
             <Column header="Unit" style="min-width: 12rem">
             <template #body="{ data }">
               <div class="flex flex-col gap-0.5">
-                <span class="font-semibold">{{ getVehicleInfo(data).title }}</span>
+                <span class="font-semibold text-xs">{{ getVehicleInfo(data).title }}</span>
                 <span class="text-xs text-secondary font-mono-numeric">{{ getVehicleInfo(data).subtitle }}</span>
                 <div class="mt-1" v-if="getVehicleInfo(data).ownerType">
                   <BookingStatusBadge :status="getVehicleInfo(data).ownerType" :text="getVehicleInfo(data).ownerName" />
@@ -562,6 +689,15 @@ const getBookingCardClass = (booking) => {
                   <span class="font-mono-numeric font-bold text-sm text-positive">{{ formatCurrency(getPaidAmount(booking)) }}</span>
                </div>
             </div>
+            <button
+              v-if="booking.status === 'selesai'"
+              class="btn-pill btn-secondary btn-pill-compact mt-3"
+              :disabled="!canRequestReturnToRentalUnit(booking)"
+              @click.stop="openReturnRequestDialog(booking)"
+            >
+              <i class="pi pi-undo"></i>
+              {{ booking.rental_unit_return_request?.status === 'pending' ? 'Menunggu Supervisor' : 'Request Rental Unit' }}
+            </button>
          </div>
          <!-- Mobile Paginator -->
          <div class="mobile-paginator mt-4">
@@ -572,7 +708,7 @@ const getBookingCardClass = (booking) => {
       </div>
     </div>
 
-    <div v-if="activeTab === 1" class="tab-content">
+    <div v-if="activeTab === 2" class="tab-content">
       <div class="calendar-header">
          <div class="flex items-center gap-4">
            <Button icon="pi pi-chevron-left" @click="prevMonth" text rounded />
@@ -634,6 +770,33 @@ const getBookingCardClass = (booking) => {
         <div class="flex gap-2 w-full">
            <Button label="Batal" icon="pi pi-times" text class="flex-1" @click="showStatusDialog = false" />
            <Button label="Simpan" icon="pi pi-check" class="flex-1" @click="saveStatus" :loading="statusLoading" :disabled="!newStatus" />
+        </div>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showReturnRequestDialog" header="Request Kembali ke Rental Unit" :style="{ width: '450px' }" modal :position="isMobile ? 'bottom' : 'center'" :class="{'mobile-bottom-sheet': isMobile}">
+      <div class="flex flex-col gap-4">
+        <div v-if="selectedBooking" class="status-summary-card">
+          <div class="flex justify-between">
+            <span class="text-tertiary">Booking</span>
+            <span class="font-bold">{{ selectedBooking.kode_booking }}</span>
+          </div>
+          <div class="flex justify-between mt-2">
+            <span class="text-tertiary">Status Saat Ini</span>
+            <BookingStatusBadge :status="selectedBooking.status" />
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label class="font-semibold text-xs text-secondary">Alasan Request</label>
+          <Textarea v-model="returnRequestReason" rows="4" class="w-full" placeholder="Contoh: transaksi perlu dikoreksi karena unit belum benar-benar selesai..." />
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex gap-2 w-full">
+           <Button label="Batal" icon="pi pi-times" text class="flex-1" @click="showReturnRequestDialog = false" />
+           <Button label="Kirim Request" icon="pi pi-send" class="flex-1" @click="submitReturnRequest" :loading="loading" :disabled="returnRequestReason.trim().length < 5" />
         </div>
       </template>
     </Dialog>
@@ -706,6 +869,8 @@ const getBookingCardClass = (booking) => {
    display: flex;
    gap: var(--space-xl);
    flex-wrap: wrap;
+   align-items: flex-end;
+   flex: 1 1 auto;
 }
 
 .filter-group {
@@ -714,11 +879,49 @@ const getBookingCardClass = (booking) => {
    gap: 4px;
 }
 
+.filter-group-wide {
+   min-width: min(260px, 100%);
+}
+
+.filter-group-status {
+   flex: 1 1 520px;
+   min-width: min(520px, 100%);
+}
+
+.filter-search {
+   width: 100%;
+}
+
+.filter-actions {
+   display: flex;
+   align-items: center;
+   gap: var(--space-sm);
+}
+
 .filter-group label {
    font-size: 11px;
    font-weight: 600;
    color: var(--text-tertiary);
    margin-left: 4px;
+}
+
+.status-filter-buttons {
+   max-width: 100%;
+}
+
+:deep(.status-filter-buttons.p-selectbutton) {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 4px;
+}
+
+:deep(.status-filter-buttons .p-togglebutton) {
+   min-height: 32px;
+   border-radius: var(--radius-full);
+   border: 1px solid var(--surface-border);
+   font-size: 11px;
+   font-weight: 700;
+   white-space: nowrap;
 }
 
 /* === DataTable Styling === */
@@ -1003,8 +1206,14 @@ const getBookingCardClass = (booking) => {
 
   .filter-group {
      width: 100%;
-     max-width: 205px;
+     max-width: none;
      gap: 6px;
+  }
+
+  .filter-group-wide,
+  .filter-group-status {
+     min-width: 0;
+     width: 100%;
   }
 
   .filter-group label {
@@ -1017,6 +1226,12 @@ const getBookingCardClass = (booking) => {
   .filter-group :deep(.p-inputtext) {
      width: 100%;
   }
+
+  .filter-actions {
+     width: 100%;
+     justify-content: flex-start;
+     flex-wrap: wrap;
+   }
 
   .filter-bar .btn-pill {
      min-height: 30px;

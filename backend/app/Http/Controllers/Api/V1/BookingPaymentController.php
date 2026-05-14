@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreBookingPaymentRequest;
 use App\Http\Requests\ReallocatePaymentRequest;
+use App\Http\Requests\RejectVoidBookingPaymentRequest;
+use App\Http\Requests\RequestVoidBookingPaymentRequest;
 use App\Http\Resources\BookingPaymentResource;
 use App\Models\Booking;
 use App\Models\BookingPayment;
@@ -61,5 +63,35 @@ class BookingPaymentController extends Controller
         $newPayment->load(['paymentAccount', 'creator', 'reallocatedFrom']);
 
         return new BookingPaymentResource($newPayment);
+    }
+
+    public function requestVoid(RequestVoidBookingPaymentRequest $request, BookingPayment $bookingPayment)
+    {
+        $this->authorize('managePayments', $bookingPayment->booking);
+
+        $payment = $this->service->requestVoid($bookingPayment, $request->validated()['void_reason']);
+
+        return new BookingPaymentResource($payment);
+    }
+
+    public function approveVoid(BookingPayment $bookingPayment)
+    {
+        $this->authorize('approvePaymentVoid', $bookingPayment->booking);
+
+        $payment = $this->service->approveVoid($bookingPayment);
+
+        return new BookingPaymentResource($payment);
+    }
+
+    public function rejectVoid(RejectVoidBookingPaymentRequest $request, BookingPayment $bookingPayment)
+    {
+        $this->authorize('approvePaymentVoid', $bookingPayment->booking);
+
+        $payment = $this->service->rejectVoid(
+            $bookingPayment,
+            $request->validated()['void_rejection_note'] ?? null
+        );
+
+        return new BookingPaymentResource($payment);
     }
 }

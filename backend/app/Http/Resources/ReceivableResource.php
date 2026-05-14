@@ -1,0 +1,50 @@
+<?php
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class ReceivableResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        $invoice = $this->latest_active_invoice;
+        $detail = $this->display_detail;
+        $unit = $detail?->unit;
+
+        return [
+            'id' => $this->id,
+            'kode_booking' => $this->kode_booking,
+            'status' => $this->status,
+            'due_date' => $this->due_date?->toISOString(),
+            'customer' => [
+                'id' => $this->customer?->id,
+                'nama' => $this->customer?->nama,
+                'status' => $this->customer?->status,
+            ],
+            'vehicle' => [
+                'jenis' => trim(implode(' ', array_filter([$unit?->merk, $unit?->tipe]))) ?: ($detail?->unit_placeholder ?? '-'),
+                'no_polisi' => $unit?->no_polisi,
+                'pemilik' => $unit?->rentalOwner?->nama ?? 'Internal',
+            ],
+            'total_biaya' => [
+                'total' => (int) $this->total_tagihan,
+                'sudah_bayar' => (int) $this->total_payments,
+                'sisa' => (int) $this->sisa_tagihan,
+            ],
+            'invoice' => [
+                'generated' => (bool) $invoice,
+                'id' => $invoice?->id,
+                'number' => $invoice?->invoice_number,
+                'status' => $invoice?->status,
+                'total_amount' => $invoice ? (int) $invoice->total_amount : null,
+                'paid_amount' => $invoice ? (int) $invoice->paid_amount : null,
+                'remaining_amount' => $invoice ? max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount) : null,
+                'generated_at' => $invoice?->generated_at?->toISOString(),
+                'sent_at' => $invoice?->sent_at?->toISOString(),
+                'pdf_url' => $invoice ? url("/api/v1/invoices/{$invoice->id}/pdf") : null,
+            ],
+        ];
+    }
+}

@@ -34,7 +34,28 @@ class BookingResource extends JsonResource
             'checked_out_at'      => $this->checked_out_at?->toISOString(),
             'returned_at'         => $this->returned_at?->toISOString(),
             'completed_at'        => $this->completed_at?->toISOString(),
+            'due_date'            => $this->due_date?->toISOString(),
             'created_at'          => $this->created_at?->toISOString(),
+            'rental_unit_return_request' => [
+                'status' => $this->rental_unit_return_status,
+                'reason' => $this->rental_unit_return_reason,
+                'requested_at' => $this->rental_unit_return_requested_at?->toISOString(),
+                'approved_at' => $this->rental_unit_return_approved_at?->toISOString(),
+                'rejected_at' => $this->rental_unit_return_rejected_at?->toISOString(),
+                'rejection_note' => $this->rental_unit_return_rejection_note,
+                'requester' => $this->whenLoaded('rentalUnitReturnRequester', fn() => $this->rentalUnitReturnRequester ? [
+                    'id' => $this->rentalUnitReturnRequester->id,
+                    'name' => $this->rentalUnitReturnRequester->name,
+                ] : null),
+                'approver' => $this->whenLoaded('rentalUnitReturnApprover', fn() => $this->rentalUnitReturnApprover ? [
+                    'id' => $this->rentalUnitReturnApprover->id,
+                    'name' => $this->rentalUnitReturnApprover->name,
+                ] : null),
+                'rejecter' => $this->whenLoaded('rentalUnitReturnRejecter', fn() => $this->rentalUnitReturnRejecter ? [
+                    'id' => $this->rentalUnitReturnRejecter->id,
+                    'name' => $this->rentalUnitReturnRejecter->name,
+                ] : null),
+            ],
             'created_by_user'     => $this->whenLoaded('createdBy', fn() => $this->createdBy ? [
                 'id'   => $this->createdBy->id,
                 'name' => $this->createdBy->name,
@@ -51,7 +72,7 @@ class BookingResource extends JsonResource
 
             // C8: Computed financial fields
             'total_payments'      => $this->whenLoaded('payments', fn() =>
-                (int) $this->payments->sum('amount')
+                (int) $this->activePayments()->sum('amount')
             ),
             'total_tagihan'       => $this->whenLoaded('bookingDetails', fn() =>
                 $this->computeTotalTagihan()
@@ -59,7 +80,7 @@ class BookingResource extends JsonResource
             'sisa_tagihan'        => $this->whenLoaded('payments', function () {
                 if (!$this->relationLoaded('bookingDetails')) return null;
                 $total = $this->computeTotalTagihan();
-                $paid  = (int) $this->payments->sum('amount');
+                $paid  = (int) $this->activePayments()->sum('amount');
                 return $total - $paid;
             }),
             'is_overdue'          => $this->status === 'rental_unit'
@@ -134,7 +155,13 @@ class BookingResource extends JsonResource
                     'payment_account_id'    => $p->payment_account_id,
                     'amount'                => (int) $p->amount,
                     'payment_type'          => $p->payment_type,
+                    'status'                => $p->status ?? 'active',
                     'catatan'               => $p->catatan,
+                    'void_reason'           => $p->void_reason,
+                    'void_requested_at'     => $p->void_requested_at?->toISOString(),
+                    'void_approved_at'      => $p->void_approved_at?->toISOString(),
+                    'void_rejected_at'      => $p->void_rejected_at?->toISOString(),
+                    'void_rejection_note'   => $p->void_rejection_note,
                     'paid_at'               => $p->paid_at?->toISOString(),
                     'reallocated_from_id'   => $p->reallocated_from_id,
                     'created_by'            => $p->created_by,
@@ -142,6 +169,18 @@ class BookingResource extends JsonResource
                     'creator'               => $p->relationLoaded('creator') && $p->creator ? [
                         'id'   => $p->creator->id,
                         'name' => $p->creator->name,
+                    ] : null,
+                    'void_requester'        => $p->relationLoaded('voidRequester') && $p->voidRequester ? [
+                        'id'   => $p->voidRequester->id,
+                        'name' => $p->voidRequester->name,
+                    ] : null,
+                    'void_approver'         => $p->relationLoaded('voidApprover') && $p->voidApprover ? [
+                        'id'   => $p->voidApprover->id,
+                        'name' => $p->voidApprover->name,
+                    ] : null,
+                    'void_rejecter'         => $p->relationLoaded('voidRejecter') && $p->voidRejecter ? [
+                        'id'   => $p->voidRejecter->id,
+                        'name' => $p->voidRejecter->name,
                     ] : null,
                 ]);
             }),
@@ -225,5 +264,10 @@ class BookingResource extends JsonResource
         }
 
         return $total;
+    }
+
+    private function activePayments()
+    {
+        return $this->payments->filter(fn($payment) => ($payment->status ?? 'active') !== 'voided');
     }
 }

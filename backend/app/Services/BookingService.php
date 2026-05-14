@@ -270,6 +270,11 @@ class BookingService
                 ]);
             }
 
+            $booking = $booking->fresh(['customer.member', 'bookingDetails']);
+            $booking->update([
+                'due_date' => app(BookingBillingService::class)->calculateDueDate($booking),
+            ]);
+
             return $booking->fresh();
         });
     }
@@ -369,6 +374,96 @@ class BookingService
         });
     }
 
+    public function requestRentalUnitReturn(Booking $booking, string $reason): Booking
+    {
+        if ($booking->status !== 'selesai') {
+            throw new \InvalidArgumentException(
+                'Request kembali ke rental unit hanya untuk booking selesai.'
+            );
+        }
+
+        if ($booking->rental_unit_return_status === 'pending') {
+            throw new \InvalidArgumentException(
+                'Request kembali ke rental unit masih menunggu approval supervisor.'
+            );
+        }
+
+        $booking->update([
+            'rental_unit_return_status' => 'pending',
+            'rental_unit_return_reason' => $reason,
+            'rental_unit_return_requested_by' => auth()->id(),
+            'rental_unit_return_requested_at' => now(),
+            'rental_unit_return_approved_by' => null,
+            'rental_unit_return_approved_at' => null,
+            'rental_unit_return_rejected_by' => null,
+            'rental_unit_return_rejected_at' => null,
+            'rental_unit_return_rejection_note' => null,
+        ]);
+
+        return $booking->fresh();
+    }
+
+    public function approveRentalUnitReturn(Booking $booking): Booking
+    {
+        if ($booking->rental_unit_return_status !== 'pending') {
+            throw new \InvalidArgumentException(
+                'Hanya request kembali ke rental unit berstatus pending yang bisa disetujui.'
+            );
+        }
+
+        if ($booking->rental_unit_return_requested_by === auth()->id() && auth()->user()?->role !== 'superadmin') {
+            throw new \InvalidArgumentException(
+                'Request harus di-ACC oleh supervisor lain.'
+            );
+        }
+
+        return DB::transaction(function () use ($booking) {
+            $booking->update([
+                'status' => 'rental_unit',
+                'returned_at' => null,
+                'completed_at' => null,
+                'completed_by' => null,
+                'rental_unit_return_status' => 'approved',
+                'rental_unit_return_approved_by' => auth()->id(),
+                'rental_unit_return_approved_at' => now(),
+            ]);
+
+            $detail = $booking->bookingDetails()
+                ->where('status', 'selesai')
+                ->latest()
+                ->first();
+
+            if ($detail) {
+                $detail->update(['status' => 'aktif']);
+
+                if ($detail->unit_id) {
+                    \App\Models\Unit::where('id', $detail->unit_id)
+                        ->update(['status' => 'Out']);
+                }
+            }
+
+            return $booking->fresh();
+        });
+    }
+
+    public function rejectRentalUnitReturn(Booking $booking, ?string $note = null): Booking
+    {
+        if ($booking->rental_unit_return_status !== 'pending') {
+            throw new \InvalidArgumentException(
+                'Hanya request kembali ke rental unit berstatus pending yang bisa ditolak.'
+            );
+        }
+
+        $booking->update([
+            'rental_unit_return_status' => 'rejected',
+            'rental_unit_return_rejected_by' => auth()->id(),
+            'rental_unit_return_rejected_at' => now(),
+            'rental_unit_return_rejection_note' => $note,
+        ]);
+
+        return $booking->fresh();
+    }
+
     /**
      * Transition a booking to a new status.
      * Allowed transitions are enforced here, not in the controller.
@@ -412,6 +507,13 @@ class BookingService
         }
 
         $booking->update($updates);
+
+        if ($data['status'] === 'waiting_list') {
+            $booking = $booking->fresh(['customer.member', 'bookingDetails']);
+            $booking->update([
+                'due_date' => app(BookingBillingService::class)->calculateDueDate($booking),
+            ]);
+        }
 
         return $booking->fresh();
     }

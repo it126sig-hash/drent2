@@ -6,10 +6,14 @@ import { useBooking } from '../../composables/useBooking';
 import { useCustomer } from '../../composables/useCustomer';
 import { useRentalOwner } from '../../composables/useRentalOwner';
 import { useUnit } from '../../composables/useUnit';
+import { useDriver } from '../../composables/useDriver';
 import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCity } from '../../composables/useCity';
+import { useCostType } from '../../composables/useCostType';
+import { usePricingPackage } from '../../composables/usePricingPackage';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
+import Dialog from 'primevue/dialog';
 import Dropdown from 'primevue/dropdown';
 import SelectButton from 'primevue/selectbutton';
 import InputText from 'primevue/inputtext';
@@ -22,16 +26,23 @@ import Message from 'primevue/message';
 const router = useRouter();
 const route = useRoute();
 const toast = useToast();
-const { store, fetchOne, updateBooking, loading: bookingLoading } = useBooking();
+const { store, fetchOne, updateBooking, handle, loading: bookingLoading } = useBooking();
 const { customers, fetchAll: fetchCustomers, loading: customersLoading } = useCustomer();
 const { rentalOwners, fetchAll: fetchRentalOwners, loading: rentalOwnersLoading } = useRentalOwner();
 const { units, fetchAll: fetchUnits, loading: unitsLoading } = useUnit();
+const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { cities, fetchAll: fetchCities, loading: citiesLoading } = useCity();
+const { costTypes: costTypesMaster, fetchAll: fetchCostTypes } = useCostType();
+const { packages: pricingPackages, fetchAll: fetchPricingPackages } = usePricingPackage();
 
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
 const isEditMode = computed(() => route.name === 'BookingEdit');
 const editingBooking = ref(null);
 const suppressDurationSync = ref(false);
+const showCreateModeDialog = ref(false);
+const submitMode = ref('booking');
+const formErrors = ref({});
+const waitingListErrors = ref({});
 
 const paketOptions = [
   { label: 'Harian', value: 'harian' },
@@ -47,6 +58,26 @@ const lamaSewaOptions = Array.from({ length: 99 }, (_, index) => ({
 const newCustomerStatusOptions = [
   { label: 'Normal', value: 'Normal' },
   { label: 'Corporate', value: 'Corporate' },
+];
+
+const createModeOptions = [
+  {
+    value: 'booking',
+    title: 'Simpan sebagai Booking',
+    icon: 'pi pi-bookmark',
+    description: 'Booking masuk follow up atau confirm sesuai DP. Unit dan biaya operasional bisa dilengkapi nanti.',
+  },
+  {
+    value: 'waiting_list',
+    title: 'Langsung Waiting List',
+    icon: 'pi pi-send',
+    description: 'Booking langsung di-handle dengan unit ready, driver, harga, dan biaya operasional.',
+  },
+];
+
+const pricingModeOptions = [
+  { label: 'Non All In', value: 'non_all_in' },
+  { label: 'All In', value: 'all_in' },
 ];
 
 const form = ref({
@@ -75,6 +106,16 @@ const form = ref({
   catatan: ''
 });
 
+const waitingListForm = ref({
+  driver_id: null,
+  harga_mobil: 0,
+  diskon_mobil: 0,
+  pricing_mode: 'non_all_in',
+  pricing_package_id: null,
+  harga_all_in: null,
+  costs: [],
+});
+
 const selectedStartDateKey = ref(null);
 const selectedReturnDateKey = ref(null);
 
@@ -94,6 +135,7 @@ const selectedUnit = computed(() => {
 
 const isBlacklisted = computed(() => selectedCustomer.value?.status === 'Blacklist');
 const isRedflag = computed(() => selectedCustomer.value?.status === 'Redflag');
+const isDirectWaitingList = computed(() => !isEditMode.value && submitMode.value === 'waiting_list');
 
 const accountOptions = computed(() =>
   paymentAccounts.value
@@ -101,12 +143,76 @@ const accountOptions = computed(() =>
     .map(a => ({ id: a.id, name: `${a.nama_bank} — ${a.nomor_rekening} (${a.atas_nama})` }))
 );
 
+const costTypeOptions = computed(() =>
+  costTypesMaster.value
+    .filter(c => c.is_active)
+    .map(c => ({ id: c.id, label: c.nama, kode: c.kode, require_description: c.require_description }))
+);
+
+const packageOptions = computed(() =>
+  pricingPackages.value
+    .filter(p => p.is_active)
+    .map(p => ({ id: p.id, label: `${p.nama_paket} - ${formatCurrency(p.harga)}` }))
+);
+
+const findPricingPackage = (packageId) =>
+  pricingPackages.value.find(pkg => pkg.id === packageId);
+
+const packageCostItems = (pkg) =>
+  (pkg?.items || []).map(item => ({
+    cost_type_id: item.cost_type_id ?? null,
+    type: item.type || 'biaya',
+    label: item.label || item.cost_type?.nama || '',
+    amount: item.amount || 0,
+    keterangan: item.keterangan || '',
+  }));
+
+const getSignedCostAmount = (cost) => {
+  const amount = cost?.amount || 0;
+  return cost?.type === 'diskon' ? -amount : amount;
+};
+
+const sumCosts = (costs = [], { discountsOnly = false } = {}) => {
+  return (costs || []).reduce((sum, cost) => {
+    if (discountsOnly && cost?.type !== 'diskon') return sum;
+    return sum + getSignedCostAmount(cost);
+  }, 0);
+};
+
+const getBillableCostTotal = (pricingMode, costs = []) => {
+  return sumCosts(costs, { discountsOnly: pricingMode === 'all_in' });
+};
+
+const waitingHargaSewa = computed(() => {
+  const { harga_mobil, diskon_mobil } = waitingListForm.value;
+  return Math.max(0, ((harga_mobil || 0) - (diskon_mobil || 0)) * (form.value.lama_sewa || 0));
+});
+
+const waitingTotalBiayaOps = computed(() =>
+  getBillableCostTotal(waitingListForm.value.pricing_mode, waitingListForm.value.costs)
+);
+
+const waitingGrandTotalInternal = computed(() => waitingHargaSewa.value + waitingTotalBiayaOps.value);
+
+const waitingTagihanKonsumen = computed(() => {
+  if (waitingListForm.value.pricing_mode === 'all_in') {
+    const lama = form.value.lama_sewa || 1;
+    const selectedPackage = findPricingPackage(waitingListForm.value.pricing_package_id);
+    return ((selectedPackage?.harga || waitingListForm.value.harga_all_in || 0) * lama) + waitingTotalBiayaOps.value;
+  }
+
+  return waitingGrandTotalInternal.value;
+});
+
 onMounted(() => {
   fetchCustomers({ per_page: 200 });
   fetchRentalOwners({ per_page: 200 });
   fetchUnits({ per_page: 200 });
   fetchAccounts({ per_page: 100 });
   fetchCities({ per_page: 200, is_active: true });
+  fetchDrivers({ per_page: 200 });
+  fetchCostTypes({ per_page: 200 });
+  fetchPricingPackages({ per_page: 200 });
 
   if (isEditMode.value) {
     loadBookingForEdit();
@@ -123,7 +229,21 @@ onMounted(() => {
     form.value.tgl_sewa = applyDefaultTime(date, 7, 0);
     selectedStartDateKey.value = getDateKey(date);
   }
+
+  showCreateModeDialog.value = true;
 });
+
+const selectCreateMode = (mode) => {
+  submitMode.value = mode;
+  showCreateModeDialog.value = false;
+
+  if (mode === 'waiting_list') {
+    form.value.unit_mode = 'existing';
+    if (selectedUnit.value) {
+      waitingListForm.value.harga_mobil = selectedUnit.value.harga_1_hari || 0;
+    }
+  }
+};
 
 const getPrimaryDetail = (booking) => {
   const details = booking?.booking_details || [];
@@ -180,12 +300,20 @@ const handleSubmit = async () => {
     return;
   }
 
+  if (!validateBookingForm()) {
+    return;
+  }
+
   // Validation: tgl_kembali cannot be less than tgl_sewa
   if (form.value.tgl_sewa && form.value.tgl_kembali) {
     if (new Date(form.value.tgl_kembali) < new Date(form.value.tgl_sewa)) {
       toast.add({ severity: 'warn', summary: 'Validasi', detail: 'Tanggal kembali tidak boleh kurang dari tanggal sewa', life: 3000 });
       return;
     }
+  }
+
+  if (isDirectWaitingList.value && !validateWaitingListForm()) {
+    return;
   }
 
   try {
@@ -219,6 +347,10 @@ const handleSubmit = async () => {
       delete payload.unit_id;
     }
 
+    if (isDirectWaitingList.value) {
+      applyDirectWaitingListBookingDefaults(payload);
+    }
+
     // Format dates to YYYY-MM-DD HH:mm:ss
     if (payload.tgl_sewa) payload.tgl_sewa = formatDateTime(payload.tgl_sewa);
     if (payload.tgl_kembali) payload.tgl_kembali = formatDateTime(payload.tgl_kembali);
@@ -243,11 +375,139 @@ const handleSubmit = async () => {
     }
 
     const booking = await store(payload);
+
+    if (isDirectWaitingList.value) {
+      await handle(booking.id, buildWaitingListPayload());
+      router.push({ name: 'BookingDetail', params: { id: booking.id } });
+      return;
+    }
+
     toast.add({ severity: 'success', summary: 'Sukses', detail: `Booking ${booking.kode_booking} berhasil dibuat`, life: 3000 });
     router.push({ name: 'BookingList' });
   } catch (err) {
     toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || `Gagal ${isEditMode.value ? 'memperbarui' : 'membuat'} booking`, life: 5000 });
   }
+};
+
+const validateBookingForm = () => {
+  formErrors.value = {};
+
+  if (!String(form.value.kota || '').trim()) {
+    formErrors.value.kota = 'Kota booking wajib diisi.';
+  }
+
+  if (!String(form.value.alamat_penjemputan || '').trim()) {
+    formErrors.value.alamat_penjemputan = 'Alamat penjemputan wajib diisi.';
+  }
+
+  if (!isDirectWaitingList.value && (!form.value.harga_dealing || form.value.harga_dealing <= 0)) {
+    formErrors.value.harga_dealing = 'Harga dealing wajib diisi.';
+  }
+
+  if (Object.keys(formErrors.value).length) {
+    toast.add({ severity: 'warn', summary: 'Validasi', detail: Object.values(formErrors.value)[0], life: 3500 });
+    return false;
+  }
+
+  return true;
+};
+
+const validateWaitingListForm = () => {
+  waitingListErrors.value = {};
+
+  if (form.value.unit_mode !== 'existing' || !form.value.unit_id) {
+    waitingListErrors.value.unit_id = 'Pilih unit ready untuk langsung masuk Waiting List.';
+  }
+
+  if (!form.value.tgl_sewa) {
+    waitingListErrors.value.tgl_sewa = 'Tanggal sewa wajib diisi.';
+  }
+
+  if (!form.value.tgl_kembali) {
+    waitingListErrors.value.tgl_kembali = 'Tanggal kembali wajib diisi.';
+  }
+
+  if (!form.value.lama_sewa || form.value.lama_sewa < 1) {
+    waitingListErrors.value.lama_sewa = 'Lama sewa wajib diisi.';
+  }
+
+  if (!waitingListForm.value.harga_mobil && waitingListForm.value.pricing_mode === 'non_all_in') {
+    waitingListErrors.value.harga_mobil = 'Harga mobil wajib diisi.';
+  }
+
+  if (
+    waitingListForm.value.pricing_mode === 'all_in'
+    && !waitingListForm.value.pricing_package_id
+    && !waitingListForm.value.harga_all_in
+  ) {
+    waitingListErrors.value.harga_all_in = 'Pilih pricing package atau isi harga All In.';
+  }
+
+  const invalidCost = waitingListForm.value.costs.some(cost => !cost.label || cost.amount == null);
+  if (invalidCost) {
+    waitingListErrors.value.costs = 'Setiap biaya harus punya keterangan dan nominal.';
+  }
+
+  if (Object.keys(waitingListErrors.value).length) {
+    toast.add({ severity: 'warn', summary: 'Validasi Waiting List', detail: Object.values(waitingListErrors.value)[0], life: 3500 });
+    return false;
+  }
+
+  return true;
+};
+
+const applyDirectWaitingListBookingDefaults = (payload) => {
+  payload.tgl_sewa = payload.tgl_sewa || applyDefaultTime(new Date(), 7, 0);
+  payload.tgl_kembali = payload.tgl_kembali || addRentalDuration(payload.tgl_sewa, payload.lama_sewa, payload.paket_sewa);
+  payload.harga_dealing = null;
+  payload.dp = null;
+  payload.rekening_dp_id = null;
+};
+
+const buildWaitingListPayload = () => {
+  const selectedPackage = findPricingPackage(waitingListForm.value.pricing_package_id);
+
+  return {
+    unit_id: form.value.unit_id,
+    driver_id: waitingListForm.value.driver_id,
+    lama_sewa: form.value.lama_sewa,
+    paket_sewa: form.value.paket_sewa,
+    harga_mobil: waitingListForm.value.harga_mobil || 0,
+    diskon_mobil: waitingListForm.value.diskon_mobil || 0,
+    pricing_mode: waitingListForm.value.pricing_mode,
+    pricing_package_id: waitingListForm.value.pricing_package_id,
+    harga_all_in: waitingListForm.value.pricing_mode === 'all_in'
+      ? (waitingListForm.value.harga_all_in || selectedPackage?.harga || null)
+      : null,
+    costs: waitingListForm.value.costs,
+    alamat_penjemputan: form.value.alamat_penjemputan,
+    tujuan: form.value.tujuan,
+    kota: form.value.kota,
+  };
+};
+
+const applyWaitingPackage = () => {
+  const pkg = findPricingPackage(waitingListForm.value.pricing_package_id);
+  if (!pkg) {
+    waitingListForm.value.harga_all_in = null;
+    return;
+  }
+
+  waitingListForm.value.harga_all_in = pkg.harga || null;
+  waitingListForm.value.costs = packageCostItems(pkg);
+};
+
+const addWaitingCostRow = () => {
+  waitingListForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' });
+};
+
+const removeWaitingCostRow = (idx) => {
+  waitingListForm.value.costs.splice(idx, 1);
+};
+
+const onWaitingCostTypeChange = (idx, typeId) => {
+  const ct = costTypesMaster.value.find(c => c.id === typeId);
+  if (ct) waitingListForm.value.costs[idx].label = ct.nama;
 };
 
 const formatDateTime = (date) => {
@@ -331,6 +591,14 @@ watch(
   }
 );
 
+watch(
+  selectedUnit,
+  (unit) => {
+    if (!isDirectWaitingList.value || !unit) return;
+    waitingListForm.value.harga_mobil = unit.harga_1_hari || 0;
+  }
+);
+
 const resetForm = () => {
   form.value = {
     customer_mode: 'existing',
@@ -355,6 +623,17 @@ const resetForm = () => {
     rekening_dp_id: null,
     catatan: ''
   };
+  waitingListForm.value = {
+    driver_id: null,
+    harga_mobil: 0,
+    diskon_mobil: 0,
+    pricing_mode: 'non_all_in',
+    pricing_package_id: null,
+    harga_all_in: null,
+    costs: [],
+  };
+  waitingListErrors.value = {};
+  formErrors.value = {};
   selectedStartDateKey.value = null;
   selectedReturnDateKey.value = null;
 };
@@ -505,12 +784,42 @@ const formatDate = (value) => {
 
 <template>
   <div class="booking-create-container">
+    <Dialog
+      v-model:visible="showCreateModeDialog"
+      modal
+      :closable="false"
+      :style="{ width: '560px' }"
+      :breakpoints="{ '640px': '94vw' }"
+      header="Pilih Jenis Input Booking"
+      class="create-mode-dialog"
+    >
+      <div class="create-mode-grid">
+        <button
+          v-for="option in createModeOptions"
+          :key="option.value"
+          type="button"
+          class="create-mode-card"
+          @click="selectCreateMode(option.value)"
+        >
+          <span class="create-mode-icon"><i :class="option.icon"></i></span>
+          <span class="create-mode-title">{{ option.title }}</span>
+          <span class="create-mode-description">{{ option.description }}</span>
+        </button>
+      </div>
+    </Dialog>
+
      <div class="detail-page-header mb-3">
       <div class="flex items-center gap-3">
         <Button icon="pi pi-arrow-left" text rounded @click="router.back()" class="back-button" />
         <div>
           <div class="flex flex-wrap items-center gap-3 mb-1">
             <h1 class="booking-page-title">{{ isEditMode ? 'Edit Booking' : 'Buat Booking Baru' }}</h1>  
+            <Tag
+              v-if="!isEditMode"
+              :value="isDirectWaitingList ? 'Langsung Waiting List' : 'Booking Biasa'"
+              :severity="isDirectWaitingList ? 'info' : 'secondary'"
+              class="premium-tag"
+            />
           </div>
 
         </div>
@@ -675,12 +984,17 @@ const formatDate = (value) => {
           <template #content>
             <div class="section-stack">
               <SelectButton
+                v-if="!isDirectWaitingList"
                 v-model="form.unit_mode"
                 :options="[{label: 'Unit Ready', value: 'existing'}, {label: 'Placeholder', value: 'placeholder'}]"
                 optionLabel="label"
                 optionValue="value"
                 class="w-full custom-selectbutton"
               />
+
+              <Message v-else severity="info" icon="pi pi-info-circle" class="!m-0">
+                Mode Waiting List membutuhkan unit ready karena booking langsung di-handle.
+              </Message>
 
               <div v-if="form.unit_mode === 'existing'" class="form-field-vertical">
                 <label class="field-label">Cari unit ready</label>
@@ -722,6 +1036,7 @@ const formatDate = (value) => {
                     </div>
                   </template>
                 </Dropdown>
+                <small class="p-error" v-if="waitingListErrors.unit_id">{{ waitingListErrors.unit_id }}</small>
 
                 <transition name="fade">
                   <div v-if="selectedUnit" class="preview-panel">
@@ -753,7 +1068,7 @@ const formatDate = (value) => {
           </template>
         </Card>
 
-        <Card class="premium-card">
+        <Card v-if="!isDirectWaitingList" class="premium-card">
           <template #title>
             <div class="section-title">
               <i class="pi pi-calendar text-tosca"></i>
@@ -819,7 +1134,7 @@ const formatDate = (value) => {
               </div>
 
               <div class="form-field-vertical md:col-span-2">
-                <label class="field-label">Kota booking</label>
+                <label class="field-label">Kota booking *</label>
                 <Dropdown
                   v-model="form.kota"
                   :options="cityOptions"
@@ -830,18 +1145,36 @@ const formatDate = (value) => {
                   :filterFields="['searchableLabel']"
                   :loading="citiesLoading"
                   class="w-full premium-input"
+                  :class="{ 'p-invalid': formErrors.kota }"
                   :empty-message="'Belum ada kota aktif'"
                 />
+                <small class="p-error" v-if="formErrors.kota">{{ formErrors.kota }}</small>
               </div>
 
               <div class="form-field-vertical md:col-span-2">
-                <label class="field-label">Alamat jemput</label>
-                <Textarea v-model="form.alamat_penjemputan" rows="2" placeholder="Input alamat lengkap penjemputan..." class="w-full premium-input" />
+                <label class="field-label">Alamat jemput *</label>
+                <Textarea
+                  v-model="form.alamat_penjemputan"
+                  rows="2"
+                  placeholder="Input alamat lengkap penjemputan..."
+                  class="w-full premium-input"
+                  :class="{ 'p-invalid': formErrors.alamat_penjemputan }"
+                />
+                <small class="p-error" v-if="formErrors.alamat_penjemputan">{{ formErrors.alamat_penjemputan }}</small>
               </div>
 
               <div class="form-field-vertical">
-                <label class="field-label">Harga dealing</label>
-                <InputNumber v-model="form.harga_dealing" mode="currency" currency="IDR" locale="id-ID" placeholder="Rp 0" class="w-full premium-input" />
+                <label class="field-label">Harga dealing *</label>
+                <InputNumber
+                  v-model="form.harga_dealing"
+                  mode="currency"
+                  currency="IDR"
+                  locale="id-ID"
+                  placeholder="Rp 0"
+                  class="w-full premium-input"
+                  :class="{ 'p-invalid': formErrors.harga_dealing }"
+                />
+                <small class="p-error" v-if="formErrors.harga_dealing">{{ formErrors.harga_dealing }}</small>
               </div>
 
               <div class="form-field-vertical">
@@ -875,6 +1208,239 @@ const formatDate = (value) => {
             </div>
           </template>
         </Card>
+
+        <Card v-if="isDirectWaitingList" class="premium-card">
+          <template #title>
+            <div class="section-title">
+              <i class="pi pi-send text-tosca"></i>
+              <span>Data Waiting List</span>
+            </div>
+          </template>
+          <template #content>
+            <div class="section-stack">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+                <div class="form-field-vertical">
+                  <label class="field-label">Mulai sewa *</label>
+                  <Calendar
+                    v-model="form.tgl_sewa"
+                    showIcon
+                    showTime
+                    hourFormat="24"
+                    iconDisplay="input"
+                    dateFormat="dd M yy"
+                    :manualInput="true"
+                    placeholder="Pilih tanggal & jam"
+                    class="w-full premium-calendar"
+                    @date-select="setDefaultStartTime"
+                  />
+                  <small class="p-error" v-if="waitingListErrors.tgl_sewa">{{ waitingListErrors.tgl_sewa }}</small>
+                </div>
+
+                <div class="form-field-vertical">
+                  <label class="field-label">Selesai sewa *</label>
+                  <Calendar
+                    v-model="form.tgl_kembali"
+                    showIcon
+                    showTime
+                    hourFormat="24"
+                    iconDisplay="input"
+                    dateFormat="dd M yy"
+                    :manualInput="true"
+                    placeholder="Pilih tanggal & jam"
+                    :minDate="form.tgl_sewa"
+                    class="w-full premium-calendar"
+                    @date-select="setDefaultReturnTime"
+                  />
+                  <small class="p-error" v-if="waitingListErrors.tgl_kembali">{{ waitingListErrors.tgl_kembali }}</small>
+                </div>
+
+                <div class="form-field-vertical">
+                  <label class="field-label">Lama sewa *</label>
+                  <Dropdown
+                    v-model="form.lama_sewa"
+                    :options="lamaSewaOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Pilih lama sewa"
+                    filter
+                    class="w-full premium-input"
+                  />
+                  <small class="p-error" v-if="waitingListErrors.lama_sewa">{{ waitingListErrors.lama_sewa }}</small>
+                </div>
+
+                <div class="form-field-vertical">
+                  <label class="field-label">Paket sewa *</label>
+                  <Dropdown v-model="form.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" placeholder="Pilih paket" class="w-full premium-input" />
+                </div>
+
+                <div class="form-field-vertical md:col-span-2">
+                  <label class="field-label">Tujuan</label>
+                  <InputText v-model="form.tujuan" placeholder="Ke luar kota / wisata / kantor..." class="w-full premium-input" />
+                </div>
+
+                <div class="form-field-vertical md:col-span-2">
+                  <label class="field-label">Kota booking *</label>
+                  <Dropdown
+                    v-model="form.kota"
+                    :options="cityOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Pilih kota tujuan/operasional"
+                    filter
+                    :filterFields="['searchableLabel']"
+                    :loading="citiesLoading"
+                    class="w-full premium-input"
+                    :class="{ 'p-invalid': formErrors.kota }"
+                    :empty-message="'Belum ada kota aktif'"
+                  />
+                  <small class="p-error" v-if="formErrors.kota">{{ formErrors.kota }}</small>
+                </div>
+
+                <div class="form-field-vertical md:col-span-2">
+                  <label class="field-label">Alamat jemput *</label>
+                  <Textarea
+                    v-model="form.alamat_penjemputan"
+                    rows="2"
+                    placeholder="Input alamat lengkap penjemputan..."
+                    class="w-full premium-input"
+                    :class="{ 'p-invalid': formErrors.alamat_penjemputan }"
+                  />
+                  <small class="p-error" v-if="formErrors.alamat_penjemputan">{{ formErrors.alamat_penjemputan }}</small>
+                </div>
+
+                <div class="form-field-vertical">
+                  <label class="field-label">Driver</label>
+                  <Dropdown
+                    v-model="waitingListForm.driver_id"
+                    :options="drivers"
+                    optionLabel="nama"
+                    optionValue="id"
+                    placeholder="Lepas kunci / pilih driver"
+                    filter
+                    showClear
+                    class="w-full premium-input"
+                  />
+                </div>
+
+                <div class="form-field-vertical">
+                  <label class="field-label">Mode pricing *</label>
+                  <SelectButton
+                    v-model="waitingListForm.pricing_mode"
+                    :options="pricingModeOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    class="w-full custom-selectbutton"
+                  />
+                </div>
+
+                <div class="form-field-vertical">
+                  <label class="field-label">Harga mobil / periode *</label>
+                  <InputNumber
+                    v-model="waitingListForm.harga_mobil"
+                    mode="currency"
+                    currency="IDR"
+                    locale="id-ID"
+                    class="w-full premium-input"
+                  />
+                  <small class="p-error" v-if="waitingListErrors.harga_mobil">{{ waitingListErrors.harga_mobil }}</small>
+                </div>
+
+                <div class="form-field-vertical">
+                  <label class="field-label">Diskon mobil</label>
+                  <InputNumber
+                    v-model="waitingListForm.diskon_mobil"
+                    mode="currency"
+                    currency="IDR"
+                    locale="id-ID"
+                    class="w-full premium-input"
+                  />
+                </div>
+
+                <div v-if="waitingListForm.pricing_mode === 'all_in'" class="form-field-vertical md:col-span-2 all-in-panel">
+                  <label class="field-label">Pricing package</label>
+                  <Dropdown
+                    v-model="waitingListForm.pricing_package_id"
+                    :options="packageOptions"
+                    optionLabel="label"
+                    optionValue="id"
+                    placeholder="Pilih paket atau isi manual"
+                    showClear
+                    class="w-full premium-input"
+                    @change="applyWaitingPackage"
+                  />
+                  <div v-if="!waitingListForm.pricing_package_id" class="form-field-vertical">
+                    <label class="field-label">Harga All In *</label>
+                    <InputNumber
+                      v-model="waitingListForm.harga_all_in"
+                      mode="currency"
+                      currency="IDR"
+                      locale="id-ID"
+                      class="w-full premium-input"
+                    />
+                    <small class="p-error" v-if="waitingListErrors.harga_all_in">{{ waitingListErrors.harga_all_in }}</small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="waiting-cost-panel">
+                <div class="waiting-cost-header">
+                  <div class="section-title">
+                    <i class="pi pi-wallet text-tosca"></i>
+                    <span>Biaya Operasional</span>
+                  </div>
+                  <Button label="Tambah Biaya" icon="pi pi-plus" text size="small" @click="addWaitingCostRow" />
+                </div>
+
+                <div v-if="!waitingListForm.costs.length" class="empty-cost-state">
+                  Belum ada biaya operasional.
+                </div>
+
+                <div v-for="(cost, idx) in waitingListForm.costs" :key="idx" class="cost-row">
+                  <Dropdown
+                    v-model="cost.cost_type_id"
+                    :options="costTypeOptions"
+                    optionLabel="label"
+                    optionValue="id"
+                    placeholder="Tipe"
+                    showClear
+                    class="premium-input cost-type-input"
+                    @change="onWaitingCostTypeChange(idx, cost.cost_type_id)"
+                  />
+                  <Dropdown
+                    v-model="cost.type"
+                    :options="[{ label: 'Biaya', value: 'biaya' }, { label: 'Diskon', value: 'diskon' }]"
+                    optionLabel="label"
+                    optionValue="value"
+                    class="premium-input cost-kind-input"
+                  />
+                  <InputText v-model="cost.label" placeholder="Keterangan" class="premium-input cost-label-input" />
+                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="premium-input cost-amount-input" />
+                  <Button icon="pi pi-times" text rounded severity="danger" class="remove-cost-button" @click="removeWaitingCostRow(idx)" />
+                </div>
+                <small class="p-error" v-if="waitingListErrors.costs">{{ waitingListErrors.costs }}</small>
+              </div>
+
+              <div class="waiting-total-panel">
+                <div>
+                  <span>Harga sewa</span>
+                  <strong>{{ formatCurrency(waitingHargaSewa) }}</strong>
+                </div>
+                <div>
+                  <span>{{ waitingListForm.pricing_mode === 'all_in' ? 'Diskon ops dihitung' : 'Biaya ops' }}</span>
+                  <strong>{{ formatCurrency(waitingTotalBiayaOps) }}</strong>
+                </div>
+                <div>
+                  <span>Grand total internal</span>
+                  <strong>{{ formatCurrency(waitingGrandTotalInternal) }}</strong>
+                </div>
+                <div class="waiting-total-highlight">
+                  <span>Tagihan konsumen</span>
+                  <strong>{{ formatCurrency(waitingTagihanKonsumen) }}</strong>
+                </div>
+              </div>
+            </div>
+          </template>
+        </Card>
       </div>
 
       <aside class="booking-summary-column">
@@ -891,7 +1457,7 @@ const formatDate = (value) => {
             </div>
             <div class="summary-kpi">
               <span>Estimasi</span>
-              <strong>{{ formatCurrency(form.harga_dealing) }}</strong>
+              <strong>{{ formatCurrency(isDirectWaitingList ? waitingTagihanKonsumen : form.harga_dealing) }}</strong>
             </div>
           </div>
 
@@ -940,20 +1506,28 @@ const formatDate = (value) => {
               <span>Kota booking</span>
               <strong>{{ form.kota || '-' }}</strong>
             </div>
-            <div>
+            <div v-if="!isDirectWaitingList">
               <span>Harga dealing</span>
               <strong class="numeric-value">{{ formatCurrency(form.harga_dealing) }}</strong>
             </div>
-            <div>
+            <div v-if="!isDirectWaitingList">
               <span>DP</span>
               <strong class="numeric-value">{{ formatCurrency(form.dp) }}</strong>
+            </div>
+            <div v-if="isDirectWaitingList">
+              <span>Driver</span>
+              <strong>{{ drivers.find(driver => driver.id === waitingListForm.driver_id)?.nama || 'Lepas kunci' }}</strong>
+            </div>
+            <div v-if="isDirectWaitingList">
+              <span>Tagihan WL</span>
+              <strong class="numeric-value">{{ formatCurrency(waitingTagihanKonsumen) }}</strong>
             </div>
           </div>
 
           <div class="summary-actions">
             <Button v-if="!isEditMode" label="Reset" icon="pi pi-refresh" class="button-secondary" @click="resetForm" />
             <Button
-              :label="isEditMode ? 'Simpan Perubahan' : 'Simpan Booking'"
+              :label="isEditMode ? 'Simpan Perubahan' : (isDirectWaitingList ? 'Simpan ke Waiting List' : 'Simpan Booking')"
               icon="pi pi-check"
               :loading="bookingLoading"
               @click="handleSubmit"
@@ -1247,6 +1821,131 @@ const formatDate = (value) => {
   padding: var(--space-md);
 }
 
+.create-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.create-mode-card {
+  display: flex;
+  min-height: 170px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.create-mode-card:hover {
+  border-color: #0D8091;
+  background: var(--card-bg-hover);
+}
+
+.create-mode-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-default);
+  background: #E1F4F6;
+  color: #085A66;
+}
+
+.create-mode-title {
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.create-mode-description {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.all-in-panel,
+.waiting-cost-panel,
+.waiting-total-panel {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+  padding: var(--space-md);
+}
+
+.waiting-cost-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.empty-cost-state {
+  border: 1px dashed var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  padding: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+  font-size: 12px;
+}
+
+.cost-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(96px, 0.8fr) minmax(140px, 1.5fr) minmax(130px, 1.1fr) 34px;
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.remove-cost-button {
+  width: 34px;
+  height: 34px;
+  padding: 0 !important;
+}
+
+.waiting-total-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.waiting-total-panel > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.waiting-total-panel strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.waiting-total-highlight {
+  margin-top: 4px;
+  border-top: 1px solid var(--surface-border);
+  padding-top: 10px;
+}
+
+.waiting-total-highlight span,
+.waiting-total-highlight strong {
+  color: #085A66;
+  font-weight: 700;
+}
+
 .summary-panel {
   position: sticky;
   top: var(--space-lg);
@@ -1422,6 +2121,11 @@ const formatDate = (value) => {
 @media (max-width: 767px) {
   .booking-create-container {
     padding: var(--space-sm);
+  }
+
+  .create-mode-grid,
+  .cost-row {
+    grid-template-columns: 1fr;
   }
 
   .booking-page-header {

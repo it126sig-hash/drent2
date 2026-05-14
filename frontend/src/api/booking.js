@@ -38,12 +38,36 @@ export const cancelBooking = (id, data = {}) => {
   return api.post(`${prefix}/${id}/cancel`, data);
 };
 
+export const requestRentalUnitReturn = (id, data) => {
+  return api.post(`${prefix}/${id}/request-rental-unit-return`, data);
+};
+
+export const approveRentalUnitReturn = (id) => {
+  return api.post(`${prefix}/${id}/approve-rental-unit-return`);
+};
+
+export const rejectRentalUnitReturn = (id, data = {}) => {
+  return api.post(`${prefix}/${id}/reject-rental-unit-return`, data);
+};
+
 export const getBookingPayments = (bookingId) => {
   return api.get(`${prefix}/${bookingId}/payments`);
 };
 
 export const addBookingPayment = (bookingId, data) => {
   return api.post(`${prefix}/${bookingId}/payments`, data);
+};
+
+export const requestVoidBookingPayment = (paymentId, data) => {
+  return api.post(`/v1/booking-payments/${paymentId}/request-void`, data);
+};
+
+export const approveVoidBookingPayment = (paymentId) => {
+  return api.post(`/v1/booking-payments/${paymentId}/approve-void`);
+};
+
+export const rejectVoidBookingPayment = (paymentId, data = {}) => {
+  return api.post(`/v1/booking-payments/${paymentId}/reject-void`, data);
 };
 
 export const addBookingDetail = (bookingId, data) => {
@@ -88,8 +112,14 @@ export default {
   checkoutBooking,
   completeBooking,
   cancelBooking,
+  requestRentalUnitReturn,
+  approveRentalUnitReturn,
+  rejectRentalUnitReturn,
   getBookingPayments,
   addBookingPayment,
+  requestVoidBookingPayment,
+  approveVoidBookingPayment,
+  rejectVoidBookingPayment,
   addBookingDetail,
   addBookingCost,
   extendBooking,

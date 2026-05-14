@@ -8,6 +8,7 @@ import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
 import { usePhysicalCheck } from '../../composables/usePhysicalCheck';
+import { useAuthStore } from '../../stores/auth';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
@@ -30,7 +31,8 @@ const route = useRoute();
 const router = useRouter();
 const toast = useToast();
 const confirm = useConfirm();
-const { fetchOne, updateBooking, handle, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, loading } = useBooking();
+const authStore = useAuthStore();
+const { fetchOne, updateBooking, handle, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, requestVoidPayment, approveVoidPayment, rejectVoidPayment, loading } = useBooking();
 const { units, fetchAll: fetchUnits } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
@@ -50,6 +52,12 @@ const detailDialogMode = ref('detail');
 const showPaymentDialog = ref(false);
 const paymentForm = ref({ payment_account_id: null, amount: null, payment_type: 'cicilan', catatan: '' });
 const paymentFormErrors = ref({});
+const showVoidPaymentDialog = ref(false);
+const showRejectVoidDialog = ref(false);
+const selectedVoidPayment = ref(null);
+const voidPaymentForm = ref({ void_reason: '' });
+const rejectVoidForm = ref({ void_rejection_note: '' });
+const voidPaymentFormErrors = ref({});
 const paymentTypeOptions = [
   { label: 'DP / Uang Muka', value: 'dp' },
   { label: 'Cicilan', value: 'cicilan' },
@@ -468,15 +476,19 @@ const billableDetails = computed(() => {
 
 const totalDpPayments = computed(() => {
   return (booking.value?.payments || [])
-    .filter(payment => payment.payment_type === 'dp')
+    .filter(payment => payment.payment_type === 'dp' && payment.status !== 'voided')
     .reduce((sum, payment) => sum + (payment.amount || 0), 0);
 });
 
+const activePayments = computed(() => {
+  return (booking.value?.payments || []).filter(payment => payment.status !== 'voided');
+});
+
 const totalRecordedPayments = computed(() => {
-  const paymentTotal = (booking.value?.payments || [])
+  const paymentTotal = activePayments.value
     .reduce((sum, payment) => sum + (payment.amount || 0), 0);
 
-  return paymentTotal || booking.value?.dp || 0;
+  return (booking.value?.payments || []).length ? paymentTotal : booking.value?.dp || 0;
 });
 
 const hasPricedDetails = computed(() => billableDetails.value.some(detail => detail.unit_id && ((detail.harga_mobil || 0) > 0 || (detail.harga_all_in || 0) > 0)));
@@ -487,13 +499,14 @@ const bookingTotalTagihan = computed(() => {
 });
 const bookingTotalPayments = computed(() => {
   const backendTotalPayments = booking.value?.total_payments;
-  if (backendTotalPayments != null && backendTotalPayments > 0) return backendTotalPayments;
+  if (backendTotalPayments != null) return backendTotalPayments;
   return totalRecordedPayments.value;
 });
 const bookingSisaTagihan = computed(() => {
   return Math.max(0, bookingTotalTagihan.value - bookingTotalPayments.value);
 });
 const isPaidOff = computed(() => bookingTotalTagihan.value > 0 && bookingSisaTagihan.value <= 0);
+const canApprovePaymentVoid = computed(() => ['superadmin', 'supervisor'].includes(authStore.user?.role));
 
 const selectedDetailUnit = computed(() => units.value.find(unit => unit.id === detailForm.value.unit_id));
 const selectedDetailDriver = computed(() => drivers.value.find(driver => driver.id === detailForm.value.driver_id));
@@ -1225,6 +1238,61 @@ const openPaymentDialog = () => {
   showPaymentDialog.value = true;
 };
 
+const openVoidPaymentDialog = (payment) => {
+  selectedVoidPayment.value = payment;
+  voidPaymentForm.value = { void_reason: '' };
+  voidPaymentFormErrors.value = {};
+  showVoidPaymentDialog.value = true;
+};
+
+const submitVoidPaymentRequest = async () => {
+  voidPaymentFormErrors.value = {};
+  try {
+    await requestVoidPayment(selectedVoidPayment.value.id, voidPaymentForm.value);
+    showVoidPaymentDialog.value = false;
+    await loadBooking();
+  } catch (err) {
+    if (err.response?.data?.errors) voidPaymentFormErrors.value = err.response.data.errors;
+    console.error(err);
+  }
+};
+
+const approveVoidRequest = (payment) => {
+  confirm.require({
+    message: `Setujui void pembayaran ${formatCurrency(payment.amount)}? Nominal ini tidak lagi dihitung sebagai pembayaran.`,
+    header: 'ACC Void Pembayaran',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'ACC Void',
+    rejectLabel: 'Batal',
+    acceptClass: 'p-button-danger',
+    accept: async () => {
+      await approveVoidPayment(payment.id);
+      await loadBooking();
+    },
+  });
+};
+
+const openRejectVoidDialog = (payment) => {
+  selectedVoidPayment.value = payment;
+  rejectVoidForm.value = { void_rejection_note: '' };
+  showRejectVoidDialog.value = true;
+};
+
+const submitRejectVoid = async () => {
+  await rejectVoidPayment(selectedVoidPayment.value.id, rejectVoidForm.value);
+  showRejectVoidDialog.value = false;
+  await loadBooking();
+};
+
+const paymentStatusLabel = (status) => {
+  const map = {
+    active: 'Aktif',
+    void_requested: 'Menunggu ACC void',
+    voided: 'Void',
+  };
+  return map[status || 'active'] || status;
+};
+
 // E4: Checkout & Complete dialogs
 const showCheckoutDialog = ref(false);
 const showCompleteDialog = ref(false);
@@ -1348,6 +1416,8 @@ const getDialogStateMap = () => ({
   showStopEarlyDialog,
   showBatalDialog,
   showPaymentDialog,
+  showVoidPaymentDialog,
+  showRejectVoidDialog,
   showAdditionalCostDialog,
 });
 
@@ -1364,6 +1434,8 @@ const dialogTitles = {
   showStopEarlyDialog: 'Stop Early',
   showBatalDialog: 'Batalkan Booking',
   showPaymentDialog: 'Tambah Pembayaran',
+  showVoidPaymentDialog: 'Request Void Pembayaran',
+  showRejectVoidDialog: 'Tolak Void Pembayaran',
   showAdditionalCostDialog: 'Tambah Biaya/Diskon Tambahan',
 };
 
@@ -1884,21 +1956,82 @@ const auditUserName = (user) => user?.name || '-';
           </div>
 
           <div v-else class="divide-y divide-slate-50">
-            <div v-for="p in booking.payments" :key="p.id" class="px-5 py-3.5 flex items-center justify-between gap-3">
+            <div
+              v-for="p in booking.payments"
+              :key="p.id"
+              class="px-5 py-3.5 flex items-start justify-between gap-3"
+              :class="{ 'bg-rose-50/60': p.status === 'voided', 'bg-amber-50/60': p.status === 'void_requested' }"
+            >
               <div class="flex flex-col gap-0.5 min-w-0">
-                <span class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit"
-                  :class="{
-                    'bg-blue-100 text-blue-700': p.payment_type === 'dp',
-                    'bg-amber-100 text-amber-700': p.payment_type === 'cicilan',
-                    'bg-emerald-100 text-emerald-700': p.payment_type === 'pelunasan',
-                  }"
-                >{{ p.payment_type }}</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <span class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit"
+                    :class="{
+                      'bg-blue-100 text-blue-700': p.payment_type === 'dp',
+                      'bg-amber-100 text-amber-700': p.payment_type === 'cicilan',
+                      'bg-emerald-100 text-emerald-700': p.payment_type === 'pelunasan',
+                    }"
+                  >{{ p.payment_type }}</span>
+                  <span
+                    v-if="p.status && p.status !== 'active'"
+                    class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit"
+                    :class="{
+                      'bg-amber-100 text-amber-700': p.status === 'void_requested',
+                      'bg-rose-100 text-rose-700': p.status === 'voided',
+                    }"
+                  >{{ paymentStatusLabel(p.status) }}</span>
+                </div>
                 <span class="text-xs text-slate-500 truncate">
                   {{ p.paid_at ? new Date(p.paid_at).toLocaleDateString('id-ID', { dateStyle: 'medium' }) : '-' }}
                 </span>
                 <span v-if="p.catatan" class="text-xs text-slate-400 italic truncate">{{ p.catatan }}</span>
+                <span v-if="p.void_reason" class="text-xs text-rose-500 truncate">Alasan void: {{ p.void_reason }}</span>
+                <span v-if="p.void_requester" class="text-xs text-amber-600 truncate">
+                  Request void oleh {{ p.void_requester.name }}
+                  <span v-if="p.void_requested_at">
+                    pada {{ new Date(p.void_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }}
+                  </span>
+                </span>
+                <span v-if="p.status === 'voided' && p.void_approver" class="text-xs text-rose-500 truncate">Di-ACC oleh {{ p.void_approver.name }}</span>
+                <span v-if="p.void_rejection_note" class="text-xs text-slate-400 truncate">Catatan penolakan: {{ p.void_rejection_note }}</span>
               </div>
-              <span class="text-sm font-bold text-slate-800 whitespace-nowrap">{{ formatCurrency(p.amount) }}</span>
+              <div class="flex flex-col items-end gap-2">
+                <span
+                  class="text-sm font-bold whitespace-nowrap"
+                  :class="p.status === 'voided' ? 'text-rose-500 line-through' : 'text-slate-800'"
+                >{{ formatCurrency(p.amount) }}</span>
+                <div class="flex flex-wrap justify-end gap-1.5">
+                  <Button
+                    v-if="(!p.status || p.status === 'active') && !['cancelled', 'batal', 'selesai'].includes(booking.status)"
+                    label="Void"
+                    icon="pi pi-ban"
+                    size="small"
+                    severity="danger"
+                    text
+                    class="text-xs px-2 py-1"
+                    @click="openVoidPaymentDialog(p)"
+                  />
+                  <Button
+                    v-if="p.status === 'void_requested' && canApprovePaymentVoid"
+                    label="ACC"
+                    icon="pi pi-check"
+                    size="small"
+                    severity="success"
+                    text
+                    class="text-xs px-2 py-1"
+                    @click="approveVoidRequest(p)"
+                  />
+                  <Button
+                    v-if="p.status === 'void_requested' && canApprovePaymentVoid"
+                    label="Tolak"
+                    icon="pi pi-times"
+                    size="small"
+                    severity="danger"
+                    text
+                    class="text-xs px-2 py-1"
+                    @click="openRejectVoidDialog(p)"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2897,6 +3030,55 @@ const auditUserName = (user) => user?.name || '-';
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showPaymentDialog')" />
           <Button label="Simpan Pembayaran" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitPayment" :loading="loading" />
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- ======= DIALOG: Request Void Pembayaran ======= -->
+    <Dialog :visible="showVoidPaymentDialog" @update:visible="onDialogVisibleChange('showVoidPaymentDialog', $event)" header="Request Void Pembayaran" :style="{ width: '460px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="p-3 bg-rose-50 rounded-xl border border-rose-100 text-sm">
+          <div class="flex justify-between text-slate-500 mb-1">
+            <span>Pembayaran</span>
+            <span class="font-bold text-rose-600">{{ selectedVoidPayment ? formatCurrency(selectedVoidPayment.amount) : '-' }}</span>
+          </div>
+          <div class="flex justify-between text-slate-500">
+            <span>Tipe</span>
+            <span class="font-bold uppercase">{{ selectedVoidPayment?.payment_type || '-' }}</span>
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Alasan Void *</label>
+          <Textarea
+            v-model="voidPaymentForm.void_reason"
+            rows="3"
+            placeholder="Jelaskan kenapa pembayaran perlu di-void..."
+            class="w-full"
+            :class="{ 'p-invalid': voidPaymentFormErrors.void_reason }"
+          />
+          <small class="p-error" v-if="voidPaymentFormErrors.void_reason">{{ voidPaymentFormErrors.void_reason[0] }}</small>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showVoidPaymentDialog')" />
+          <Button label="Kirim Request" icon="pi pi-send" class="app-dialog-button app-dialog-button-danger" @click="submitVoidPaymentRequest" :loading="loading" />
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- ======= DIALOG: Tolak Void Pembayaran ======= -->
+    <Dialog :visible="showRejectVoidDialog" @update:visible="onDialogVisibleChange('showRejectVoidDialog', $event)" header="Tolak Void Pembayaran" :style="{ width: '440px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Catatan Penolakan</label>
+          <Textarea v-model="rejectVoidForm.void_rejection_note" rows="3" placeholder="Opsional, misalnya pembayaran sudah cocok dengan mutasi bank..." class="w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRejectVoidDialog')" />
+          <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger" @click="submitRejectVoid" :loading="loading" />
         </div>
       </template>
     </Dialog>

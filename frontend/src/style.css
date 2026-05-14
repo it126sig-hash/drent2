@@ -69,6 +69,10 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+.p-togglebutton-content.p-togglebutton-checked{
+  background-color: var(--primary) !important;
+  color: var(--text-white) !important;
+}
 .back-button {
   width: 34px;
   height: 34px;

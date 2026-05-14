@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use App\Http\Requests\CheckoutBookingRequest;
 use App\Http\Requests\CompleteBookingRequest;
 use App\Http\Requests\HandleBookingRequest;
+use App\Http\Requests\RejectRentalUnitReturnRequest;
+use App\Http\Requests\RequestRentalUnitReturnRequest;
 use App\Http\Requests\StoreBookingRequest;
 use App\Http\Requests\UpdateBookingRequest;
 use App\Http\Requests\UpdateBookingStatusRequest;
@@ -29,10 +31,16 @@ class BookingController extends Controller
         'handledBy',
         'checkedOutBy',
         'completedBy',
+        'rentalUnitReturnRequester',
+        'rentalUnitReturnApprover',
+        'rentalUnitReturnRejecter',
         'bookingDetails.unit.rentalOwner',
         'bookingDetails.driver',
         'bookingDetails.costs.costType',
         'payments.creator',
+        'payments.voidRequester',
+        'payments.voidApprover',
+        'payments.voidRejecter',
         'refunds',
         'physicalChecks',
     ];
@@ -49,16 +57,50 @@ class BookingController extends Controller
     {
         $this->authorize('viewAny', Booking::class);
 
+        $statuses = $this->arrayFilter($request->input('status'));
+        $sortBy = $request->input('sort_by', 'created_at');
+        $sortDirection = $request->input('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
+
         $bookings = Booking::query()
             ->with(collect($this->bookingRelations)->reject(fn($relation) => $relation === 'refunds')->all())
-            ->when($request->status, fn($q, $v) => $q->where('status', $v))
-            ->when($request->date_from, fn($q, $v) => $q->whereDate('created_at', '>=', $v))
-            ->when($request->date_to,   fn($q, $v) => $q->whereDate('created_at', '<=', $v))
+            ->withMin('bookingDetails as first_rental_date', 'tgl_sewa')
+            ->when($statuses, fn($q, $v) => $q->whereIn('status', $v))
+            ->when($request->date_from, fn($q, $v) => $q->whereHas('bookingDetails', fn($detail) => $detail->whereDate('tgl_sewa', '>=', $v)))
+            ->when($request->date_to,   fn($q, $v) => $q->whereHas('bookingDetails', fn($detail) => $detail->whereDate('tgl_sewa', '<=', $v)))
             ->when($request->customer_id, fn($q, $v) => $q->where('customer_id', $v))
-            ->latest()
-            ->paginate($request->integer('per_page', 15));
+            ->when($request->rental_owner_id, fn($q, $v) => $q->whereHas('bookingDetails.unit', fn($unit) => $unit->where('rental_owner_id', $v)))
+            ->when($request->kota, fn($q, $v) => $q->where('kota', $v))
+            ->when($request->search, function ($q, $v) {
+                $q->where(function ($query) use ($v) {
+                    $query->where('kode_booking', 'like', "%{$v}%")
+                        ->orWhere('tujuan', 'like', "%{$v}%")
+                        ->orWhere('kota', 'like', "%{$v}%")
+                        ->orWhereHas('customer', fn($customer) => $customer->where('nama', 'like', "%{$v}%"));
+                });
+            });
+
+        match ($sortBy) {
+            'kode_booking' => $bookings->orderBy('kode_booking', $sortDirection),
+            'tgl_sewa' => $bookings->orderBy('first_rental_date', $sortDirection)->orderBy('created_at', 'desc'),
+            default => $bookings->orderBy('created_at', $sortDirection),
+        };
+
+        $bookings = $bookings->paginate($request->integer('per_page', 15));
 
         return new BookingCollection($bookings);
+    }
+
+    private function arrayFilter(mixed $value): array
+    {
+        if (is_null($value) || $value === '') {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $value = explode(',', $value);
+        }
+
+        return array_values(array_filter((array) $value, fn($item) => $item !== null && $item !== ''));
     }
 
     /**
@@ -170,6 +212,30 @@ class BookingController extends Controller
         $skipInspection = $request->boolean('skip_inspection', false);
         $validated = $request->validated();
         $updated = $this->bookingService->complete($booking, $skipInspection, $validated['returned_at'] ?? null);
+        return new BookingResource($updated->load($this->bookingRelations));
+    }
+
+    public function requestRentalUnitReturn(RequestRentalUnitReturnRequest $request, Booking $booking): BookingResource
+    {
+        $this->authorize('requestRentalUnitReturn', $booking);
+        $updated = $this->bookingService->requestRentalUnitReturn($booking, $request->validated()['reason']);
+        return new BookingResource($updated->load($this->bookingRelations));
+    }
+
+    public function approveRentalUnitReturn(Booking $booking): BookingResource
+    {
+        $this->authorize('approveRentalUnitReturn', $booking);
+        $updated = $this->bookingService->approveRentalUnitReturn($booking);
+        return new BookingResource($updated->load($this->bookingRelations));
+    }
+
+    public function rejectRentalUnitReturn(RejectRentalUnitReturnRequest $request, Booking $booking): BookingResource
+    {
+        $this->authorize('approveRentalUnitReturn', $booking);
+        $updated = $this->bookingService->rejectRentalUnitReturn(
+            $booking,
+            $request->validated()['rejection_note'] ?? null
+        );
         return new BookingResource($updated->load($this->bookingRelations));
     }
 }

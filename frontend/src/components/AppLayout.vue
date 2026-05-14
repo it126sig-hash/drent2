@@ -29,6 +29,8 @@ const handleLogout = async () => {
 const menuItems = [
   { label: 'Dashboard', icon: 'pi pi-home', route: '/' },
   { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings' },
+  { label: 'Request Supervisor', icon: 'pi pi-inbox', route: '/supervisor/requests', roles: ['superadmin', 'supervisor'] },
+  { label: 'Piutang', icon: 'pi pi-wallet', route: '/finance/receivables', roles: ['superadmin', 'admin_branch', 'finance'] },
   { label: 'Cek Fisik', icon: 'pi pi-check-square', route: '/physical-checks' },
   { label: 'Pemilik Rental', icon: 'pi pi-users', route: '/rental-owners' },
   { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units' },

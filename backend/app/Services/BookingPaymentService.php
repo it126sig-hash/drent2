@@ -15,7 +15,7 @@ class BookingPaymentService
     public function listForBooking(Booking $booking)
     {
         return $booking->payments()
-            ->with(['paymentAccount', 'creator', 'reallocatedFrom'])
+            ->with(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter'])
             ->latest()
             ->get();
     }
@@ -80,5 +80,75 @@ class BookingPaymentService
             'reallocated_from_id' => $payment->id,
             'created_by'          => Auth::id(),
         ]);
+    }
+
+    public function requestVoid(BookingPayment $payment, string $reason): BookingPayment
+    {
+        if ($payment->status === 'voided') {
+            throw ValidationException::withMessages([
+                'payment' => ['Pembayaran ini sudah void.'],
+            ]);
+        }
+
+        if ($payment->status === 'void_requested') {
+            throw ValidationException::withMessages([
+                'payment' => ['Request void pembayaran ini masih menunggu approval supervisor.'],
+            ]);
+        }
+
+        $payment->update([
+            'status' => 'void_requested',
+            'void_reason' => $reason,
+            'void_requested_by' => Auth::id(),
+            'void_requested_at' => now(),
+            'void_approved_by' => null,
+            'void_approved_at' => null,
+            'void_rejected_by' => null,
+            'void_rejected_at' => null,
+            'void_rejection_note' => null,
+        ]);
+
+        return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);
+    }
+
+    public function approveVoid(BookingPayment $payment): BookingPayment
+    {
+        if ($payment->status !== 'void_requested') {
+            throw ValidationException::withMessages([
+                'payment' => ['Hanya pembayaran dengan status request void yang bisa di-approve.'],
+            ]);
+        }
+
+        if ($payment->void_requested_by === Auth::id() && Auth::user()?->role !== 'superadmin') {
+            throw ValidationException::withMessages([
+                'payment' => ['Request void harus di-ACC oleh supervisor lain.'],
+            ]);
+        }
+
+        $payment->update([
+            'status' => 'voided',
+            'void_approved_by' => Auth::id(),
+            'void_approved_at' => now(),
+        ]);
+
+        return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);
+    }
+
+    public function rejectVoid(BookingPayment $payment, ?string $note = null): BookingPayment
+    {
+        if ($payment->status !== 'void_requested') {
+            throw ValidationException::withMessages([
+                'payment' => ['Hanya pembayaran dengan status request void yang bisa ditolak.'],
+            ]);
+        }
+
+        $payment->update([
+            'status' => 'active',
+            'void_rejected_by' => Auth::id(),
+            'void_rejected_at' => now(),
+            'void_rejection_note' => $note,
+        ]);
+
+        return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);
     }
 }

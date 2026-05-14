@@ -97,6 +97,12 @@ const router = createRouter({
           component: () => import('../views/bookings/BookingListView.vue'),
         },
         {
+          path: '/supervisor/requests',
+          name: 'SupervisorRequests',
+          component: () => import('../views/supervisor/SupervisorRequestListView.vue'),
+          meta: { roles: ['superadmin', 'supervisor'] },
+        },
+        {
           path: '/bookings/create',
           name: 'BookingCreate',
           component: () => import('../views/bookings/BookingCreateView.vue'),
@@ -117,6 +123,12 @@ const router = createRouter({
           component: () => import('../views/physical-checks/PhysicalCheckListView.vue'),
         },
         {
+          path: '/finance/receivables',
+          name: 'ReceivableList',
+          component: () => import('../views/finance/ReceivableListView.vue'),
+          meta: { roles: ['superadmin', 'admin_branch', 'finance'] },
+        },
+        {
           path: '/physical-checks/:bookingId/:type',
           name: 'PhysicalCheckForm',
           component: () => import('../views/physical-checks/PhysicalCheckFormView.vue'),
@@ -132,6 +144,8 @@ router.beforeEach((to, from) => {
   if (to.meta.auth && !auth.isAuthenticated) {
     return { name: 'login' }
   } else if (to.meta.guest && auth.isAuthenticated) {
+    return { name: 'dashboard' }
+  } else if (to.meta.roles && !to.meta.roles.includes(auth.user?.role)) {
     return { name: 'dashboard' }
   } else {
     return true

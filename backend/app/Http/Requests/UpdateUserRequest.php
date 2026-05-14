@@ -26,7 +26,7 @@ class UpdateUserRequest extends FormRequest
         return [
             'name'      => 'sometimes|string|max:255',
             'email'     => 'sometimes|email|unique:users,email,' . $userId,
-            'role'      => 'sometimes|in:superadmin,admin_branch,finance,driver_tetap,cs,teknisi',
+            'role'      => 'sometimes|in:superadmin,admin_branch,supervisor,finance,driver_tetap,cs,teknisi',
             'branch_id' => 'sometimes|exists:branches,id',
             'is_active' => 'sometimes|boolean',
         ];
