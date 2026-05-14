@@ -26,6 +26,10 @@ export const addInvoicePayment = (invoiceId, data) => {
   return api.post(`/v1/invoices/${invoiceId}/payments`, data)
 }
 
+export const getPublicInvoice = (token) => {
+  return api.get(`/v1/public/invoices/${token}`)
+}
+
 export default {
   getReceivables,
   generateInvoice,
@@ -33,4 +37,5 @@ export default {
   markInvoiceSent,
   downloadInvoicePdf,
   addInvoicePayment,
+  getPublicInvoice,
 }

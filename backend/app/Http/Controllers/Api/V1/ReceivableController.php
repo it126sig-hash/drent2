@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateInvoiceRequest;
 use App\Http\Requests\StoreInvoicePaymentRequest;
 use App\Http\Resources\InvoiceResource;
+use App\Http\Resources\PublicInvoiceResource;
 use App\Http\Resources\ReceivableResource;
 use App\Models\Invoice;
 use App\Services\InvoicePdfService;
@@ -113,5 +114,12 @@ class ReceivableController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $filename . '"',
         ]);
+    }
+
+    public function publicInvoice(Request $request, string $token): PublicInvoiceResource
+    {
+        [$invoice, $paymentAccounts] = $this->receivableService->publicInvoice($token);
+
+        return new PublicInvoiceResource($invoice, $paymentAccounts);
     }
 }

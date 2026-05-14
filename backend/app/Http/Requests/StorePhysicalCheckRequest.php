@@ -14,7 +14,7 @@ class StorePhysicalCheckRequest extends FormRequest
 
     public function rules(): array
     {
-        $sections = ['front', 'left', 'right', 'rear', 'interior', 'km', 'fuel'];
+        $sections = ['front', 'left', 'right', 'rear', 'interior', 'km', 'fuel', 'handover_selfie'];
 
         return [
             'booking_id' => ['required', 'exists:bookings,id'],
@@ -24,6 +24,8 @@ class StorePhysicalCheckRequest extends FormRequest
             'fuel_marker_x' => ['nullable', 'numeric', 'between:0,100'],
             'fuel_marker_y' => ['nullable', 'numeric', 'between:0,100'],
             'notes' => ['nullable', 'string'],
+            'customer_email' => ['nullable', 'email', 'max:150'],
+            'otp_code' => ['nullable', 'string', 'size:6'],
 
             'sections' => ['required', 'array'],
             'sections.*.section' => ['required', Rule::in($sections)],

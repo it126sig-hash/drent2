@@ -27,6 +27,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
+    Route::get('public/invoices/{token}', [ReceivableController::class, 'publicInvoice']);
+    Route::get('public/physical-checks/{token}', [PhysicalCheckController::class, 'publicShow']);
+    Route::post('public/physical-checks/{token}/otp', [PhysicalCheckController::class, 'publicRequestOtp']);
+    Route::post('public/physical-checks/{token}/activities', [PhysicalCheckController::class, 'publicActivity']);
+    Route::post('public/physical-checks/{token}/submit', [PhysicalCheckController::class, 'publicStore']);
 
     Route::middleware(['auth:sanctum', 'branch.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);

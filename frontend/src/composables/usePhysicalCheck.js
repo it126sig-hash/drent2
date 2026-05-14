@@ -115,6 +115,61 @@ export function usePhysicalCheck() {
     }
   }
 
+  const fetchPublic = async (token) => {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await physicalCheckApi.getPublicPhysicalCheck(token)
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal membuka link cek fisik'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const requestPublicOtp = async (token) => {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await physicalCheckApi.requestPublicPhysicalCheckOtp(token)
+      toast?.add({ severity: 'success', summary: 'OTP dikirim', detail: response.data.message || 'Kode OTP dikirim ke email penyewa.', life: 4000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengirim OTP'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const storePublic = async (token, data) => {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await physicalCheckApi.storePublicPhysicalCheck(token, data)
+      toast?.add({ severity: 'success', summary: 'Terkirim', detail: 'Cek fisik berhasil dikirim', life: 4000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengirim cek fisik'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 6000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const logPublicActivity = async (token, event, context = {}) => {
+    try {
+      await physicalCheckApi.logPublicPhysicalCheckActivity(token, { event, context })
+    } catch (err) {
+      // Audit logging should not block the renter while filling the form.
+    }
+  }
+
   return {
     loading,
     rows,
@@ -126,6 +181,10 @@ export function usePhysicalCheck() {
     fetchItems,
     requestCheck,
     fetchByBooking,
-    store
+    store,
+    fetchPublic,
+    requestPublicOtp,
+    storePublic,
+    logPublicActivity
   }
 }

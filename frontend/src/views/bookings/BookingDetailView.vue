@@ -52,6 +52,8 @@ const detailDialogMode = ref('detail');
 const showPaymentDialog = ref(false);
 const paymentForm = ref({ payment_account_id: null, amount: null, payment_type: 'cicilan', catatan: '' });
 const paymentFormErrors = ref({});
+const paymentConfirming = ref(false);
+const paymentSubmitting = ref(false);
 const showVoidPaymentDialog = ref(false);
 const showRejectVoidDialog = ref(false);
 const selectedVoidPayment = ref(null);
@@ -63,6 +65,15 @@ const paymentTypeOptions = [
   { label: 'Cicilan', value: 'cicilan' },
   { label: 'Pelunasan', value: 'pelunasan' },
 ];
+
+const isPaymentSubmitDisabled = computed(() =>
+  loading.value
+  || paymentConfirming.value
+  || paymentSubmitting.value
+  || !paymentForm.value.payment_type
+  || !paymentForm.value.payment_account_id
+  || !paymentForm.value.amount
+);
 
 const accountOptions = computed(() =>
   paymentAccounts.value
@@ -1392,15 +1403,40 @@ const submitComplete = async () => {
 };
 
 const submitPayment = async () => {
+  if (isPaymentSubmitDisabled.value) return;
   paymentFormErrors.value = {};
-  try {
-    await addPayment(booking.value.id, paymentForm.value);
-    showPaymentDialog.value = false;
-    loadBooking();
-  } catch (err) {
-    if (err.response?.data?.errors) paymentFormErrors.value = err.response.data.errors;
-    console.error(err);
-  }
+  paymentConfirming.value = true;
+
+  confirm.require({
+    message: `Catat pembayaran ${formatCurrency(paymentForm.value.amount)} untuk booking ${booking.value?.kode_booking || ''}?`,
+    header: 'Konfirmasi Pembayaran',
+    icon: 'pi pi-credit-card',
+    acceptLabel: 'Ya, Simpan',
+    rejectLabel: 'Batal',
+    acceptClass: 'app-dialog-button app-dialog-button-primary',
+    rejectClass: 'app-dialog-button app-dialog-button-secondary',
+    accept: async () => {
+      if (paymentSubmitting.value) return;
+      paymentConfirming.value = false;
+      paymentSubmitting.value = true;
+      try {
+        await addPayment(booking.value.id, { ...paymentForm.value });
+        showPaymentDialog.value = false;
+        await loadBooking();
+      } catch (err) {
+        if (err.response?.data?.errors) paymentFormErrors.value = err.response.data.errors;
+        console.error(err);
+      } finally {
+        paymentSubmitting.value = false;
+      }
+    },
+    reject: () => {
+      paymentConfirming.value = false;
+    },
+    onHide: () => {
+      paymentConfirming.value = false;
+    },
+  });
 };
 
 const getDialogStateMap = () => ({
@@ -3029,7 +3065,14 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showPaymentDialog')" />
-          <Button label="Simpan Pembayaran" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitPayment" :loading="loading" />
+          <Button
+            label="Simpan Pembayaran"
+            icon="pi pi-check"
+            class="app-dialog-button app-dialog-button-primary"
+            @click="submitPayment"
+            :loading="loading || paymentConfirming || paymentSubmitting"
+            :disabled="isPaymentSubmitDisabled"
+          />
         </div>
       </template>
     </Dialog>

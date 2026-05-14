@@ -25,6 +25,7 @@ const statusMap = {
   'pemilik_rental': { class: 'success', label: props.text },
   'generated':    { class: 'success', label: props.text },
   'not_generated':{ class: 'warning', label: props.text },
+  'lunas':{ class: 'success', label: "Lunas" },
 };
 
 const config = computed(() => {

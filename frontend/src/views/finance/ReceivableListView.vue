@@ -11,12 +11,15 @@ import InputNumber from 'primevue/inputnumber'
 import ProgressBar from 'primevue/progressbar'
 import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
+import ConfirmDialog from 'primevue/confirmdialog'
 import { usePaymentAccount } from '../../composables/usePaymentAccount'
 import { useReceivable } from '../../composables/useReceivable'
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue'
 
 const router = useRouter()
 const toast = useToast()
+const confirm = useConfirm()
 const {
   receivables,
   invoices,
@@ -38,7 +41,10 @@ const activeTab = ref('receivables')
 const selectedRows = ref([])
 const showGenerateDialog = ref(false)
 const showPaymentDialog = ref(false)
+const selectedReceivableRows = ref([])
 const selectedInvoice = ref(null)
+const paymentConfirming = ref(false)
+const paymentSubmitting = ref(false)
 
 const generateForm = ref({
   due_date: null,
@@ -51,21 +57,21 @@ const paymentForm = ref({
 
 const invoiceStatusOptions = [
   { label: 'Semua', value: null },
-  { label: 'Belum Generate', value: 'not_generated' },
-  { label: 'Sudah Generate', value: 'generated' },
+  { label: 'Belum Buat Invoice', value: 'not_generated' },
+  { label: 'Sudah Buat Invoice', value: 'generated' },
 ]
 const generatedInvoiceStatusOptions = [
   { label: 'Semua', value: null },
-  { label: 'Generated', value: 'generated' },
+  { label: 'Dibuat', value: 'generated' },
   { label: 'Partial Paid', value: 'partial_paid' },
   { label: 'Paid', value: 'paid' },
 ]
 
-const selectedGeneratedRows = computed(() => selectedRows.value.filter(row => row.invoice?.generated))
-const invoiceReadySelection = computed(() => selectedRows.value.filter(row => !row.invoice?.generated))
-const selectedTotal = computed(() => invoiceReadySelection.value.reduce((sum, row) => sum + (row.total_biaya?.sisa || 0), 0))
+const selectedTotal = computed(() => selectedReceivableRows.value.reduce((sum, row) => sum + (row.total_biaya?.sisa || 0), 0))
+const selectedBookingCodes = computed(() => selectedReceivableRows.value.map(row => row.kode_booking).join(', '))
+const isCombinedInvoice = computed(() => selectedReceivableRows.value.length > 1)
 const defaultDueDate = computed(() => {
-  const dates = invoiceReadySelection.value
+  const dates = selectedReceivableRows.value
     .map(row => row.due_date ? new Date(row.due_date) : null)
     .filter(date => date && !Number.isNaN(date.getTime()))
     .sort((a, b) => b.getTime() - a.getTime())
@@ -77,6 +83,13 @@ const paymentAccountOptions = computed(() => accounts.value.map(account => ({
   value: account.id,
 })))
 const selectedInvoiceRemaining = computed(() => selectedInvoice.value?.remaining_amount || 0)
+const isPaymentSubmitDisabled = computed(() =>
+  actionLoading.value
+  || paymentConfirming.value
+  || paymentSubmitting.value
+  || !paymentForm.value.payment_account_id
+  || !paymentForm.value.amount
+)
 
 watch(defaultDueDate, (date) => {
   generateForm.value.due_date = date
@@ -134,34 +147,39 @@ const switchTab = (tab) => {
   fetchInvoices(1)
 }
 
-const openGenerateDialog = () => {
-  if (selectedGeneratedRows.value.length) {
-    const codes = selectedGeneratedRows.value.map(row => row.kode_booking).join(', ')
+const openGenerateDialog = (row = null) => {
+  const rows = row ? [row] : selectedRows.value
+
+  if (!rows.length) {
+    return
+  }
+
+  const generatedRows = rows.filter(item => item.invoice?.generated)
+  if (generatedRows.length) {
+    const codes = generatedRows.map(item => item.kode_booking).join(', ')
     toast.add({
       severity: 'error',
-      summary: 'Invoice tidak bisa digenerate',
-      detail: `Booking ${codes} sudah memiliki invoice aktif.`,
+      summary: 'Invoice aktif tersedia',
+      detail: `Booking ${codes} sudah memiliki invoice aktif. Proses buat invoice dibatalkan.`,
       life: 5000,
     })
     return
   }
 
-  if (!invoiceReadySelection.value.length) return
+  selectedReceivableRows.value = rows
   generateForm.value.due_date = defaultDueDate.value
   showGenerateDialog.value = true
 }
 
 const submitGenerateInvoice = async () => {
-  if (selectedGeneratedRows.value.length) {
-    openGenerateDialog()
-    return
-  }
+  if (!selectedReceivableRows.value.length) return
 
   await generate({
-    booking_ids: invoiceReadySelection.value.map(row => row.id),
+    booking_ids: selectedReceivableRows.value.map(row => row.id),
     due_date: toApiDate(generateForm.value.due_date),
   })
   selectedRows.value = []
+  selectedReceivableRows.value = []
   showGenerateDialog.value = false
   if (activeTab.value === 'invoices') {
     await fetchInvoices(1)
@@ -170,7 +188,15 @@ const submitGenerateInvoice = async () => {
 
 const sendInvoice = async (invoiceId) => {
   if (!invoiceId) return
-  await markSent(invoiceId)
+  const invoice = await markSent(invoiceId)
+  const publicUrl = invoice?.public_path
+    ? new URL(invoice.public_path, window.location.origin).toString()
+    : invoice?.public_url
+
+  if (publicUrl && navigator.clipboard) {
+    await navigator.clipboard.writeText(publicUrl)
+    toast.add({ severity: 'info', summary: 'Link disalin', detail: publicUrl, life: 5000 })
+  }
 }
 
 const openPaymentDialog = (invoice) => {
@@ -188,7 +214,7 @@ const openPaymentFromReceivable = (row) => {
     toast.add({
       severity: 'warn',
       summary: 'Invoice belum dibuat',
-      detail: 'Generate invoice terlebih dahulu sebelum mencatat pembayaran.',
+      detail: 'Buat invoice terlebih dahulu sebelum mencatat pembayaran.',
       life: 4000,
     })
     return
@@ -197,8 +223,18 @@ const openPaymentFromReceivable = (row) => {
   openPaymentDialog({
     id: row.invoice.id,
     invoice_number: row.invoice.number,
+    total_amount: row.invoice.total_amount ?? row.total_biaya?.sisa ?? 0,
+    paid_amount: row.invoice.paid_amount ?? 0,
     remaining_amount: row.invoice.remaining_amount ?? row.total_biaya?.sisa ?? 0,
     status: row.invoice.status,
+    public_url: row.invoice.public_url,
+    bookings: [{
+      id: row.id,
+      kode_booking: row.kode_booking,
+      customer_name: row.customer?.nama,
+      amount: row.invoice.total_amount ?? row.total_biaya?.sisa ?? 0,
+    }],
+    payments: [],
   })
 }
 
@@ -208,14 +244,40 @@ const openInvoicePdf = async (invoice) => {
 }
 
 const submitInvoicePayment = async () => {
-  if (!selectedInvoice.value) return
-  await addPayment(selectedInvoice.value.id, {
-    payment_account_id: paymentForm.value.payment_account_id,
-    amount: paymentForm.value.amount,
-    paid_at: toApiDate(paymentForm.value.paid_at),
+  if (!selectedInvoice.value || isPaymentSubmitDisabled.value) return
+  paymentConfirming.value = true
+
+  confirm.require({
+    message: `Catat pembayaran ${formatCurrency(paymentForm.value.amount)} untuk invoice ${selectedInvoice.value.invoice_number || selectedInvoice.value.number || ''}?`,
+    header: 'Konfirmasi Pembayaran',
+    icon: 'pi pi-credit-card',
+    acceptLabel: 'Ya, Simpan',
+    rejectLabel: 'Batal',
+    acceptClass: 'app-dialog-button app-dialog-button-primary',
+    rejectClass: 'app-dialog-button app-dialog-button-secondary',
+    accept: async () => {
+      if (paymentSubmitting.value) return
+      paymentConfirming.value = false
+      paymentSubmitting.value = true
+      try {
+        await addPayment(selectedInvoice.value.id, {
+          payment_account_id: paymentForm.value.payment_account_id,
+          amount: paymentForm.value.amount,
+          paid_at: toApiDate(paymentForm.value.paid_at),
+        })
+        showPaymentDialog.value = false
+        selectedInvoice.value = null
+      } finally {
+        paymentSubmitting.value = false
+      }
+    },
+    reject: () => {
+      paymentConfirming.value = false
+    },
+    onHide: () => {
+      paymentConfirming.value = false
+    },
   })
-  showPaymentDialog.value = false
-  selectedInvoice.value = null
 }
 
 const invoiceSeverity = (status) => {
@@ -235,19 +297,20 @@ onMounted(async () => {
 
 <template>
   <div class="page-container">
+    <ConfirmDialog />
     <div class="detail-page-header">
       <div class="header-left">
         <h1 class="text-h1">Piutang & Invoice</h1>
-        <p class="text-secondary text-xs">Kelola piutang, invoice yang sudah digenerate, dan pembayaran invoice.</p>
+        <p class="text-secondary text-xs">Kelola piutang, invoice yang sudah dibuat, dan pembayaran invoice.</p>
       </div>
-      <div class="header-actions">
+      <div class="header-actions" v-if="activeTab === 'receivables'">
         <button
           class="btn-pill btn-primary"
           :disabled="selectedRows.length === 0 || actionLoading"
-          @click="openGenerateDialog"
+          @click="openGenerateDialog()"
         >
           <i class="pi pi-file-plus"></i>
-          Generate Invoice
+          {{ selectedRows.length > 1 ? 'Buat Invoice Gabungan' : 'Buat Invoice' }}
         </button>
       </div>
     </div>
@@ -311,18 +374,38 @@ onMounted(async () => {
       class="drent-datatable"
     >
       <Column selectionMode="multiple" headerStyle="width: 3rem" />
-       <Column header="Aksi" style="min-width: 15rem">
+       <Column header="Aksi" style="min-width: 18rem">
         <template #body="{ data }">
           <div class="table-actions">
             <button
+              v-if="data.invoice?.generated"
               class="btn-pill btn-primary btn-pill-compact"
-              :disabled="!data.invoice?.generated || (data.invoice?.remaining_amount ?? 0) <= 0"
+              :disabled="(data.invoice?.remaining_amount ?? 0) <= 0"
               @click="openPaymentFromReceivable(data)"
             >
               <i class="pi pi-wallet"></i>
-              Bayar
+              Bayar Invoice
             </button>
             <button
+              v-else
+              class="btn-pill btn-primary btn-pill-compact"
+              :disabled="actionLoading"
+              @click="openGenerateDialog(data)"
+            >
+              <i class="pi pi-file-plus"></i>
+              Buat Invoice
+            </button>
+            <button
+              v-if="data.invoice?.generated"
+              class="btn-pill btn-secondary btn-pill-compact"
+              :disabled="actionLoading"
+              @click="sendInvoice(data.invoice.id)"
+            >
+              <i class="pi pi-send"></i>
+              Kirim
+            </button>
+            <button
+              v-if="data.invoice?.generated"
               class="btn-pill btn-secondary btn-pill-compact"
               :disabled="!data.invoice?.generated || actionLoading"
               @click="openInvoicePdf(data.invoice)"
@@ -339,26 +422,15 @@ onMounted(async () => {
           <BookingStatusBadge :status="data.invoice?.number ? 'generated' : 'not_generated'" :text="data.invoice?.number || 'Belum Buat Invoice'" /> 
         </template>
       </Column>
-      <Column header="Tanggal  Generate & Jatuh Tempo" style="min-width: 12rem">
+      <Column header="Tanggal Buat & Jatuh Tempo" style="min-width: 12rem">
         <template #body="{ data }">
           <div>{{formatDateTime(data.invoice?.generated_at)}}</div>
-          <div class="text-xs text-secondary mt-1">{{data.invoice?.generated ? 'Due ' + formatDate(data.due_date) : ''}}</div>
+          <div class="text-xs text-secondary mt-1">{{data.invoice?.generated ? 'Due ' + formatDate(data.invoice?.due_date || data.due_date) : ''}}</div>
         </template>
       </Column>
       <Column header="Terakhir Kirim" style="min-width: 12rem">
         <template #body="{ data }">
-          <div class="flex flex-col gap-2 items-start">
-            <span>{{ formatDateTime(data.invoice?.sent_at) }}</span>
-            <button
-              v-if="data.invoice?.generated"
-              class="btn-pill btn-secondary btn-pill-compact"
-              :disabled="actionLoading"
-              @click="sendInvoice(data.invoice.id)"
-            >
-              <i class="pi pi-send"></i>
-              Tandai Kirim
-            </button>
-          </div>
+          <span>{{ formatDateTime(data.invoice?.sent_at) }}</span>
         </template>
       </Column>
       <Column header="Pelanggan" style="min-width: 12rem">
@@ -428,7 +500,7 @@ onMounted(async () => {
       <Column header="Due Date" style="min-width: 10rem">
         <template #body="{ data }">{{ formatDate(data.due_date) }}</template>
       </Column>
-      <Column header="Tanggal Generate" style="min-width: 12rem">
+      <Column header="Tanggal Buat" style="min-width: 12rem">
         <template #body="{ data }">{{ formatDateTime(data.generated_at) }}</template>
       </Column>
       <Column header="Terakhir Kirim" style="min-width: 12rem">
@@ -458,12 +530,20 @@ onMounted(async () => {
       </Column>
     </DataTable>
 
-    <Dialog v-model:visible="showGenerateDialog" header="Generate Invoice" modal :style="{ width: '460px' }" class="custom-dialog">
+    <Dialog v-model:visible="showGenerateDialog" header="Buat Invoice" modal :style="{ width: '460px' }" class="custom-dialog">
       <div class="dialog-stack">
+        <div v-if="isCombinedInvoice" class="warning-panel">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>Beberapa booking terpilih akan digabungkan menjadi satu invoice.</span>
+        </div>
         <div class="app-muted-panel">
           <div class="summary-row">
             <span>Jumlah booking</span>
-            <strong>{{ invoiceReadySelection.length }}</strong>
+            <strong>{{ selectedReceivableRows.length }}</strong>
+          </div>
+          <div class="summary-row">
+            <span>Booking</span>
+            <strong>{{ selectedBookingCodes || '-' }}</strong>
           </div>
           <div class="summary-row">
             <span>Total invoice</span>
@@ -483,7 +563,7 @@ onMounted(async () => {
         </button>
         <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading" @click="submitGenerateInvoice">
           <i class="pi pi-check"></i>
-          Generate
+          Buat Invoice
         </button>
       </template>
     </Dialog>
@@ -496,8 +576,32 @@ onMounted(async () => {
             <strong>{{ selectedInvoice?.invoice_number }}</strong>
           </div>
           <div class="summary-row">
+            <span>Total</span>
+            <strong>{{ formatCurrency(selectedInvoice?.total_amount) }}</strong>
+          </div>
+          <div class="summary-row">
+            <span>Sudah dibayar</span>
+            <strong>{{ formatCurrency(selectedInvoice?.paid_amount) }}</strong>
+          </div>
+          <div class="summary-row">
             <span>Sisa</span>
             <strong>{{ formatCurrency(selectedInvoiceRemaining) }}</strong>
+          </div>
+          <div class="summary-row">
+            <span>Status</span>
+            <strong>{{ selectedInvoice?.status || '-' }}</strong>
+          </div>
+        </div>
+        <div class="app-muted-panel" v-if="selectedInvoice?.bookings?.length">
+          <div class="summary-row" v-for="booking in selectedInvoice.bookings" :key="booking.id || booking.kode_booking">
+            <span>{{ booking.kode_booking }} - {{ booking.customer_name || '-' }}</span>
+            <strong>{{ formatCurrency(booking.amount) }}</strong>
+          </div>
+        </div>
+        <div class="app-muted-panel" v-if="selectedInvoice?.payments?.length">
+          <div class="summary-row" v-for="payment in selectedInvoice.payments" :key="payment.id">
+            <span>{{ formatDate(payment.paid_at) }} - {{ payment.payment_account_name || '-' }}</span>
+            <strong>{{ formatCurrency(payment.amount) }}</strong>
           </div>
         </div>
         <fieldset class="form-fieldset">
@@ -535,7 +639,7 @@ onMounted(async () => {
         </button>
         <button
           class="app-dialog-button app-dialog-button-primary"
-          :disabled="actionLoading || !paymentForm.payment_account_id || !paymentForm.amount"
+          :disabled="isPaymentSubmitDisabled"
           @click="submitInvoicePayment"
         >
           <i class="pi pi-check"></i>
@@ -610,6 +714,20 @@ onMounted(async () => {
   border-radius: var(--radius-default);
   background: var(--card-bg);
   padding: var(--space-md);
+}
+
+.warning-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-default);
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+  padding: var(--space-md);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .filter-bar {

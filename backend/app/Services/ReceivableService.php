@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\Booking;
+use App\Models\BookingPayment;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\PaymentAccount;
 use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ReceivableService
 {
@@ -33,11 +36,15 @@ class ReceivableService
             ->whereNotIn('status', ['batal'])
             ->when($filters['invoice_status'] ?? null, function ($query, $status) {
                 if ($status === 'generated') {
-                    $query->whereHas('invoices', fn($invoice) => $invoice->where('status', '!=', 'void'));
+                    $query->whereHas('invoices', fn($invoice) => $invoice
+                        ->whereNotIn('status', ['void', 'paid'])
+                        ->whereColumn('paid_amount', '<', 'total_amount'));
                 }
 
                 if ($status === 'not_generated') {
-                    $query->whereDoesntHave('invoices', fn($invoice) => $invoice->where('status', '!=', 'void'));
+                    $query->whereDoesntHave('invoices', fn($invoice) => $invoice
+                        ->whereNotIn('status', ['void', 'paid'])
+                        ->whereColumn('paid_amount', '<', 'total_amount'));
                 }
             })
             ->latest()
@@ -46,7 +53,8 @@ class ReceivableService
                 $booking->total_tagihan = $this->billingService->totalTagihan($booking);
                 $booking->total_payments = $this->billingService->paidAmount($booking);
                 $booking->sisa_tagihan = $this->billingService->sisaTagihan($booking);
-                $booking->latest_active_invoice = $booking->invoices->first();
+                $booking->latest_active_invoice = $booking->invoices
+                    ->first(fn(Invoice $invoice) => $invoice->status !== 'paid' && $this->invoiceRemaining($invoice) > 0);
                 $booking->display_detail = $booking->bookingDetails->firstWhere('status', 'aktif')
                     ?? $booking->bookingDetails->firstWhere('detail_type', 'initial')
                     ?? $booking->bookingDetails->first();
@@ -93,7 +101,9 @@ class ReceivableService
             }
 
             $activeInvoiceBooking = $bookings->first(fn(Booking $booking) =>
-                $booking->invoices->contains(fn(Invoice $invoice) => $invoice->status !== 'void')
+                $booking->invoices->contains(fn(Invoice $invoice) =>
+                    ! in_array($invoice->status, ['void', 'paid'], true) && $this->invoiceRemaining($invoice) > 0
+                )
             );
 
             if ($activeInvoiceBooking) {
@@ -116,6 +126,7 @@ class ReceivableService
                 'tenant_id' => $tenantId,
                 'branch_id' => $branchId,
                 'invoice_number' => $this->nextInvoiceNumber($branchId),
+                'public_token' => $this->newPublicToken(),
                 'status' => 'generated',
                 'total_amount' => (int) $amounts->sum(),
                 'paid_amount' => 0,
@@ -134,30 +145,40 @@ class ReceivableService
 
     public function markSent(Invoice $invoice): Invoice
     {
-        $invoice->update(['sent_at' => now()]);
+        $invoice->update([
+            'public_token' => $invoice->public_token ?: $this->newPublicToken(),
+            'sent_at' => now(),
+        ]);
 
         return $invoice->fresh(['bookings.customer', 'payments.paymentAccount']);
     }
 
     public function storePayment(Invoice $invoice, array $data): Invoice
     {
-        if ($invoice->status === 'void') {
-            throw new \InvalidArgumentException('Invoice void tidak bisa dibayar.');
-        }
-
-        $remaining = max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount);
-        if ((int) $data['amount'] > $remaining) {
-            throw new \InvalidArgumentException('Nominal pembayaran melebihi sisa invoice.');
-        }
-
         return DB::transaction(function () use ($invoice, $data) {
-            Payment::create([
+            $invoice = Invoice::query()
+                ->with(['bookings.bookingDetails.costs', 'bookings.payments', 'payments'])
+                ->lockForUpdate()
+                ->findOrFail($invoice->id);
+
+            if ($invoice->status === 'void') {
+                throw new \InvalidArgumentException('Invoice void tidak bisa dibayar.');
+            }
+
+            $remaining = max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount);
+            if ((int) $data['amount'] > $remaining) {
+                throw new \InvalidArgumentException('Nominal pembayaran melebihi sisa invoice.');
+            }
+
+            $payment = Payment::create([
                 'invoice_id' => $invoice->id,
                 'payment_account_id' => $data['payment_account_id'],
                 'amount' => (int) $data['amount'],
                 'paid_at' => isset($data['paid_at']) ? Carbon::parse($data['paid_at']) : now(),
                 'created_by' => auth()->id(),
             ]);
+
+            $this->syncInvoicePaymentToBookings($invoice, $payment);
 
             $invoice->refresh();
             $paidAmount = (int) $invoice->payments()->sum('amount');
@@ -168,6 +189,74 @@ class ReceivableService
 
             return $invoice->fresh(['bookings.customer', 'payments.paymentAccount']);
         });
+    }
+
+    public function publicInvoice(string $token): array
+    {
+        $invoice = Invoice::query()
+            ->with(['branch', 'bookings.customer', 'payments.paymentAccount'])
+            ->where('public_token', $token)
+            ->where('status', '!=', 'void')
+            ->firstOrFail();
+
+        $paymentAccounts = PaymentAccount::query()
+            ->where('tenant_id', $invoice->tenant_id)
+            ->where('branch_id', $invoice->branch_id)
+            ->where('is_active', true)
+            ->orderBy('nama_bank')
+            ->get();
+
+        return [$invoice, $paymentAccounts];
+    }
+
+    private function syncInvoicePaymentToBookings(Invoice $invoice, Payment $payment): void
+    {
+        $remainingPayment = (int) $payment->amount;
+        $previousPaymentIds = $invoice->payments()
+            ->whereKeyNot($payment->id)
+            ->pluck('id');
+
+        foreach ($invoice->bookings as $booking) {
+            if ($remainingPayment <= 0) {
+                break;
+            }
+
+            $invoiceBookingAmount = (int) $booking->pivot->amount;
+            $alreadyAllocated = $previousPaymentIds->isEmpty()
+                ? 0
+                : (int) BookingPayment::query()
+                    ->where('booking_id', $booking->id)
+                    ->whereIn('invoice_payment_id', $previousPaymentIds)
+                    ->sum('amount');
+
+            $bookingAllocationDue = max(0, $invoiceBookingAmount - $alreadyAllocated);
+            $allocated = min($remainingPayment, $bookingAllocationDue);
+
+            if ($allocated <= 0) {
+                continue;
+            }
+
+            $bookingRemaining = $this->billingService->sisaTagihan($booking);
+
+            BookingPayment::create([
+                'booking_id' => $booking->id,
+                'payment_account_id' => $payment->payment_account_id,
+                'amount' => $allocated,
+                'payment_type' => $allocated >= $bookingRemaining ? 'pelunasan' : 'cicilan',
+                'status' => 'active',
+                'catatan' => "Pembayaran invoice {$invoice->invoice_number}",
+                'paid_at' => $payment->paid_at,
+                'invoice_payment_id' => $payment->id,
+                'created_by' => $payment->created_by,
+            ]);
+
+            $remainingPayment -= $allocated;
+        }
+    }
+
+    private function invoiceRemaining(Invoice $invoice): int
+    {
+        return max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount);
     }
 
     private function nextInvoiceNumber(int $branchId): string
@@ -181,6 +270,15 @@ class ReceivableService
         $next = $lastInvoice ? ((int) substr($lastInvoice->invoice_number, -5)) + 1 : 1;
 
         return $prefix . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+    }
+
+    private function newPublicToken(): string
+    {
+        do {
+            $token = Str::random(48);
+        } while (Invoice::where('public_token', $token)->exists());
+
+        return $token;
     }
 
     private function defaultInvoiceDueDate($bookings): ?Carbon

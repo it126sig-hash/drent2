@@ -12,6 +12,16 @@ const router = createRouter({
       meta: { guest: true }
     },
     {
+      path: '/invoice/:token',
+      name: 'PublicInvoice',
+      component: () => import('../views/public/PublicInvoiceView.vue'),
+    },
+    {
+      path: '/physical-checks/public/:token',
+      name: 'PublicPhysicalCheckForm',
+      component: () => import('../views/physical-checks/PhysicalCheckFormView.vue'),
+    },
+    {
       path: '/',
       component: AppLayout,
       meta: { auth: true },

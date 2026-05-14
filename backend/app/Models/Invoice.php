@@ -13,6 +13,7 @@ class Invoice extends Model
         'tenant_id',
         'branch_id',
         'invoice_number',
+        'public_token',
         'status',
         'total_amount',
         'paid_amount',
@@ -44,6 +45,11 @@ class Invoice extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     public function creator()

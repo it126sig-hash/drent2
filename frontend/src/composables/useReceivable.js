@@ -100,7 +100,7 @@ export function useReceivable() {
     actionLoading.value = true
     try {
       const response = await receivableApi.markInvoiceSent(invoiceId)
-      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Waktu kirim invoice diperbarui', life: 3000 })
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Link publik invoice sudah siap', life: 3000 })
       await fetchAll(pagination.value.current_page)
       await fetchInvoices(pagination.value.current_page)
       return response.data.data

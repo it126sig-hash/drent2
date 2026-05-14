@@ -41,9 +41,12 @@ class ReceivableResource extends JsonResource
                 'total_amount' => $invoice ? (int) $invoice->total_amount : null,
                 'paid_amount' => $invoice ? (int) $invoice->paid_amount : null,
                 'remaining_amount' => $invoice ? max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount) : null,
+                'due_date' => $invoice?->due_date?->toISOString(),
                 'generated_at' => $invoice?->generated_at?->toISOString(),
                 'sent_at' => $invoice?->sent_at?->toISOString(),
                 'pdf_url' => $invoice ? url("/api/v1/invoices/{$invoice->id}/pdf") : null,
+                'public_path' => $invoice?->public_token ? "/invoice/{$invoice->public_token}" : null,
+                'public_url' => $invoice?->public_token ? config('app.frontend_url', url('/')) . "/invoice/{$invoice->public_token}" : null,
             ],
         ];
     }

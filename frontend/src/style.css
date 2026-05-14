@@ -160,6 +160,24 @@ h2, .text-h2 { font-family: var(--font-headline); font-size: 14px; font-weight: 
   opacity: 0.9;
 }
 
+button:disabled,
+button[aria-disabled="true"],
+.p-button:disabled,
+.p-button.p-disabled,
+.p-disabled {
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
+  pointer-events: none;
+}
+
+.btn-pill:disabled,
+.app-dialog-button:disabled,
+.btn-pill[aria-disabled="true"],
+.app-dialog-button[aria-disabled="true"] {
+  box-shadow: none !important;
+  transform: none !important;
+}
+
 .btn-secondary {
   background-color: var(--card-bg);
   color: var(--text-primary);
@@ -244,10 +262,58 @@ h2, .text-h2 { font-family: var(--font-headline); font-size: 14px; font-weight: 
   border-bottom: 1px solid var(--surface-border);
 }
 
-.p-inputtext, .p-dropdown, .p-datepicker input {
+.p-inputtext,
+.p-select,
+.p-dropdown,
+.p-datepicker input,
+.p-datepicker .p-inputtext {
+  min-height: 36px;
   border-radius: var(--radius-default);
   border-color: var(--surface-border);
   font-size: 13px;
+}
+
+.p-select,
+.p-dropdown {
+  display: inline-flex;
+  align-items: center;
+}
+
+.p-select-label,
+.p-dropdown-label {
+  display: flex;
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.p-select-dropdown,
+.p-dropdown-trigger {
+  width: 36px;
+}
+
+.p-input-icon-left,
+.filter-search {
+  display: block;
+  position: relative;
+  width: 100%;
+}
+
+.p-input-icon-left > i,
+.filter-search > i {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  z-index: 1;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.p-input-icon-left .p-inputtext,
+.filter-search .p-inputtext {
+  padding-left: 34px;
 }
 
 .p-tabview .p-tabview-nav {

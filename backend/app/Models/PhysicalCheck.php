@@ -16,6 +16,8 @@ class PhysicalCheck extends Model
         'booking_detail_id',
         'type',
         'status',
+        'public_token',
+        'public_last_opened_at',
         'km_odometer',
         'fuel_level',
         'fuel_marker_x',
@@ -33,6 +35,7 @@ class PhysicalCheck extends Model
         'km_odometer' => 'integer',
         'fuel_marker_x' => 'float',
         'fuel_marker_y' => 'float',
+        'public_last_opened_at' => 'datetime',
         'requested_at' => 'datetime',
         'inspected_at' => 'datetime',
         'skipped_at' => 'datetime',
@@ -94,5 +97,15 @@ class PhysicalCheck extends Model
     public function signatures()
     {
         return $this->hasMany(PhysicalCheckSignature::class);
+    }
+
+    public function otps()
+    {
+        return $this->hasMany(PhysicalCheckOtp::class);
+    }
+
+    public function activities()
+    {
+        return $this->hasMany(PhysicalCheckActivity::class);
     }
 }

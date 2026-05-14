@@ -23,6 +23,7 @@ class BookingPayment extends Model
         'void_rejection_note',
         'paid_at',
         'reallocated_from_id',
+        'invoice_payment_id',
         'created_by',
     ];
 
@@ -52,6 +53,11 @@ class BookingPayment extends Model
     public function reallocations()
     {
         return $this->hasMany(self::class, 'reallocated_from_id');
+    }
+
+    public function invoicePayment()
+    {
+        return $this->belongsTo(Payment::class, 'invoice_payment_id');
     }
 
     public function creator()

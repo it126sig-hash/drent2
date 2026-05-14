@@ -16,6 +16,7 @@ class PhysicalCheckResource extends JsonResource
             'booking_detail_id' => $this->booking_detail_id,
             'type' => $this->type,
             'status' => $this->status,
+            'public_token' => $this->public_token,
             'km_odometer' => $this->km_odometer,
             'fuel_level' => $this->fuel_level,
             'fuel_marker_x' => $this->fuel_marker_x,
@@ -61,6 +62,19 @@ class PhysicalCheckResource extends JsonResource
                     'signer_name' => $signature->signer_name,
                     'signed_at' => $signature->signed_at?->toISOString(),
                     'url' => Storage::disk('public')->url($signature->signature_path),
+                ])->values()
+            ),
+            'activities' => $this->whenLoaded('activities', fn() =>
+                $this->activities->sortByDesc('id')->map(fn($activity) => [
+                    'id' => $activity->id,
+                    'event' => $activity->event,
+                    'actor_type' => $activity->actor_type,
+                    'context' => $activity->context,
+                    'created_at' => $activity->created_at?->toISOString(),
+                    'user' => $activity->relationLoaded('user') && $activity->user ? [
+                        'id' => $activity->user->id,
+                        'name' => $activity->user->name,
+                    ] : null,
                 ])->values()
             ),
         ];

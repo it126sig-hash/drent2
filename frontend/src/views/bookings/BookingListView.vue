@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch, onUnmounted } from 'vue';
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
 import { useUnit } from '../../composables/useUnit';
@@ -12,7 +12,6 @@ import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Dropdown from 'primevue/dropdown';
-import SelectButton from 'primevue/selectbutton';
 import InputText from 'primevue/inputtext';
 import DatePicker from 'primevue/datepicker';
 import Dialog from 'primevue/dialog';
@@ -33,6 +32,36 @@ const { cities, fetchAll: fetchCities } = useCity();
 const activeTab = ref(0);
 const calendarStart = ref(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
 const calendarBookings = ref([]);
+
+// Calendar filters
+const calendarOwnerFilter = ref(null);
+const calendarTransactionFilter = ref('all'); // 'all' | 'has_booking'
+
+const calendarTransactionOptions = [
+  { label: 'Semua Unit', value: 'all' },
+  { label: 'Hanya Ada Transaksi', value: 'has_booking' },
+];
+
+const filteredCalendarUnits = computed(() => {
+  let list = units.value;
+
+  // Filter by rental owner
+  if (calendarOwnerFilter.value) {
+    list = list.filter(u => u.rental_owner_id === calendarOwnerFilter.value);
+  }
+
+  // Filter by transaction presence in this date window
+  if (calendarTransactionFilter.value === 'has_booking') {
+    const unitIdsWithBookings = new Set(
+      calendarBookings.value.flatMap(b =>
+        b.booking_details.map(d => d.unit_id)
+      ).filter(Boolean)
+    );
+    list = list.filter(u => unitIdsWithBookings.has(u.id));
+  }
+
+  return list;
+});
 
 const showStatusDialog = ref(false);
 const showReturnRequestDialog = ref(false);
@@ -61,6 +90,7 @@ const statusOptions = [
 const mainTabStatusValues = ['follow_up', 'confirm', 'waiting_list', 'rental_unit'];
 const closedTabStatusValues = ['selesai', 'batal'];
 const activeStatusOptions = statusOptions.filter(option => mainTabStatusValues.includes(option.value));
+const selectedStatusFilters = ref([]);
 
 const sortOptions = [
   { label: 'Terbaru dibuat', value: 'created_at:desc' },
@@ -72,6 +102,20 @@ const sortOptions = [
 
 const selectedSort = ref('created_at:desc');
 
+const getActiveTabStatusFilter = () => {
+  return selectedStatusFilters.value.length
+    ? selectedStatusFilters.value.filter(status => mainTabStatusValues.includes(status))
+    : [...mainTabStatusValues];
+};
+
+const isStatusSelected = (status) => selectedStatusFilters.value.includes(status);
+
+const toggleStatusFilter = (status) => {
+  selectedStatusFilters.value = isStatusSelected(status)
+    ? selectedStatusFilters.value.filter(selectedStatus => selectedStatus !== status)
+    : [...selectedStatusFilters.value, status];
+};
+
 const loadFilterOptions = async () => {
   await Promise.allSettled([
     fetchRentalOwners({ per_page: 100 }),
@@ -81,8 +125,7 @@ const loadFilterOptions = async () => {
 
 const loadData = async () => {
   if (activeTab.value === 0) {
-    const activeStatuses = filters.value.status.filter(status => mainTabStatusValues.includes(status));
-    filters.value.status = activeStatuses.length ? activeStatuses : [...mainTabStatusValues];
+    filters.value.status = getActiveTabStatusFilter();
     await fetchAll(pagination.value.current_page);
   } else if (activeTab.value === 1) {
     filters.value.status = [...closedTabStatusValues];
@@ -116,8 +159,7 @@ const applyFilters = () => {
   filters.value.sort_by = sortBy;
   filters.value.sort_direction = sortDirection;
   if (activeTab.value === 0) {
-    const activeStatuses = filters.value.status.filter(status => mainTabStatusValues.includes(status));
-    filters.value.status = activeStatuses.length ? activeStatuses : [...mainTabStatusValues];
+    filters.value.status = getActiveTabStatusFilter();
   } else if (activeTab.value === 1) {
     filters.value.status = [...closedTabStatusValues];
   }
@@ -126,6 +168,7 @@ const applyFilters = () => {
 };
 
 const resetFilters = () => {
+  selectedStatusFilters.value = [];
   filters.value.status = activeTab.value === 1 ? [...closedTabStatusValues] : [...mainTabStatusValues];
   filters.value.date_from = null;
   filters.value.date_to = null;
@@ -465,21 +508,26 @@ const getBookingCardClass = (booking) => {
         <div class="filter-groups">
           <div class="filter-group filter-group-wide">
             <label>Cari</label>
-            <span class="p-input-icon-left filter-search">
+            <span class="filter-search">
               <i class="pi pi-search"></i>
               <InputText v-model="filters.search" placeholder="Kode, pelanggan, tujuan..." class="w-full" @keyup.enter="applyFilters" />
             </span>
           </div>
           <div v-if="activeTab === 0" class="filter-group filter-group-status">
             <label>Status</label>
-            <SelectButton
-              v-model="filters.status"
-              :options="activeStatusOptions"
-              optionLabel="label"
-              optionValue="value"
-              multiple
-              class="status-filter-buttons"
-            />
+            <div class="status-filter-buttons" role="group" aria-label="Filter status booking">
+              <button
+                v-for="option in activeStatusOptions"
+                :key="option.value"
+                type="button"
+                class="status-filter-button"
+                :class="{ active: isStatusSelected(option.value) }"
+                :aria-pressed="isStatusSelected(option.value)"
+                @click="toggleStatusFilter(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
           </div>
           <div class="filter-group">
             <label>Mulai</label>
@@ -593,7 +641,12 @@ const getBookingCardClass = (booking) => {
               <div class="flex flex-col items-end">
                 <span class="font-mono-numeric text-primary text-sm">{{ formatCurrency(getTotalSewa(data)) }}</span>
                 <span class="font-mono-numeric text-positive text-sm">{{ formatCurrency(getPaidAmount(data)) }}</span>
-                <span class="font-mono-numeric text-info text-sm italic">(sisa){{ formatCurrency(getTotalSewa(data)-getPaidAmount(data)) }}</span>
+                <div v-if="getTotalSewa(data)-getPaidAmount(data) > 0">
+                  <span class="font-mono-numeric text-info text-sm italic">(sisa){{ formatCurrency(getTotalSewa(data)-getPaidAmount(data)) }}</span>
+                </div>
+                <div v-else>
+                 <BookingStatusBadge status="lunas"/>
+                </div>
               </div>
             </template>
           </Column>
@@ -709,12 +762,44 @@ const getBookingCardClass = (booking) => {
     </div>
 
     <div v-if="activeTab === 2" class="tab-content">
-      <div class="calendar-header">
-         <div class="flex items-center gap-4">
-           <Button icon="pi pi-chevron-left" @click="prevMonth" text rounded />
-           <h2 class="calendar-title">{{ format(new Date(calendarStart), 'MMMM yyyy') }}</h2>
-           <Button icon="pi pi-chevron-right" @click="nextMonth" text rounded />
-         </div>
+      <!-- Calendar Controls Bar -->
+      <div class="calendar-controls-bar">
+        <!-- Month Navigation -->
+        <div class="calendar-nav-group">
+          <Button icon="pi pi-chevron-left" @click="prevMonth" text rounded size="small" />
+          <h2 class="calendar-title">{{ format(new Date(calendarStart), 'MMMM yyyy') }}</h2>
+          <Button icon="pi pi-chevron-right" @click="nextMonth" text rounded size="small" />
+        </div>
+
+        <!-- Filters -->
+        <div class="calendar-filters-group">
+          <Dropdown
+            v-model="calendarOwnerFilter"
+            :options="rentalOwners"
+            optionLabel="nama"
+            optionValue="id"
+            placeholder="Semua Pemilik"
+            showClear
+            filter
+            class="calendar-filter-dropdown"
+          />
+          <Dropdown
+            v-model="calendarTransactionFilter"
+            :options="calendarTransactionOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="calendar-filter-dropdown"
+          />
+          <!-- Refresh button -->
+          <button
+            class="btn-pill btn-secondary btn-pill-compact"
+            :disabled="unitsLoading"
+            @click="loadData"
+          >
+            <i class="pi pi-refresh" :class="{ 'pi-spin': unitsLoading }"></i>
+            Refresh
+          </button>
+        </div>
       </div>
 
       <ProgressBar v-if="unitsLoading" mode="indeterminate" style="height: 4px" class="mb-4" />
@@ -724,10 +809,10 @@ const getBookingCardClass = (booking) => {
         <p class="text-secondary">Tidak ada unit kendaraan yang tersedia.</p>
       </div>
 
-      <BookingCalendar 
+      <BookingCalendar
         v-else
-        :bookings="calendarBookings" 
-        :units="units" 
+        :bookings="calendarBookings"
+        :units="filteredCalendarUnits"
         :startDate="calendarStart"
         @booking-click="goToDetail"
         @cell-click="openCreateWithPreFill"
@@ -889,7 +974,53 @@ const getBookingCardClass = (booking) => {
 }
 
 .filter-search {
+   display: block;
+   position: relative;
    width: 100%;
+}
+
+.filter-search > i {
+   position: absolute;
+   top: 50%;
+   left: 12px;
+   z-index: 1;
+   color: var(--text-tertiary);
+   font-size: 12px;
+   transform: translateY(-50%);
+   pointer-events: none;
+}
+
+.filter-search :deep(.p-inputtext) {
+   padding-left: 34px;
+}
+
+.filter-bar :deep(.p-inputtext),
+.filter-bar :deep(.p-datepicker input),
+.filter-bar :deep(.p-select),
+.filter-bar :deep(.p-dropdown) {
+   min-height: 36px;
+   border-radius: var(--radius-default);
+   border-color: var(--surface-border);
+   font-size: 13px;
+}
+
+.filter-bar :deep(.p-select),
+.filter-bar :deep(.p-dropdown) {
+   display: inline-flex;
+   align-items: center;
+}
+
+.filter-bar :deep(.p-select-label),
+.filter-bar :deep(.p-dropdown-label) {
+   display: flex;
+   align-items: center;
+   padding-top: 0;
+   padding-bottom: 0;
+}
+
+.filter-bar :deep(.p-select-dropdown),
+.filter-bar :deep(.p-dropdown-trigger) {
+   width: 36px;
 }
 
 .filter-actions {
@@ -906,22 +1037,45 @@ const getBookingCardClass = (booking) => {
 }
 
 .status-filter-buttons {
-   max-width: 100%;
-}
-
-:deep(.status-filter-buttons.p-selectbutton) {
    display: flex;
    flex-wrap: wrap;
    gap: 4px;
+   max-width: 100%;
 }
 
-:deep(.status-filter-buttons .p-togglebutton) {
+.status-filter-button {
    min-height: 32px;
+   padding: 7px 14px;
    border-radius: var(--radius-full);
    border: 1px solid var(--surface-border);
+   background: var(--surface-default);
+   color: var(--text-secondary);
+   font-family: var(--font-body);
    font-size: 11px;
    font-weight: 700;
+   line-height: 1.2;
    white-space: nowrap;
+   cursor: pointer;
+   box-shadow: inset 0 0 0 1px rgba(26, 29, 46, 0.02);
+   transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.status-filter-button:hover {
+   border-color: var(--neutral-6);
+   background: var(--card-bg-hover);
+   color: var(--text-primary);
+}
+
+.status-filter-button.active {
+   border-color: var(--primary);
+   background: var(--primary);
+   color: var(--text-white);
+   box-shadow: 0 4px 10px rgba(26, 29, 46, 0.18);
+}
+
+.status-filter-button.active:hover {
+   background: var(--primary);
+   color: var(--text-white);
 }
 
 /* === DataTable Styling === */
@@ -1380,5 +1534,54 @@ const getBookingCardClass = (booking) => {
      min-height: 0;
      overflow: auto;
   }
+}
+
+/* === Calendar Controls Bar === */
+.calendar-controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--surface-default);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  box-shadow: var(--shadow-tile);
+}
+
+.calendar-nav-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.calendar-title {
+  font-family: var(--font-headline);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 160px;
+  text-align: center;
+}
+
+.calendar-filters-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.calendar-filter-dropdown {
+  min-width: 160px;
+}
+
+.calendar-filter-dropdown :deep(.p-select),
+.calendar-filter-dropdown :deep(.p-dropdown) {
+  min-height: 34px;
+  border-radius: var(--radius-default);
+  border-color: var(--surface-border);
+  font-size: 12px;
 }
 </style>

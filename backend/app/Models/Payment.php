@@ -28,4 +28,9 @@ class Payment extends Model
     {
         return $this->belongsTo(PaymentAccount::class);
     }
+
+    public function bookingPayments()
+    {
+        return $this->hasMany(BookingPayment::class, 'invoice_payment_id');
+    }
 }
