@@ -125,6 +125,40 @@ body {
 .layout-content {
   background-color: var(--page-bg);
 }
+/* === Tab Toggle === */
+.tab-toggle-container {
+   margin-bottom: var(--space-2xl);
+}
+
+.pill-toggle {
+   display: inline-flex;
+   background: var(--text-white);
+   padding: 4px;
+   border-radius: var(--radius-full);
+   border: 1px solid rgba(26, 29, 46, 0.10);
+   box-shadow: var(--shadow-tile);
+   gap: 4px;
+}
+
+.toggle-item {
+   padding: 6px 16px;
+   border-radius: var(--radius-full);
+   border: none;
+   background: transparent;
+   font-family: var(--font-body);
+   font-size: 12px;
+   font-weight: 600;
+   color: var(--text-secondary);
+   cursor: pointer;
+   transition: all 0.2s;
+}
+
+.toggle-item.active {
+   background: var(--text-primary);
+   color: var(--neutral-4);
+   box-shadow: var(--shadow-tile);
+}
+
 
 /* === Typography Classes === */
 .font-headline { font-family: var(--font-headline); }

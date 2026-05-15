@@ -907,37 +907,6 @@ const getBookingCardClass = (booking) => {
    display: none;
 }
 
-/* === Tab Toggle === */
-.tab-toggle-container {
-   margin-bottom: var(--space-2xl);
-}
-
-.pill-toggle {
-   display: inline-flex;
-   background: var(--card-bg);
-   padding: 4px;
-   border-radius: var(--radius-full);
-   gap: 4px;
-}
-
-.toggle-item {
-   padding: 6px 16px;
-   border-radius: var(--radius-full);
-   border: none;
-   background: transparent;
-   font-family: var(--font-body);
-   font-size: 12px;
-   font-weight: 600;
-   color: var(--text-secondary);
-   cursor: pointer;
-   transition: all 0.2s;
-}
-
-.toggle-item.active {
-   background: var(--text-primary);
-   color: #FFFFFF;
-   box-shadow: var(--shadow-tile);
-}
 
 /* === Filter Bar === */
 .filter-bar {
