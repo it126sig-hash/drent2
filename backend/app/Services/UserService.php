@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Driver;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
@@ -12,7 +14,7 @@ class UserService
     public function getAll(array $filters = []): LengthAwarePaginator
     {
         $query = User::query()
-            ->with('branch')
+            ->with(['branch', 'driver'])
             ->where('tenant_id', Auth::user()->tenant_id);
 
         // Branch scope (Global Rule #8)
@@ -42,19 +44,44 @@ class UserService
 
     public function create(array $data): User
     {
+        $driverId = $data['driver_id'] ?? null;
+        unset($data['driver_id']);
+
         $data['tenant_id'] = Auth::user()->tenant_id;
         $data['password'] = Hash::make($data['password']);
         
-        return User::create($data);
+        return DB::transaction(function () use ($data, $driverId) {
+            $user = User::create($data);
+            $this->syncDriver($user, $data['role'], $driverId);
+
+            return $user->load(['branch', 'driver']);
+        });
     }
 
     public function update(User $user, array $data): User
     {
+        $driverId = $data['driver_id'] ?? null;
+        $hasDriver = array_key_exists('driver_id', $data);
+        unset($data['driver_id']);
+
         // Don't update password in general update
         unset($data['password']);
-        
-        $user->update($data);
-        return $user;
+
+        return DB::transaction(function () use ($user, $data, $driverId, $hasDriver) {
+            $role = $data['role'] ?? $user->role;
+
+            $user->update($data);
+
+            if ($role !== 'driver_tetap') {
+                Driver::query()
+                    ->where('user_id', $user->id)
+                    ->update(['user_id' => null]);
+            } elseif ($hasDriver) {
+                $this->syncDriver($user, $role, $driverId);
+            }
+
+            return $user->load(['branch', 'driver']);
+        });
     }
 
     public function delete(User $user): bool
@@ -66,5 +93,21 @@ class UserService
     {
         $user->update(['password' => Hash::make($newPassword)]);
         return $user;
+    }
+
+    private function syncDriver(User $user, string $role, ?int $driverId): void
+    {
+        if ($role !== 'driver_tetap' || ! $driverId) {
+            return;
+        }
+
+        Driver::query()
+            ->where('user_id', $user->id)
+            ->where('id', '!=', $driverId)
+            ->update(['user_id' => null]);
+
+        Driver::query()
+            ->whereKey($driverId)
+            ->update(['user_id' => $user->id]);
     }
 }

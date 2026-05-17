@@ -60,6 +60,7 @@ class StoreBookingRequest extends FormRequest
             'harga_dealing' => 'nullable|integer|min:0',
             'dp' => 'nullable|integer|min:0',
             'rekening_dp_id' => 'required_with:dp|nullable|exists:payment_accounts,id',
+            'dp_paid_at' => 'nullable|date',
             'catatan' => 'nullable|string',
         ];
     }

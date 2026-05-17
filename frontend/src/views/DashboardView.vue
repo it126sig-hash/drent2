@@ -1,313 +1,906 @@
 <script setup>
-import { ref } from 'vue'
-import { useAuthStore } from '../stores/auth'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import Button from 'primevue/button'
+import DatePicker from 'primevue/datepicker'
+import ProgressBar from 'primevue/progressbar'
+import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
+import { useAuthStore } from '../stores/auth'
+import { useDashboard } from '../composables/useDashboard'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const { dashboard, loading, fetchDashboard } = useDashboard()
 
-// === Dummy Data ===
-const kpiStats = ref([
-  { label: 'Unit Tersedia', value: '18 / 32', icon: 'pi pi-car', delta: '+2 hari ini', deltaColor: 'var(--positive)' },
-  { label: 'Booking Aktif', value: '12', icon: 'pi pi-calendar-check', delta: 'Sesuai target', deltaColor: 'var(--info-cyan)' },
-  { label: 'Pendapatan Hari Ini', value: 'Rp 8.500.000', icon: 'pi pi-wallet', delta: '+15%', deltaColor: 'var(--positive)', isMono: true },
-  { label: 'Piutang Berjalan', value: 'Rp 2.450.000', icon: 'pi pi-exclamation-circle', delta: '3 booking', deltaColor: 'var(--warning)', isMono: true }
-])
-
-const recentBookings = ref([
-  { id: 'BK-1024', customer: 'Budi Santoso', unit: 'Toyota Avanza (B 1234 ABC)', status: 'active', amount: 'Rp 450.000', date: '14 Mei, 09:00' },
-  { id: 'BK-1025', customer: 'Siti Aminah', unit: 'Honda Brio (B 5678 DEF)', status: 'pending', amount: 'Rp 300.000', date: '14 Mei, 10:30' },
-  { id: 'BK-1026', customer: 'Andi Wijaya', unit: 'Mitsubishi Xpander (B 9012 GHI)', status: 'completed', amount: 'Rp 600.000', date: '13 Mei, 15:00' },
-  { id: 'BK-1027', customer: 'Rina Kartika', unit: 'Toyota Innova (B 3456 JKL)', status: 'active', amount: 'Rp 850.000', date: '14 Mei, 08:00' }
-])
-
-const recentTransactions = ref([
-  { type: 'Penerimaan', merchant: 'Booking #BK-1024 - Budi Santoso', amount: '+ Rp 450.000', date: '10:15', direction: 'in' },
-  { type: 'Pengeluaran', merchant: 'Biaya Cuci Mobil - Avanza B 1234 ABC', amount: '- Rp 50.000', date: '09:30', direction: 'out' },
-  { type: 'Penerimaan', merchant: 'Booking #BK-1026 - Andi Wijaya', amount: '+ Rp 600.000', date: 'Kemarin', direction: 'in' },
-  { type: 'Pengeluaran', merchant: 'Bensin Refill - Xpander B 9012 GHI', amount: '- Rp 200.000', date: 'Kemarin', direction: 'out' }
-])
-
-const armadaStats = ref([
-  { label: 'Tersedia', value: 18, color: 'var(--positive)', percentage: 56 },
-  { label: 'Disewa', value: 12, color: 'var(--warning)', percentage: 38 },
-  { label: 'Maintenance', value: 2, color: 'var(--negative)', percentage: 6 }
-])
-
-const getStatusSeverity = (status) => {
-  switch (status) {
-    case 'active': return 'success'
-    case 'pending': return 'warn'
-    case 'completed': return 'info'
-    default: return 'secondary'
-  }
+const monthStart = () => {
+  const date = new Date()
+  return new Date(date.getFullYear(), date.getMonth(), 1)
 }
+
+const monthEnd = () => {
+  const date = new Date()
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
+}
+
+const filters = ref({
+  date_from: monthStart(),
+  date_to: monthEnd(),
+})
+
+const kpis = computed(() => dashboard.value?.kpis || [])
+const bookingToday = computed(() => dashboard.value?.booking_today || [])
+const armadaStatus = computed(() => dashboard.value?.armada_status || [])
+const finance = computed(() => dashboard.value?.finance_snapshot || {})
+const alerts = computed(() => dashboard.value?.alerts || [])
+const leaderboards = computed(() => dashboard.value?.repeat_order_leaderboards || [])
+const activeLeaderboardStatus = ref('Normal')
+const activeLeaderboard = computed(() => {
+  return leaderboards.value.find((board) => board.status === activeLeaderboardStatus.value)
+    || leaderboards.value[0]
+    || { status: 'Normal', label: 'Normal', items: [] }
+})
+
+const fetchData = () => fetchDashboard(filters.value)
+
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(amount || 0)
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+const statusLabel = (status) => {
+  const map = {
+    follow_up: 'Follow Up',
+    confirm: 'Confirm',
+    waiting_list: 'Waiting List',
+    rental_unit: 'Rental Unit',
+    selesai: 'Selesai',
+    batal: 'Batal',
+  }
+  return map[status] || status || '-'
+}
+
+const statusSeverity = (status) => {
+  const map = {
+    follow_up: 'info',
+    confirm: 'help',
+    waiting_list: 'warn',
+    rental_unit: 'success',
+    selesai: 'secondary',
+    batal: 'danger',
+    Normal: 'success',
+    Member: 'info',
+    Corporate: 'help',
+    'Rent to Rent': 'secondary',
+  }
+  return map[status] || 'secondary'
+}
+
+const toneClass = (tone) => `tone-${tone || 'neutral'}`
+
+const leaderboardOrderCount = (board) => {
+  return (board?.items || []).reduce((total, item) => total + (Number(item.total_bookings) || 0), 0)
+}
+
+const goTo = (path) => {
+  if (path) router.push(path)
+}
+
+onMounted(fetchData)
 </script>
 
 <template>
   <div class="dashboard-page">
-    <!-- Header Section -->
-    <header class="dashboard-header flex justify-between items-center mb-6">
+    <header class="dashboard-header">
       <div>
         <h1 class="text-h1">Ringkasan Operasional</h1>
         <p class="text-secondary text-sm">
-          Cabang: <span class="font-semibold text-primary">{{ authStore.branch?.name || 'Pusat' }}</span> • 
+          Cabang: <span class="font-semibold text-primary">{{ authStore.branch?.name || 'Pusat' }}</span>
+          <span class="separator">-</span>
           {{ authStore.user?.name }} ({{ authStore.user?.role }})
         </p>
       </div>
-      <button class="btn-pill btn-primary" @click="router.push({ name: 'BookingCreate' })">
-        <i class="pi pi-plus text-[10px]"></i>
-        <span>Buat Booking</span>
-      </button>
+
+      <div class="header-actions">
+        <DatePicker
+          v-model="filters.date_from"
+          dateFormat="dd M yy"
+          showIcon
+          class="dashboard-date"
+          placeholder="Dari"
+        />
+        <DatePicker
+          v-model="filters.date_to"
+          dateFormat="dd M yy"
+          showIcon
+          class="dashboard-date"
+          placeholder="Sampai"
+        />
+        <button class="btn-pill btn-secondary" :disabled="loading" @click="fetchData">
+          <i class="pi pi-refresh text-[10px]" :class="{ 'pi-spin': loading }"></i>
+          <span>Refresh</span>
+        </button>
+        <button class="btn-pill btn-primary" @click="router.push({ name: 'BookingCreate' })">
+          <i class="pi pi-plus text-[10px]"></i>
+          <span>Buat Booking</span>
+        </button>
+      </div>
     </header>
 
-    <!-- KPI Grid -->
-    <section class="kpi-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-      <div v-for="stat in kpiStats" :key="stat.label" class="kpi-tile">
-        <div class="kpi-header flex justify-between items-start">
-          <div class="kpi-icon-box">
-            <i :class="stat.icon"></i>
+    <ProgressBar v-if="loading" mode="indeterminate" class="dashboard-loader" />
+
+    <section class="kpi-grid">
+      <template v-if="loading && !dashboard">
+        <div v-for="index in 5" :key="`skeleton-${index}`" class="kpi-tile">
+          <Skeleton width="36px" height="36px" />
+          <Skeleton width="70%" height="14px" class="mt-4" />
+          <Skeleton width="45%" height="24px" class="mt-2" />
+        </div>
+      </template>
+
+      <template v-else>
+        <div v-for="stat in kpis" :key="stat.key" class="kpi-tile" :class="toneClass(stat.tone)">
+          <div class="kpi-header">
+            <div class="kpi-icon">
+              <i :class="stat.icon"></i>
+            </div>
+            <span class="kpi-delta">{{ stat.delta }}</span>
           </div>
-          <span class="kpi-delta" :style="{ color: stat.deltaColor }">{{ stat.delta }}</span>
+          <div class="kpi-body">
+            <p>{{ stat.label }}</p>
+            <strong>{{ stat.display_value }}</strong>
+          </div>
         </div>
-        <div class="kpi-body mt-3">
-          <p class="kpi-label">{{ stat.label }}</p>
-          <h3 class="kpi-value" :class="{ 'font-mono-numeric': stat.isMono }">{{ stat.value }}</h3>
-        </div>
-      </div>
+      </template>
     </section>
 
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column: Main Activities -->
-      <div class="lg:col-span-2 space-y-6">
-        <!-- Upcoming Bookings -->
-        <section class="app-card">
-          <div class="app-section-header flex justify-between items-center px-4 py-3 border-b">
-            <div class="flex items-center gap-2">
-              <i class="pi pi-calendar text-secondary"></i>
-              <h2 class="text-h2">Booking Hari Ini</h2>
-            </div>
-            <router-link to="/bookings" class="text-link text-xs">Lihat Semua</router-link>
+    <div class="dashboard-grid">
+      <section class="app-card dashboard-panel main-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Booking Hari Ini</h2>
+            <span>{{ dashboard?.period?.label || 'Bulan berjalan' }}</span>
           </div>
-          <div class="p-4 space-y-3">
-            <div v-for="booking in recentBookings" :key="booking.id" class="booking-item-row flex items-center justify-between p-3 border rounded-[10px] hover:bg-[var(--card-bg-hover)] transition-colors">
-              <div class="flex items-center gap-3">
-                <div class="unit-avatar bg-[var(--card-bg)] w-10 h-10 rounded-full flex items-center justify-center">
-                  <i class="pi pi-car text-primary"></i>
-                </div>
-                <div>
-                  <p class="text-sm font-semibold text-primary">{{ booking.customer }}</p>
-                  <p class="text-[11px] text-secondary">{{ booking.unit }}</p>
-                </div>
+          <router-link to="/bookings" class="panel-link">Lihat Semua</router-link>
+        </div>
+
+        <div v-if="bookingToday.length" class="booking-list">
+          <article v-for="booking in bookingToday" :key="booking.id" class="booking-row">
+            <div class="booking-icon">
+              <i class="pi pi-car"></i>
+            </div>
+            <div class="booking-main">
+              <div class="booking-title">
+                <strong>{{ booking.customer_name || '-' }}</strong>
+                <Tag :value="statusLabel(booking.status)" :severity="statusSeverity(booking.status)" />
+                <Tag v-if="booking.is_late" value="Terlambat" severity="danger" />
               </div>
-              <div class="text-right flex flex-col items-end gap-1">
-                <span class="text-[12px] font-mono-numeric font-semibold">{{ booking.amount }}</span>
-                <Tag :value="booking.status" :severity="getStatusSeverity(booking.status)" class="text-[9px] uppercase tracking-wider" />
+              <p>{{ booking.kode_booking }} - {{ booking.unit_label || '-' }}</p>
+              <span>{{ formatDateTime(booking.tgl_sewa) }} sampai {{ formatDateTime(booking.tgl_kembali) }}</span>
+            </div>
+            <strong class="booking-amount">{{ formatCurrency(booking.amount) }}</strong>
+          </article>
+        </div>
+
+        <div v-else class="empty-state">
+          <i class="pi pi-calendar"></i>
+          <span>Tidak ada booking hari ini.</span>
+        </div>
+      </section>
+
+      <aside class="side-stack">
+        <section class="app-card dashboard-panel">
+          <div class="panel-header compact">
+            <h2>Status Armada</h2>
+          </div>
+          <div class="armada-list">
+            <div v-for="item in armadaStatus" :key="item.key" class="armada-row">
+              <div>
+                <span class="tone-dot" :class="toneClass(item.tone)"></span>
+                <strong>{{ item.label }}</strong>
+              </div>
+              <span>{{ item.value }} unit</span>
+              <div class="armada-track">
+                <div :class="['armada-fill', toneClass(item.tone)]" :style="{ width: `${item.percentage}%` }"></div>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- Recent Transactions -->
-        <section class="app-card">
-          <div class="app-section-header flex justify-between items-center px-4 py-3 border-b">
-            <div class="flex items-center gap-2">
-              <i class="pi pi-history text-secondary"></i>
-              <h2 class="text-h2">Transaksi Terakhir</h2>
-            </div>
-            <router-link to="/finance" class="text-link text-xs">Riwayat Keuangan</router-link>
+        <section class="app-card dashboard-panel">
+          <div class="panel-header compact">
+            <h2>Finance Snapshot</h2>
           </div>
-          <div class="p-4 space-y-2">
-            <div v-for="(tx, idx) in recentTransactions" :key="idx" class="transaction-row flex items-center justify-between py-2 border-b last:border-0 border-[var(--surface-border)]">
-              <div class="flex items-center gap-3">
-                <div class="tx-icon w-8 h-8 rounded-full flex items-center justify-center text-[12px]" 
-                     :class="tx.direction === 'in' ? 'bg-[#E6F6EC] text-[#147239]' : 'bg-[#FCEAE9] text-[#B02A24]'">
-                  <i :class="tx.direction === 'in' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right'"></i>
-                </div>
-                <div>
-                  <p class="text-sm font-medium text-primary">{{ tx.type }}</p>
-                  <p class="text-[11px] text-secondary">{{ tx.merchant }}</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono-numeric font-semibold" :class="tx.direction === 'in' ? 'text-positive' : 'text-negative'">{{ tx.amount }}</p>
-                <p class="text-[10px] text-secondary">{{ tx.date }}</p>
-              </div>
+          <div class="finance-grid">
+            <div>
+              <span>Invoice belum lunas</span>
+              <strong>{{ formatCurrency(finance.outstanding_invoice_amount) }}</strong>
+              <small>{{ finance.outstanding_invoice_count || 0 }} invoice</small>
             </div>
+            <div>
+              <span>Rent to Rent terbuka</span>
+              <strong>{{ formatCurrency(finance.open_rent_to_rent_bill_amount) }}</strong>
+              <small>{{ finance.open_rent_to_rent_bill_count || 0 }} tagihan</small>
+            </div>
+          </div>
+          <div class="payment-list">
+            <article v-for="payment in finance.latest_payments || []" :key="payment.id">
+              <div>
+                <strong>{{ payment.customer_name || '-' }}</strong>
+                <span>{{ payment.booking_code || '-' }} - {{ payment.payment_account || '-' }}</span>
+              </div>
+              <b>{{ formatCurrency(payment.amount) }}</b>
+            </article>
+            <div v-if="!(finance.latest_payments || []).length" class="mini-empty">Belum ada pembayaran periode ini.</div>
           </div>
         </section>
+      </aside>
+    </div>
+
+    <section class="alert-grid">
+      <button
+        v-for="alert in alerts"
+        :key="alert.key"
+        type="button"
+        class="alert-tile"
+        :class="toneClass(alert.tone)"
+        @click="goTo(alert.route)"
+      >
+        <span>{{ alert.label }}</span>
+        <strong>{{ alert.value }}</strong>
+      </button>
+    </section>
+
+    <section class="leaderboard-section">
+      <div class="section-heading">
+        <div>
+          <h2>Top Konsumen Repeat Order</h2>
+          <p>Ranking berdasarkan berapa kali order selesai pada periode terpilih.</p>
+        </div>
       </div>
 
-      <!-- Right Column: Stats & Shortcuts -->
-      <div class="space-y-6">
-        <!-- Armada Status -->
-        <section class="app-card">
-          <div class="app-section-header px-4 py-3 border-b">
-            <h2 class="text-h2">Status Armada</h2>
-          </div>
-          <div class="p-4">
-            <div class="flex justify-between mb-4">
-              <div v-for="item in armadaStats" :key="item.label" class="text-center">
-                <p class="text-[11px] text-secondary mb-1">{{ item.label }}</p>
-                <p class="text-lg font-bold" :style="{ color: item.color }">{{ item.value }}</p>
-              </div>
-            </div>
-            <div class="armada-progress-bar w-full h-2 bg-[var(--card-bg-hover)] rounded-full flex overflow-hidden">
-              <div v-for="item in armadaStats" :key="item.label" 
-                   :style="{ width: item.percentage + '%', backgroundColor: item.color }" 
-                   class="h-full"></div>
-            </div>
-            <div class="mt-4 space-y-2">
-              <div class="flex items-center justify-between text-[12px]">
-                <span class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-[var(--positive)]"></span> Ready
-                </span>
-                <span class="font-semibold">56%</span>
-              </div>
-              <div class="flex items-center justify-between text-[12px]">
-                <span class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-[var(--warning)]"></span> Sedang Jalan
-                </span>
-                <span class="font-semibold">38%</span>
-              </div>
-              <div class="flex items-center justify-between text-[12px]">
-                <span class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-[var(--negative)]"></span> Maintenance
-                </span>
-                <span class="font-semibold">6%</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Quick Actions Card -->
-        <section class="app-card bg-[var(--primary)] text-white overflow-hidden relative">
-          <div class="p-5 relative z-10">
-            <h3 class="font-headline text-sm font-semibold mb-2">Butuh Bantuan?</h3>
-            <p class="text-[12px] opacity-80 mb-4">Butuh bantuan teknis atau ada kendala operasional? Hubungi IT Support atau Supervisor.</p>
-            <button class="btn-pill btn-secondary w-full !bg-white !text-primary !border-none">
-              <span>Buka Support Ticket</span>
+      <section class="app-card leaderboard-card">
+        <div class="leaderboard-header">
+          <div class="leaderboard-tabs">
+            <button
+              v-for="board in leaderboards"
+              :key="board.status"
+              type="button"
+              class="leaderboard-tab"
+              :class="{ active: activeLeaderboard.status === board.status }"
+              @click="activeLeaderboardStatus = board.status"
+            >
+              <span>{{ board.label }}</span>
+              <b>{{ leaderboardOrderCount(board) }}x</b>
             </button>
           </div>
-          <!-- Decorative circle -->
-          <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full"></div>
-        </section>
+          <span>Top 5</span>
+        </div>
 
-        <!-- Quick Info / Tasks -->
-        <section class="app-card p-4">
-          <div class="flex items-center gap-2 mb-3">
-            <i class="pi pi-info-circle text-info-cyan"></i>
-            <span class="text-[12px] font-semibold text-primary">Info Penting</span>
-          </div>
-          <ul class="text-[11px] text-secondary space-y-2">
-            <li class="flex gap-2">
-              <span class="text-warning">•</span>
-              <span>Unit <b>B 1234 ABC</b> jatuh tempo pajak besok.</span>
-            </li>
-            <li class="flex gap-2">
-              <span class="text-positive">•</span>
-              <span>Supervisor menyetujui refund Booking #BK-1002.</span>
-            </li>
-          </ul>
-        </section>
-      </div>
-    </div>
+        <div v-if="activeLeaderboard.items.length" class="leaderboard-list">
+          <article v-for="(item, index) in activeLeaderboard.items" :key="`${activeLeaderboard.status}-${item.source}-${item.id}`" class="leaderboard-row">
+            <div class="rank">{{ index + 1 }}</div>
+            <div class="leaderboard-main">
+              <strong>{{ item.name }}</strong>
+              <span>{{ item.contact || '-' }}</span>
+              <small>{{ item.latest_booking_code || '-' }} - {{ formatDateTime(item.latest_booking_at) }}</small>
+            </div>
+            <div class="leaderboard-metric">
+              <strong>{{ item.total_bookings }}x</strong>
+              <span>order selesai</span>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="mini-empty">Belum ada repeat order selesai.</div>
+      </section>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .dashboard-page {
-  padding: var(--space-xl);
-  max-width: 1400px;
+  max-width: 1480px;
   margin: 0 auto;
+  padding: var(--space-xl);
 }
 
-/* KPI Tile Styles */
-.kpi-tile {
-  background: var(--surface-default);
-  border: 1px solid var(--surface-border);
-  padding: 16px;
-  border-radius: 10px;
-  box-shadow: var(--shadow-tile);
-  transition: transform 0.2s, box-shadow 0.2s;
+.dashboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
 }
 
-.kpi-tile:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(26, 29, 46, 0.08);
+.separator {
+  margin: 0 8px;
+  color: var(--surface-border);
 }
 
-.kpi-icon-box {
-  width: 32px;
-  height: 32px;
-  background: var(--card-bg);
-  border-radius: 8px;
+.header-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dashboard-date {
+  width: 150px;
+}
+
+.dashboard-loader {
+  height: 3px;
+  margin-bottom: 14px;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.kpi-tile,
+.app-card,
+.alert-tile {
+  background: var(--surface-default);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-tile);
+}
+
+.kpi-tile {
+  padding: 16px;
+}
+
+.kpi-header,
+.panel-header,
+.booking-title,
+.armada-row > div,
+.payment-list article,
+.leaderboard-header,
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+}
+
+.kpi-header,
+.panel-header,
+.payment-list article,
+.leaderboard-header,
+.leaderboard-row {
+  justify-content: space-between;
+}
+
+.kpi-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--card-bg);
   color: var(--text-secondary);
 }
 
 .kpi-delta {
   font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.kpi-body {
+  margin-top: 14px;
+}
+
+.kpi-body p,
+.panel-header span,
+.leaderboard-header span,
+.finance-grid span,
+.payment-list span,
+.leaderboard-main span,
+.leaderboard-main small,
+.leaderboard-metric span,
+.booking-main p,
+.booking-main span {
+  color: var(--text-secondary);
+}
+
+.kpi-body p {
+  font-size: 12px;
   font-weight: 600;
 }
 
-.kpi-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.kpi-value {
+.kpi-body strong {
+  display: block;
+  margin-top: 3px;
   font-family: var(--font-headline);
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 21px;
   color: var(--text-primary);
-  margin-top: 2px;
 }
 
-/* App Card Styles */
-.app-card {
-  background: var(--surface-default);
-  border: 1px solid var(--surface-border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-tile);
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr);
+  gap: 18px;
+  align-items: start;
 }
 
-.text-link {
+.side-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.dashboard-panel {
+  overflow: hidden;
+}
+
+.panel-header {
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.panel-header.compact {
+  justify-content: flex-start;
+}
+
+.panel-header h2,
+.section-heading h2 {
+  margin: 0;
+  font-family: var(--font-headline);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.panel-header span,
+.panel-link,
+.leaderboard-header span {
+  font-size: 12px;
+}
+
+.panel-link {
   color: var(--text-secondary);
   text-decoration: none;
-  transition: color 0.2s;
+  font-weight: 700;
 }
 
-.text-link:hover {
+.panel-link:hover {
   color: var(--text-primary);
-  text-decoration: underline;
 }
 
-/* Unit Avatar in Row */
-.unit-avatar i {
-  font-size: 18px;
+.booking-list,
+.leaderboard-list,
+.payment-list,
+.armada-list {
+  display: grid;
+}
+
+.booking-list,
+.leaderboard-list {
+  gap: 10px;
+  padding: 14px;
+}
+
+.booking-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.booking-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-default);
+  color: var(--text-secondary);
+}
+
+.booking-title {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.booking-title strong,
+.leaderboard-main strong,
+.payment-list strong,
+.finance-grid strong {
+  color: var(--text-primary);
+}
+
+.booking-main p,
+.booking-main span {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.booking-amount {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.empty-state,
+.mini-empty {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.mini-empty {
+  padding: 16px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.armada-list {
+  gap: 12px;
+  padding: 16px;
+}
+
+.armada-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.armada-row > div {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.armada-track {
+  grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--card-bg);
+}
+
+.armada-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.finance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.finance-grid > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.finance-grid strong {
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.finance-grid small {
+  color: var(--text-secondary);
+}
+
+.payment-list {
+  padding: 0 16px 16px;
+}
+
+.payment-list article {
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--surface-border);
+}
+
+.payment-list article > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.payment-list b {
+  color: var(--positive);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.alert-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.alert-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 74px;
+  padding: 14px 16px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.alert-tile span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alert-tile strong {
+  font-size: 24px;
+  font-family: var(--font-headline);
+}
+
+.leaderboard-section {
+  margin-top: 22px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-heading p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.leaderboard-card {
+  overflow: hidden;
+}
+
+.leaderboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.leaderboard-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.leaderboard-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.leaderboard-tab b {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.leaderboard-tab.active {
+  border-color: var(--primary);
+  background: var(--surface-default);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.leaderboard-row {
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.rank {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: var(--surface-default);
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.leaderboard-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.leaderboard-main strong,
+.leaderboard-main span,
+.leaderboard-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-metric {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.leaderboard-metric strong {
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.tone-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.tone-positive {
+  color: var(--positive);
+}
+
+.tone-info {
+  color: var(--info-cyan);
+}
+
+.tone-warning {
+  color: var(--warning);
+}
+
+.tone-negative {
+  color: var(--negative);
+}
+
+.tone-neutral {
+  color: var(--text-secondary);
+}
+
+.tone-dot.tone-positive,
+.armada-fill.tone-positive {
+  background: var(--positive);
+}
+
+.tone-dot.tone-info,
+.armada-fill.tone-info {
+  background: var(--info-cyan);
+}
+
+.tone-dot.tone-warning,
+.armada-fill.tone-warning {
+  background: var(--warning);
+}
+
+.tone-dot.tone-negative,
+.armada-fill.tone-negative {
+  background: var(--negative);
+}
+
+.tone-dot.tone-neutral,
+.armada-fill.tone-neutral {
+  background: var(--text-secondary);
+}
+
+.kpi-tile.tone-positive .kpi-delta,
+.alert-tile.tone-positive strong {
+  color: var(--positive);
+}
+
+.kpi-tile.tone-info .kpi-delta,
+.alert-tile.tone-info strong {
+  color: var(--info-cyan);
+}
+
+.kpi-tile.tone-warning .kpi-delta,
+.alert-tile.tone-warning strong {
+  color: var(--warning);
+}
+
+.kpi-tile.tone-negative .kpi-delta,
+.alert-tile.tone-negative strong {
+  color: var(--negative);
+}
+
+@media (max-width: 1180px) {
+  .kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
   .dashboard-page {
     padding: var(--space-lg);
   }
-  
-  .dashboard-header {
+
+  .dashboard-header,
+  .section-heading {
+    align-items: stretch;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
   }
-  
-  .dashboard-header button {
+
+  .header-actions,
+  .header-actions .btn-pill,
+  .dashboard-date {
     width: 100%;
+  }
+
+  .kpi-grid,
+  .alert-grid,
+  .finance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .booking-amount {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .leaderboard-row {
+    align-items: flex-start;
+  }
+
+  .leaderboard-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .leaderboard-metric {
+    min-width: 86px;
   }
 }
 </style>
-

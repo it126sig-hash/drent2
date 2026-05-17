@@ -59,4 +59,19 @@ class BookingDetail extends Model
     {
         return $this->belongsTo(PricingPackage::class);
     }
+
+    public function operationalFunds()
+    {
+        return $this->hasMany(DriverOperationalFund::class);
+    }
+
+    public function operationalExpenses()
+    {
+        return $this->hasMany(DriverOperationalExpense::class);
+    }
+
+    public function rentToRentDebt()
+    {
+        return $this->hasOne(RentToRentDebt::class);
+    }
 }

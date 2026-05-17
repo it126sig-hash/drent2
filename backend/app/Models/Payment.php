@@ -29,6 +29,11 @@ class Payment extends Model
         return $this->belongsTo(PaymentAccount::class);
     }
 
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
     public function bookingPayments()
     {
         return $this->hasMany(BookingPayment::class, 'invoice_payment_id');

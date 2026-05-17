@@ -43,6 +43,7 @@ const showCreateModeDialog = ref(false);
 const submitMode = ref('booking');
 const formErrors = ref({});
 const waitingListErrors = ref({});
+const isSubmitting = ref(false);
 
 const paketOptions = [
   { label: 'Harian', value: 'harian' },
@@ -103,6 +104,7 @@ const form = ref({
   harga_dealing: null,
   dp: null,
   rekening_dp_id: null,
+  dp_paid_at: new Date(),
   catatan: ''
 });
 
@@ -166,6 +168,13 @@ const packageCostItems = (pkg) =>
     amount: item.amount || 0,
     keterangan: item.keterangan || '',
   }));
+
+const getPackageCostKey = (cost) => [
+  cost.cost_type_id ?? '',
+  cost.type || 'biaya',
+  cost.label || '',
+  cost.keterangan || '',
+].join('|');
 
 const getSignedCostAmount = (cost) => {
   const amount = cost?.amount || 0;
@@ -253,10 +262,27 @@ const getPrimaryDetail = (booking) => {
     || null;
 };
 
+const getRentableDetails = (booking) => {
+  return (booking?.booking_details || []).filter(detail => detail.status !== 'batal');
+};
+
+const getLatestDate = (details, field) => {
+  return details
+    .map(detail => detail?.[field])
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a))[0] || null;
+};
+
+const getPeriodEndDate = (booking) => {
+  const details = getRentableDetails(booking);
+  return getLatestDate(details, 'tgl_kembali') || getPrimaryDetail(booking)?.tgl_kembali;
+};
+
 const loadBookingForEdit = async () => {
   try {
     const booking = await fetchOne(route.params.id);
     const detail = getPrimaryDetail(booking);
+    const latestReturnDate = getPeriodEndDate(booking);
 
     editingBooking.value = booking;
     suppressDurationSync.value = true;
@@ -274,7 +300,7 @@ const loadBookingForEdit = async () => {
       unit_placeholder: detail?.unit_placeholder || '',
 
       tgl_sewa: detail?.tgl_sewa ? new Date(detail.tgl_sewa) : null,
-      tgl_kembali: detail?.tgl_kembali ? new Date(detail.tgl_kembali) : null,
+      tgl_kembali: latestReturnDate ? new Date(latestReturnDate) : null,
       lama_sewa: detail?.lama_sewa || booking.lama_sewa || 1,
       paket_sewa: detail?.paket_sewa || booking.paket_sewa || 'harian',
       tujuan: booking.tujuan || '',
@@ -283,6 +309,9 @@ const loadBookingForEdit = async () => {
       harga_dealing: booking.harga_dealing ?? null,
       dp: booking.dp ?? null,
       rekening_dp_id: booking.rekening_dp_id ?? null,
+      dp_paid_at: booking.payments?.find(payment => payment.payment_type === 'dp')?.paid_at
+        ? new Date(booking.payments.find(payment => payment.payment_type === 'dp').paid_at)
+        : new Date(),
       catatan: booking.catatan || ''
     };
     selectedStartDateKey.value = getDateKey(form.value.tgl_sewa);
@@ -295,6 +324,8 @@ const loadBookingForEdit = async () => {
 };
 
 const handleSubmit = async () => {
+  if (isSubmitting.value) return;
+
   if (isBlacklisted.value) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Pelanggan diblacklist. Tidak bisa membuat booking.', life: 3000 });
     return;
@@ -315,6 +346,8 @@ const handleSubmit = async () => {
   if (isDirectWaitingList.value && !validateWaitingListForm()) {
     return;
   }
+
+  isSubmitting.value = true;
 
   try {
     const payload = { ...form.value };
@@ -354,6 +387,7 @@ const handleSubmit = async () => {
     // Format dates to YYYY-MM-DD HH:mm:ss
     if (payload.tgl_sewa) payload.tgl_sewa = formatDateTime(payload.tgl_sewa);
     if (payload.tgl_kembali) payload.tgl_kembali = formatDateTime(payload.tgl_kembali);
+    if (payload.dp_paid_at) payload.dp_paid_at = formatDateTime(payload.dp_paid_at);
 
     // Hapus field tidak relevan
     delete payload.customer_mode;
@@ -362,6 +396,7 @@ const handleSubmit = async () => {
     if (isEditMode.value) {
       delete payload.dp;
       delete payload.rekening_dp_id;
+      delete payload.dp_paid_at;
 
       const booking = await updateBooking(route.params.id, payload);
       toast.add({ severity: 'success', summary: 'Sukses', detail: `Booking ${booking.kode_booking} berhasil diperbarui`, life: 3000 });
@@ -372,6 +407,7 @@ const handleSubmit = async () => {
     if (!payload.dp || payload.dp <= 0) {
       payload.dp = null;
       payload.rekening_dp_id = null;
+      payload.dp_paid_at = null;
     }
 
     const booking = await store(payload);
@@ -386,6 +422,8 @@ const handleSubmit = async () => {
     router.push({ name: 'BookingList' });
   } catch (err) {
     toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || `Gagal ${isEditMode.value ? 'memperbarui' : 'membuat'} booking`, life: 5000 });
+  } finally {
+    isSubmitting.value = false;
   }
 };
 
@@ -402,6 +440,10 @@ const validateBookingForm = () => {
 
   if (!isDirectWaitingList.value && (!form.value.harga_dealing || form.value.harga_dealing <= 0)) {
     formErrors.value.harga_dealing = 'Harga dealing wajib diisi.';
+  }
+
+  if (!isEditMode.value && form.value.dp > 0 && !form.value.dp_paid_at) {
+    formErrors.value.dp_paid_at = 'Tanggal pembayaran DP wajib diisi.';
   }
 
   if (Object.keys(formErrors.value).length) {
@@ -462,6 +504,7 @@ const applyDirectWaitingListBookingDefaults = (payload) => {
   payload.harga_dealing = null;
   payload.dp = null;
   payload.rekening_dp_id = null;
+  payload.dp_paid_at = null;
 };
 
 const buildWaitingListPayload = () => {
@@ -479,22 +522,86 @@ const buildWaitingListPayload = () => {
     harga_all_in: waitingListForm.value.pricing_mode === 'all_in'
       ? (waitingListForm.value.harga_all_in || selectedPackage?.harga || null)
       : null,
-    costs: waitingListForm.value.costs,
+    costs: waitingListForm.value.costs.map(({
+      _auto_all_in_ops,
+      _all_in_base_amount,
+      _all_in_package_cost,
+      _manual_all_in_ops,
+      ...cost
+    }) => cost),
     alamat_penjemputan: form.value.alamat_penjemputan,
     tujuan: form.value.tujuan,
     kota: form.value.kota,
   };
 };
 
+const getWaitingRentalDuration = () => form.value.lama_sewa || 1;
+
+const createAllInPackageCost = (cost) => {
+  const baseAmount = cost.amount || 0;
+  return {
+    ...cost,
+    amount: baseAmount * getWaitingRentalDuration(),
+    _auto_all_in_ops: true,
+    _all_in_base_amount: baseAmount,
+    _all_in_package_cost: true,
+  };
+};
+
+const syncWaitingAllInOperationalCosts = () => {
+  if (waitingListForm.value.pricing_mode !== 'all_in') {
+    waitingListForm.value.costs = waitingListForm.value.costs.filter(cost => !cost._all_in_package_cost);
+    return;
+  }
+
+  const pkg = findPricingPackage(waitingListForm.value.pricing_package_id);
+  if (!pkg) return;
+
+  const duration = getWaitingRentalDuration();
+  const packageItems = packageCostItems(pkg);
+  const packageKeys = new Set(packageItems.map(getPackageCostKey));
+
+  waitingListForm.value.costs = waitingListForm.value.costs.filter(cost => {
+    if (cost._auto_all_in_ops) return packageKeys.has(getPackageCostKey(cost));
+    return true;
+  });
+
+  packageItems.forEach(item => {
+    const key = getPackageCostKey(item);
+    const existing = waitingListForm.value.costs.find(cost =>
+      cost._all_in_package_cost && getPackageCostKey(cost) === key
+    );
+
+    if (existing) {
+      if (existing._auto_all_in_ops) {
+        existing._all_in_base_amount = item.amount || 0;
+        existing.amount = (item.amount || 0) * duration;
+      }
+      return;
+    }
+
+    waitingListForm.value.costs.push(createAllInPackageCost(item));
+  });
+};
+
+const onWaitingCostAmountUpdate = (cost, value) => {
+  if (!cost._auto_all_in_ops) return;
+  if (value !== (cost._all_in_base_amount || 0) * getWaitingRentalDuration()) {
+    delete cost._auto_all_in_ops;
+    cost._manual_all_in_ops = true;
+  }
+};
+
 const applyWaitingPackage = () => {
   const pkg = findPricingPackage(waitingListForm.value.pricing_package_id);
   if (!pkg) {
     waitingListForm.value.harga_all_in = null;
+    waitingListForm.value.costs = waitingListForm.value.costs.filter(cost => !cost._all_in_package_cost);
     return;
   }
 
   waitingListForm.value.harga_all_in = pkg.harga || null;
-  waitingListForm.value.costs = packageCostItems(pkg);
+  waitingListForm.value.costs = packageCostItems(pkg).map(createAllInPackageCost);
 };
 
 const addWaitingCostRow = () => {
@@ -599,6 +706,19 @@ watch(
   }
 );
 
+watch(
+  () => [
+    waitingListForm.value.pricing_mode,
+    waitingListForm.value.pricing_package_id,
+    waitingListForm.value.harga_all_in,
+    form.value.lama_sewa,
+  ],
+  () => {
+    if (!isDirectWaitingList.value) return;
+    syncWaitingAllInOperationalCosts();
+  }
+);
+
 const resetForm = () => {
   form.value = {
     customer_mode: 'existing',
@@ -621,6 +741,7 @@ const resetForm = () => {
     harga_dealing: null,
     dp: null,
     rekening_dp_id: null,
+    dp_paid_at: new Date(),
     catatan: ''
   };
   waitingListForm.value = {
@@ -1184,17 +1305,35 @@ const formatDate = (value) => {
 
               <transition name="slide-up">
                 <div v-if="form.dp > 0" class="form-field-vertical md:col-span-2 payment-account-panel animate-slide-up">
-                  <label class="field-label">Rekening DP *</label>
-                  <Dropdown
-                    v-model="form.rekening_dp_id"
-                    :options="accountOptions"
-                    optionLabel="name"
-                    optionValue="id"
-                    placeholder="Pilih akun pembayaran"
-                    class="w-full premium-input"
-                    :disabled="isEditMode"
-                    :empty-message="'Belum ada akun pembayaran aktif'"
-                  />
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="form-field-vertical">
+                      <label class="field-label">Rekening DP *</label>
+                      <Dropdown
+                        v-model="form.rekening_dp_id"
+                        :options="accountOptions"
+                        optionLabel="name"
+                        optionValue="id"
+                        placeholder="Pilih akun pembayaran"
+                        class="w-full premium-input"
+                        :disabled="isEditMode"
+                        :empty-message="'Belum ada akun pembayaran aktif'"
+                      />
+                    </div>
+                    <div class="form-field-vertical">
+                      <label class="field-label">Tanggal Pembayaran *</label>
+                      <Calendar
+                        v-model="form.dp_paid_at"
+                        dateFormat="dd M yy"
+                        showIcon
+                        showTime
+                        hourFormat="24"
+                        class="w-full premium-calendar"
+                        :class="{ 'p-invalid': formErrors.dp_paid_at }"
+                        :disabled="isEditMode"
+                      />
+                      <small class="p-error" v-if="formErrors.dp_paid_at">{{ formErrors.dp_paid_at }}</small>
+                    </div>
+                  </div>
                   <Message v-if="isEditMode" severity="info" icon="pi pi-lock" class="!m-0">
                     DP dan pembayaran dikunci saat edit booking. Perubahan pembayaran dilakukan dari menu pembayaran di detail booking.
                   </Message>
@@ -1414,7 +1553,14 @@ const formatDate = (value) => {
                     class="premium-input cost-kind-input"
                   />
                   <InputText v-model="cost.label" placeholder="Keterangan" class="premium-input cost-label-input" />
-                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="premium-input cost-amount-input" />
+                  <InputNumber
+                    v-model="cost.amount"
+                    mode="currency"
+                    currency="IDR"
+                    locale="id-ID"
+                    class="premium-input cost-amount-input"
+                    @update:modelValue="onWaitingCostAmountUpdate(cost, $event)"
+                  />
                   <Button icon="pi pi-times" text rounded severity="danger" class="remove-cost-button" @click="removeWaitingCostRow(idx)" />
                 </div>
                 <small class="p-error" v-if="waitingListErrors.costs">{{ waitingListErrors.costs }}</small>
@@ -1529,9 +1675,9 @@ const formatDate = (value) => {
             <Button
               :label="isEditMode ? 'Simpan Perubahan' : (isDirectWaitingList ? 'Simpan ke Waiting List' : 'Simpan Booking')"
               icon="pi pi-check"
-              :loading="bookingLoading"
+              :loading="bookingLoading || isSubmitting"
               @click="handleSubmit"
-              :disabled="isBlacklisted"
+              :disabled="isBlacklisted || isSubmitting"
               class="p-button-tosca"
             />
           </div>
@@ -1593,6 +1739,7 @@ const formatDate = (value) => {
 
 .booking-summary-column {
   min-width: 0;
+  align-self: start;
 }
 
 .section-stack {
@@ -1949,6 +2096,8 @@ const formatDate = (value) => {
 .summary-panel {
   position: sticky;
   top: var(--space-lg);
+  max-height: calc(100vh - (var(--space-lg) * 2));
+  overflow-y: auto;
   padding: var(--space-lg);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-default);
@@ -2115,6 +2264,8 @@ const formatDate = (value) => {
 
   .summary-panel {
     position: static;
+    max-height: none;
+    overflow-y: visible;
   }
 }
 

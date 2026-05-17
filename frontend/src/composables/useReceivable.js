@@ -6,7 +6,12 @@ export function useReceivable() {
   const toast = useToast()
   const receivables = ref([])
   const invoices = ref([])
+  const paymentHistory = ref({
+    latest: [],
+    groups: [],
+  })
   const loading = ref(false)
+  const historyLoading = ref(false)
   const actionLoading = ref(false)
   const error = ref(null)
   const pagination = ref({
@@ -80,6 +85,29 @@ export function useReceivable() {
     }
   }
 
+  const fetchPaymentHistory = async () => {
+    historyLoading.value = true
+    error.value = null
+
+    try {
+      const response = await receivableApi.getPaymentHistory({
+        latest_limit: 20,
+        group_limit: 30,
+      })
+
+      paymentHistory.value = {
+        latest: response.data.data?.latest || [],
+        groups: response.data.data?.groups || [],
+      }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengambil riwayat pembayaran'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      historyLoading.value = false
+    }
+  }
+
   const generate = async (payload) => {
     actionLoading.value = true
     try {
@@ -113,6 +141,23 @@ export function useReceivable() {
     }
   }
 
+  const refreshInvoiceAmount = async (invoiceId, data = {}) => {
+    actionLoading.value = true
+    try {
+      const response = await receivableApi.refreshInvoiceAmount(invoiceId, data)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Nominal invoice berhasil diperbarui', life: 3000 })
+      await fetchAll(1)
+      await fetchInvoices(pagination.value.current_page)
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal memperbarui nominal invoice'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   const openPdf = async (invoiceId, invoiceNumber = 'invoice') => {
     actionLoading.value = true
     try {
@@ -138,6 +183,7 @@ export function useReceivable() {
       toast.add({ severity: 'success', summary: 'Sukses', detail: 'Pembayaran invoice berhasil dicatat', life: 3000 })
       await fetchInvoices(pagination.value.current_page)
       await fetchAll(1)
+      await fetchPaymentHistory()
       return response.data.data
     } catch (err) {
       error.value = err.response?.data?.message || 'Gagal mencatat pembayaran invoice'
@@ -151,7 +197,9 @@ export function useReceivable() {
   return {
     receivables,
     invoices,
+    paymentHistory,
     loading,
+    historyLoading,
     actionLoading,
     error,
     pagination,
@@ -159,8 +207,10 @@ export function useReceivable() {
     invoiceFilters,
     fetchAll,
     fetchInvoices,
+    fetchPaymentHistory,
     generate,
     markSent,
+    refreshInvoiceAmount,
     openPdf,
     addPayment,
   }

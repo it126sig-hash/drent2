@@ -246,11 +246,11 @@ class BookingResource extends JsonResource
                 $total += (int) (($d->harga_all_in ?? 0) * $duration);
 
                 if ($d->relationLoaded('costs')) {
-                    $total += $d->costs
-                        ->where('type', 'diskon')
-                        ->sum(fn($cost) =>
-                            -((int) $cost->amount)
-                        );
+                    $total += $d->costs->sum(fn($cost) =>
+                        $cost->type === 'diskon'
+                            ? -((int) $cost->amount)
+                            : ((bool) $cost->is_additional ? (int) $cost->amount : 0)
+                    );
                 }
             } else {
                 $total += (int) (($d->harga_mobil - $d->diskon_mobil) * $duration);

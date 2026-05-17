@@ -137,10 +137,25 @@ class Booking extends Model
         return $this->hasMany(PhysicalCheck::class);
     }
 
+    public function operationalFunds()
+    {
+        return $this->hasMany(DriverOperationalFund::class);
+    }
+
+    public function operationalExpenses()
+    {
+        return $this->hasMany(DriverOperationalExpense::class);
+    }
+
     public function invoices()
     {
         return $this->belongsToMany(Invoice::class, 'invoice_bookings')
             ->withPivot('amount')
             ->withTimestamps();
+    }
+
+    public function rentToRentDebts()
+    {
+        return $this->hasMany(RentToRentDebt::class);
     }
 }

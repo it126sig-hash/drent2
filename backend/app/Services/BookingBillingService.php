@@ -20,7 +20,11 @@ class BookingBillingService
 
             if ($detail->pricing_mode === 'all_in') {
                 $additional = $detail->relationLoaded('costs')
-                    ? $detail->costs->sum(fn($cost) => $cost->type === 'diskon' ? -((int) $cost->amount) : 0)
+                    ? $detail->costs->sum(fn($cost) =>
+                        $cost->type === 'diskon'
+                            ? -((int) $cost->amount)
+                            : ((bool) $cost->is_additional ? (int) $cost->amount : 0)
+                    )
                     : 0;
 
                 return ((int) ($detail->harga_all_in ?? 0) * $duration) + $additional;

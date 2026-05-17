@@ -50,7 +50,7 @@ const detailDialogMode = ref('detail');
 
 // Payment dialog
 const showPaymentDialog = ref(false);
-const paymentForm = ref({ payment_account_id: null, amount: null, payment_type: 'cicilan', catatan: '' });
+const paymentForm = ref({ payment_account_id: null, amount: null, payment_type: 'cicilan', paid_at: new Date(), catatan: '' });
 const paymentFormErrors = ref({});
 const paymentConfirming = ref(false);
 const paymentSubmitting = ref(false);
@@ -73,6 +73,7 @@ const isPaymentSubmitDisabled = computed(() =>
   || !paymentForm.value.payment_type
   || !paymentForm.value.payment_account_id
   || !paymentForm.value.amount
+  || !paymentForm.value.paid_at
 );
 
 const accountOptions = computed(() =>
@@ -1244,7 +1245,7 @@ const onHandle = () => {
 };
 
 const openPaymentDialog = () => {
-  paymentForm.value = { payment_account_id: null, amount: null, payment_type: 'cicilan', catatan: '' };
+  paymentForm.value = { payment_account_id: null, amount: null, payment_type: 'cicilan', paid_at: new Date(), catatan: '' };
   paymentFormErrors.value = {};
   showPaymentDialog.value = true;
 };
@@ -1420,7 +1421,10 @@ const submitPayment = async () => {
       paymentConfirming.value = false;
       paymentSubmitting.value = true;
       try {
-        await addPayment(booking.value.id, { ...paymentForm.value });
+        await addPayment(booking.value.id, {
+          ...paymentForm.value,
+          paid_at: formatLocalDateTime(paymentForm.value.paid_at),
+        });
         showPaymentDialog.value = false;
         await loadBooking();
       } catch (err) {
@@ -1512,7 +1516,7 @@ const auditUserName = (user) => user?.name || '-';
     <!-- Header & Action Bar -->
     <div class="detail-page-header">
       <div class="flex items-center gap-3">
-        <Button icon="pi pi-arrow-left" text rounded @click="router.push({ name: 'BookingList' })" class="back-button" />
+        <Button icon="pi pi-arrow-left" text rounded @click="router.back()" class="back-button" />
         <div>
           <div class="flex flex-wrap items-center gap-3 mb-1">
             <h1 class="detail-title">Booking #{{ booking?.kode_booking || '...' }}</h1>
@@ -3044,6 +3048,19 @@ const auditUserName = (user) => user?.name || '-';
           <label class="text-xs font-semibold text-slate-600">Nominal *</label>
           <InputNumber v-model="paymentForm.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" :class="{ 'p-invalid': paymentFormErrors.amount }" />
           <small class="p-error" v-if="paymentFormErrors.amount">{{ paymentFormErrors.amount[0] }}</small>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Tanggal Pembayaran *</label>
+          <Calendar
+            v-model="paymentForm.paid_at"
+            dateFormat="dd M yy"
+            showIcon
+            showTime
+            hourFormat="24"
+            class="w-full"
+            :class="{ 'p-invalid': paymentFormErrors.paid_at }"
+          />
+          <small class="p-error" v-if="paymentFormErrors.paid_at">{{ paymentFormErrors.paid_at[0] }}</small>
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Catatan (opsional)</label>

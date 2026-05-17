@@ -8,6 +8,7 @@ import Dialog from 'primevue/dialog'
 import ProgressBar from 'primevue/progressbar'
 import Tag from 'primevue/tag'
 import Textarea from 'primevue/textarea'
+import rentToRentApi from '../../api/rentToRent'
 import { getSupervisorRequests } from '../../api/supervisorRequest'
 import { useBooking } from '../../composables/useBooking'
 
@@ -31,6 +32,7 @@ const rejectionNote = ref('')
 const requestTabs = [
   { label: 'Semua', value: 'all' },
   { label: 'Void Pembayaran', value: 'void_payment' },
+  { label: 'Void Rent to Rent', value: 'rent_to_rent_void_bill' },
   { label: 'Kembali Rental Unit', value: 'return_rental_unit' },
 ]
 
@@ -67,13 +69,15 @@ const formatDateTime = (value) => {
   return format(new Date(value), 'dd MMM yyyy HH:mm')
 }
 
-const tagSeverity = (type) => type === 'void_payment' ? 'warn' : 'info'
+const tagSeverity = (type) => ['void_payment', 'rent_to_rent_void_bill'].includes(type) ? 'warn' : 'info'
 
 const statusSeverity = (status) => status === 'approved' ? 'success' : 'warn'
 
 const approveRequest = async (request) => {
   if (request.type === 'void_payment') {
     await approveVoidPayment(request.payment.id)
+  } else if (request.type === 'rent_to_rent_void_bill') {
+    await rentToRentApi.approveVoidRentToRentBill(request.bill.id)
   } else {
     await approveReturnToRentalUnit(request.booking.id)
   }
@@ -92,6 +96,10 @@ const submitReject = async () => {
 
   if (selectedRequest.value.type === 'void_payment') {
     await rejectVoidPayment(selectedRequest.value.payment.id, {
+      void_rejection_note: rejectionNote.value,
+    })
+  } else if (selectedRequest.value.type === 'rent_to_rent_void_bill') {
+    await rentToRentApi.rejectVoidRentToRentBill(selectedRequest.value.bill.id, {
       void_rejection_note: rejectionNote.value,
     })
   } else {
@@ -174,7 +182,8 @@ onMounted(fetchRequests)
       </Column>
       <Column header="Booking" style="min-width: 12rem">
         <template #body="{ data }">
-          <button class="link-button" @click="router.push(`/bookings/${data.booking.id}`)">{{ data.booking.kode_booking }}</button>
+          <button v-if="data.booking?.id" class="link-button" @click="router.push(`/bookings/${data.booking.id}`)">{{ data.booking.kode_booking }}</button>
+          <strong v-else>{{ data.bill?.bill_number || data.booking?.kode_booking || '-' }}</strong>
           <div class="text-xs text-secondary mt-1">{{ data.booking.customer_name || '-' }}</div>
         </template>
       </Column>
@@ -184,6 +193,11 @@ onMounted(fetchRequests)
             <strong>{{ formatCurrency(data.payment.amount) }}</strong>
             <span>{{ data.payment.payment_type }}</span>
             <span>{{ data.payment.payment_account?.nama_bank || '-' }} {{ data.payment.payment_account?.nomor_rekening || '' }}</span>
+          </div>
+          <div v-else-if="data.type === 'rent_to_rent_void_bill'" class="detail-stack">
+            <strong>{{ formatCurrency(data.bill.total_amount) }}</strong>
+            <span>Sudah bayar {{ formatCurrency(data.bill.paid_amount) }}</span>
+            <span>{{ (data.bill.booking_codes || []).join(', ') || '-' }}</span>
           </div>
           <span v-else class="text-secondary">Ubah status booking dari selesai ke rental_unit.</span>
         </template>
@@ -215,7 +229,7 @@ onMounted(fetchRequests)
         <div class="app-muted-panel">
           <span class="text-xs text-tertiary">Request</span>
           <strong>{{ selectedRequest?.type_label }}</strong>
-          <span>{{ selectedRequest?.booking?.kode_booking }}</span>
+          <span>{{ selectedRequest?.bill?.bill_number || selectedRequest?.booking?.kode_booking }}</span>
         </div>
         <div class="form-fieldset">
           <label>Catatan Penolakan</label>

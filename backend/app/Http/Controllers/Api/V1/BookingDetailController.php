@@ -11,6 +11,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 use App\Http\Requests\UpdateBookingDetailRequest;
 use App\Models\BookingDetail;
+use App\Services\RentToRentService;
 
 class BookingDetailController extends Controller
 {
@@ -71,6 +72,8 @@ class BookingDetailController extends Controller
                 'keterangan' => $costData['keterangan'] ?? null,
             ]);
         }
+
+        app(RentToRentService::class)->syncDetail($bookingDetail->fresh(['booking', 'unit.rentalOwner']));
 
         return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }

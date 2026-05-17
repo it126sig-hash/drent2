@@ -47,6 +47,8 @@ class BookingModificationService
                 ]);
             }
 
+            app(RentToRentService::class)->syncDetail($detail->fresh(['booking', 'unit.rentalOwner']));
+
             return $detail;
         });
     }
@@ -107,6 +109,8 @@ class BookingModificationService
                 }
             }
 
+            app(RentToRentService::class)->syncDetail($oldDetail->fresh(['booking', 'unit.rentalOwner']));
+
             // Step 2: buat detail baru type=rolling dengan form lengkap
             $newDetail = $booking->bookingDetails()->create([
                 'unit_id'            => $data['unit_id'],
@@ -133,6 +137,8 @@ class BookingModificationService
                     'keterangan'   => $costData['keterangan'] ?? null,
                 ]);
             }
+
+            app(RentToRentService::class)->syncDetail($newDetail->fresh(['booking', 'unit.rentalOwner']));
 
             return $newDetail;
         });
@@ -174,9 +180,16 @@ class BookingModificationService
                     \App\Models\Unit::where('id', $activeDetail->unit_id)
                         ->update(['status' => 'Aktif']);
                 }
+
+                app(RentToRentService::class)->syncDetail($activeDetail->fresh(['booking', 'unit.rentalOwner']));
             }
 
             $booking->update(['status' => 'batal']);
+
+            $booking->bookingDetails()
+                ->with(['booking', 'unit.rentalOwner'])
+                ->get()
+                ->each(fn(BookingDetail $detail) => app(RentToRentService::class)->syncDetail($detail));
 
             return $booking->fresh();
         });
