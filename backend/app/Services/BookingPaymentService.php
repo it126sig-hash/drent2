@@ -4,11 +4,15 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\BookingPayment;
+use App\Services\BookingBillingService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 class BookingPaymentService
 {
+    public function __construct(private BookingBillingService $billingService)
+    {
+    }
     /**
      * List payments for a booking.
      */
@@ -38,6 +42,10 @@ class BookingPaymentService
                 'confirmed_at' => now(),
             ]);
         }
+
+        // Sync kolom cached_sisa_tagihan setelah pembayaran dicatat
+        $booking->load('payments'); // pastikan relasi segar
+        $this->billingService->updateCachedSisaTagihan($booking);
 
         return $payment;
     }
@@ -70,7 +78,7 @@ class BookingPaymentService
             ]);
         }
 
-        return BookingPayment::create([
+        $newPayment = BookingPayment::create([
             'booking_id'          => $targetBooking->id,
             'payment_account_id'  => $data['payment_account_id'],
             'amount'              => $data['amount'],
@@ -80,6 +88,15 @@ class BookingPaymentService
             'reallocated_from_id' => $payment->id,
             'created_by'          => Auth::id(),
         ]);
+
+        // Sync cache untuk kedua booking yang terdampak
+        $sourceBooking = $payment->booking;
+        $sourceBooking->load('payments');
+        $this->billingService->updateCachedSisaTagihan($sourceBooking);
+        $targetBooking->load('payments');
+        $this->billingService->updateCachedSisaTagihan($targetBooking);
+
+        return $newPayment;
     }
 
     public function requestVoid(BookingPayment $payment, string $reason): BookingPayment
@@ -130,6 +147,12 @@ class BookingPaymentService
             'void_approved_by' => Auth::id(),
             'void_approved_at' => now(),
         ]);
+
+        // Sync cache — void mengembalikan sisa tagihan booking
+        $booking = $payment->booking()->with(['bookingDetails.costs', 'payments'])->first();
+        if ($booking) {
+            $this->billingService->updateCachedSisaTagihan($booking);
+        }
 
         return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);
     }

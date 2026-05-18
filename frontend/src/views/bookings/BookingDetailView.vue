@@ -8,6 +8,7 @@ import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
 import { usePhysicalCheck } from '../../composables/usePhysicalCheck';
+import { getUnits } from '../../api/unit';
 import { useAuthStore } from '../../stores/auth';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import { useToast } from 'primevue/usetoast';
@@ -33,7 +34,7 @@ const toast = useToast();
 const confirm = useConfirm();
 const authStore = useAuthStore();
 const { fetchOne, updateBooking, handle, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, requestVoidPayment, approveVoidPayment, rejectVoidPayment, loading } = useBooking();
-const { units, fetchAll: fetchUnits } = useUnit();
+const { units, loading: unitsLoading } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
 const { costTypes: costTypesMaster, fetchAll: fetchCostTypes } = useCostType();
@@ -41,6 +42,11 @@ const { packages: pricingPackages, fetchAll: fetchPricingPackages } = usePricing
 const { requestCheck: requestPhysicalCheck, loading: physicalCheckLoading } = usePhysicalCheck();
 
 const booking = ref(null);
+const selectedUnitCache = ref(null);
+const unitSearchLoading = ref(false);
+const unitServerSearchTerm = ref('');
+let unitSearchTimer = null;
+let unitSearchRequestId = 0;
 const showDetailDialog = ref(false);
 const showCostDialog = ref(false);
 const showEditBookingDialog = ref(false);
@@ -50,7 +56,7 @@ const detailDialogMode = ref('detail');
 
 // Payment dialog
 const showPaymentDialog = ref(false);
-const paymentForm = ref({ payment_account_id: null, amount: null, payment_type: 'cicilan', catatan: '' });
+const paymentForm = ref({ payment_account_id: null, amount: null, payment_type: 'cicilan', paid_at: new Date(), catatan: '' });
 const paymentFormErrors = ref({});
 const paymentConfirming = ref(false);
 const paymentSubmitting = ref(false);
@@ -73,6 +79,7 @@ const isPaymentSubmitDisabled = computed(() =>
   || !paymentForm.value.payment_type
   || !paymentForm.value.payment_account_id
   || !paymentForm.value.amount
+  || !paymentForm.value.paid_at
 );
 
 const accountOptions = computed(() =>
@@ -137,6 +144,102 @@ const packageOptions = computed(() =>
 
 const findPricingPackage = (packageId) =>
   pricingPackages.value.find(pkg => pkg.id === packageId);
+
+const normalizeSearch = (value) => {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+};
+
+const unitStatusMeta = (status) => {
+  const map = {
+    Aktif: { label: 'Available', severity: 'success' },
+    Out: { label: 'Out', severity: 'warning' },
+    'Dalam Servis': { label: 'Service', severity: 'danger' },
+    'Tidak Aktif': { label: 'Inactive', severity: 'secondary' },
+  };
+
+  return map[status] || { label: status || '-', severity: status === 'Aktif' ? 'success' : 'warning' };
+};
+
+const mapUnitOption = (unit) => ({
+  ...unit,
+  unitLabel: `${unit.merk || ''} ${unit.tipe || ''}`.trim() || unit.no_polisi || '-',
+  unitSublabel: `${unit.no_polisi || '-'} - ${unit.rental_owner?.nama || 'Internal'}`,
+  searchableLabel: [
+    unit.merk,
+    unit.tipe,
+    unit.no_polisi,
+    unit.rental_owner?.nama,
+    unit.status,
+    unit.catatan,
+    unitStatusMeta(unit.status).label,
+  ].filter(Boolean).join(' '),
+  normalizedSearchableLabel: normalizeSearch([
+    unit.merk,
+    unit.tipe,
+    unit.no_polisi,
+    unit.rental_owner?.nama,
+    unit.status,
+    unit.catatan,
+    unitStatusMeta(unit.status).label,
+  ].filter(Boolean).join(' ')),
+  serverSearchLabel: unitServerSearchTerm.value,
+});
+
+const unitOptions = computed(() => {
+  const mapped = units.value.map(mapUnitOption);
+  if (!selectedUnitCache.value) return mapped;
+  return mapped.some(unit => unit.id === selectedUnitCache.value.id)
+    ? mapped
+    : [selectedUnitCache.value, ...mapped];
+});
+
+const findUnitOption = (unitId) =>
+  unitOptions.value.find(unit => unit.id === unitId);
+
+const rememberUnitOption = (unit) => {
+  if (unit && selectedUnitCache.value?.id !== unit.id) {
+    selectedUnitCache.value = unit;
+  }
+};
+
+const searchUnits = async (search = '') => {
+  const requestId = ++unitSearchRequestId;
+  const params = { per_page: 25 };
+  if (search) params.search = search;
+  unitSearchLoading.value = true;
+
+  try {
+    const response = await getUnits(params);
+    if (requestId !== unitSearchRequestId) return;
+
+    unitServerSearchTerm.value = search;
+    units.value = response.data.data;
+  } catch (err) {
+    // Pertahankan opsi terakhir kalau request pencarian gagal sesaat.
+  } finally {
+    if (requestId === unitSearchRequestId) {
+      unitSearchLoading.value = false;
+    }
+  }
+};
+
+const onUnitFilter = (event) => {
+  if (unitSearchTimer) clearTimeout(unitSearchTimer);
+  unitSearchTimer = setTimeout(() => {
+    searchUnits(String(event?.value || '').trim());
+  }, 350);
+};
+
+const onUnitSelect = (unitId, applyPrice) => {
+  const unit = findUnitOption(unitId);
+  rememberUnitOption(unit);
+  if (unit && applyPrice) {
+    applyPrice(unit);
+  }
+};
 
 const packageCostItems = (pkg) =>
   (pkg?.items || []).map(item => ({
@@ -226,8 +329,9 @@ const removeCostRow = (idx) => {
 };
 
 const onHandleUnitChange = (e) => {
-  const unit = units.value.find(u => u.id === e.value);
-  if (unit) handleForm.value.harga_mobil = unit.harga_1_hari || 0;
+  onUnitSelect(e.value, (unit) => {
+    handleForm.value.harga_mobil = unit.harga_1_hari || 0;
+  });
 };
 
 const onCostTypeChange = (idx, typeId) => {
@@ -238,6 +342,7 @@ const onCostTypeChange = (idx, typeId) => {
 const prepareHandleForm = () => {
   handleFormErrors.value = {};
   const detail = primaryUnitDetail.value || booking.value?.booking_details?.[0];
+  rememberUnitOption(detail?.unit ? mapUnitOption(detail.unit) : findUnitOption(detail?.unit_id));
   handleForm.value = {
     unit_id: detail?.unit_id || null,
     driver_id: detail?.driver_id || null,
@@ -519,7 +624,7 @@ const bookingSisaTagihan = computed(() => {
 const isPaidOff = computed(() => bookingTotalTagihan.value > 0 && bookingSisaTagihan.value <= 0);
 const canApprovePaymentVoid = computed(() => ['superadmin', 'supervisor'].includes(authStore.user?.role));
 
-const selectedDetailUnit = computed(() => units.value.find(unit => unit.id === detailForm.value.unit_id));
+const selectedDetailUnit = computed(() => findUnitOption(detailForm.value.unit_id));
 const selectedDetailDriver = computed(() => drivers.value.find(driver => driver.id === detailForm.value.driver_id));
 const detailHargaSewa = computed(() => Math.max(0, ((detailForm.value.harga_mobil || 0) - (detailForm.value.diskon_mobil || 0)) * (detailForm.value.lama_sewa || 0)));
 const detailTotalBiayaOps = computed(() => getBillableCostTotal(detailForm.value.pricing_mode, detailForm.value.costs));
@@ -726,6 +831,7 @@ const syncRollingNewSchedule = () => {
 };
 
 const applyRollingOldDetail = (detail) => {
+  rememberUnitOption(detail?.unit ? mapUnitOption(detail.unit) : findUnitOption(detail?.unit_id));
   const oldStartDate = detail?.tgl_sewa ? new Date(detail.tgl_sewa) : null;
   const oldReturnDate = detail?.tgl_kembali ? new Date(detail.tgl_kembali) : null;
   const oldDuration = detail?.lama_sewa || booking.value?.lama_sewa || 1;
@@ -830,6 +936,10 @@ const showActionError = (err, fallback) => {
 const loadBooking = async () => {
   try {
     booking.value = await fetchOne(route.params.id);
+    const primaryUnit = booking.value?.booking_details
+      ?.map(detail => detail.unit)
+      .find(Boolean);
+    if (primaryUnit) rememberUnitOption(mapUnitOption(primaryUnit));
   } catch (err) {
     showActionError(err, 'Gagal mengambil detail booking');
   }
@@ -837,7 +947,7 @@ const loadBooking = async () => {
 
 onMounted(async () => {
   loadBooking();
-  fetchUnits({ per_page: 100 });
+  searchUnits();
   fetchDrivers({ per_page: 100 });
   fetchAccounts({ per_page: 100 });
   fetchCostTypes({ per_page: 100 });
@@ -852,6 +962,7 @@ const openDetailDialog = (detail = null) => {
       : 'detail';
   const initial = getInitialBookingDetail();
   if (detail) {
+    rememberUnitOption(detail.unit ? mapUnitOption(detail.unit) : findUnitOption(detail.unit_id));
     editingDetailId.value = detail.id;
     detailForm.value = {
       unit_id: detail.unit_id,
@@ -917,6 +1028,7 @@ const openCostDialog = (detailId, cost = null) => {
 // Modification Dialog Openers
 const openExtendDialog = () => {
   const last = validDetails.value[validDetails.value.length - 1];
+  rememberUnitOption(last?.unit ? mapUnitOption(last.unit) : findUnitOption(last?.unit_id));
   const tglSewa = getExtendStartDate(last);
   detailDialogMode.value = 'extend';
   editingDetailId.value = null;
@@ -1010,10 +1122,9 @@ const onAdditionalCostTypeChange = (costTypeId) => {
 };
 
 const onUnitChange = (e) => {
-  const unit = units.value.find(u => u.id === e.value);
-  if (unit) {
+  onUnitSelect(e.value, (unit) => {
     detailForm.value.harga_mobil = unit.harga_1_hari || 0;
-  }
+  });
 };
 
 const onDetailCostTypeChange = (idx, typeId) => {
@@ -1027,8 +1138,9 @@ const onRollingDetailChange = (detailId) => {
 };
 
 const onRollingOldUnitChange = (e) => {
-  const unit = units.value.find(u => u.id === e.value);
-  if (unit) rollingForm.value.harga_mobil_lama = unit.harga_1_hari || 0;
+  onUnitSelect(e.value, (unit) => {
+    rollingForm.value.harga_mobil_lama = unit.harga_1_hari || 0;
+  });
 };
 
 const onRollingOldCostTypeChange = (idx, typeId) => {
@@ -1244,7 +1356,7 @@ const onHandle = () => {
 };
 
 const openPaymentDialog = () => {
-  paymentForm.value = { payment_account_id: null, amount: null, payment_type: 'cicilan', catatan: '' };
+  paymentForm.value = { payment_account_id: null, amount: null, payment_type: 'cicilan', paid_at: new Date(), catatan: '' };
   paymentFormErrors.value = {};
   showPaymentDialog.value = true;
 };
@@ -1420,7 +1532,10 @@ const submitPayment = async () => {
       paymentConfirming.value = false;
       paymentSubmitting.value = true;
       try {
-        await addPayment(booking.value.id, { ...paymentForm.value });
+        await addPayment(booking.value.id, {
+          ...paymentForm.value,
+          paid_at: formatLocalDateTime(paymentForm.value.paid_at),
+        });
         showPaymentDialog.value = false;
         await loadBooking();
       } catch (err) {
@@ -1507,13 +1622,13 @@ const auditUserName = (user) => user?.name || '-';
 </script>
 
 <template>
-  <div class="booking-detail-container">
+  <div class="page-container booking-detail-container">
     <ConfirmDialog />
     <!-- Header & Action Bar -->
     <div class="detail-page-header">
-      <div class="flex items-center gap-3">
-        <Button icon="pi pi-arrow-left" text rounded @click="router.push({ name: 'BookingList' })" class="back-button" />
-        <div>
+      <div class="header-left detail-header-left">
+        <Button icon="pi pi-arrow-left" text rounded @click="router.back()" class="back-button" />
+        <div class="header-copy">
           <div class="flex flex-wrap items-center gap-3 mb-1">
             <h1 class="detail-title">Booking #{{ booking?.kode_booking || '...' }}</h1>
             <BookingStatusBadge v-if="booking" :status="booking.status" />
@@ -1531,7 +1646,7 @@ const auditUserName = (user) => user?.name || '-';
         </div>
       </div>
 
-      <div class="detail-action-bar">
+      <div class="header-actions detail-action-bar">
         <Button
           v-if="booking && ['follow_up', 'confirm'].includes(booking.status)"
           label="Handle Booking"
@@ -2306,7 +2421,7 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Kendaraan *</label>
-              <Dropdown v-model="handleForm.unit_id" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit..." filter @change="onHandleUnitChange" class="w-full" :class="{ 'p-invalid': handleFormErrors.unit_id }" />
+              <Dropdown v-model="handleForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit..." filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onHandleUnitChange" class="w-full" :class="{ 'p-invalid': handleFormErrors.unit_id }" />
               <small class="p-error" v-if="handleFormErrors.unit_id">{{ handleFormErrors.unit_id[0] }}</small>
             </div>
             <div class="flex flex-col gap-1.5">
@@ -2471,7 +2586,7 @@ const auditUserName = (user) => user?.name || '-';
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-car text-slate-400 text-[11px]"></i> Unit Kendaraan
               </label>
-              <Dropdown v-model="detailForm.unit_id" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit kendaraan" filter @change="onUnitChange" class="w-full">
+              <Dropdown v-model="detailForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit kendaraan" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onUnitChange" class="w-full">
                 <template #option="{ option }">
                   <div class="flex items-center justify-between gap-3">
                     <div class="flex flex-col">
@@ -2699,7 +2814,7 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Kendaraan *</label>
-              <Dropdown v-model="extendForm.unit_id" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter @change="e => { const u = units.find(u=>u.id===e.value); if(u) extendForm.harga_mobil=u.harga_1_hari||0; }" class="w-full" />
+              <Dropdown v-model="extendForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { extendForm.harga_mobil = unit.harga_1_hari || 0; })" class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver <span class="text-slate-400 font-normal">(opsional)</span></label>
@@ -2805,7 +2920,7 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Lama *</label>
-              <Dropdown v-model="rollingForm.unit_id_lama" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter class="w-full" @change="onRollingOldUnitChange" />
+              <Dropdown v-model="rollingForm.unit_id_lama" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" class="w-full" @filter="onUnitFilter" @change="onRollingOldUnitChange" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
@@ -2890,7 +3005,7 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-2 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Baru *</label>
-              <Dropdown v-model="rollingForm.unit_id" :options="units" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter @change="e => { const u = units.find(u=>u.id===e.value); if(u) rollingForm.harga_mobil=u.harga_1_hari||0; }" class="w-full" />
+              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { rollingForm.harga_mobil = unit.harga_1_hari || 0; })" class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
@@ -3046,6 +3161,19 @@ const auditUserName = (user) => user?.name || '-';
           <small class="p-error" v-if="paymentFormErrors.amount">{{ paymentFormErrors.amount[0] }}</small>
         </div>
         <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Tanggal Pembayaran *</label>
+          <Calendar
+            v-model="paymentForm.paid_at"
+            dateFormat="dd M yy"
+            showIcon
+            showTime
+            hourFormat="24"
+            class="w-full"
+            :class="{ 'p-invalid': paymentFormErrors.paid_at }"
+          />
+          <small class="p-error" v-if="paymentFormErrors.paid_at">{{ paymentFormErrors.paid_at[0] }}</small>
+        </div>
+        <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Catatan (opsional)</label>
           <Textarea v-model="paymentForm.catatan" rows="2" placeholder="Transfer via BCA, bukti sudah dikirim WA..." class="w-full" />
         </div>
@@ -3179,9 +3307,6 @@ const auditUserName = (user) => user?.name || '-';
 <style scoped>
 .booking-detail-container {
   animation: fadeIn 0.35s ease-out;
-  width: 100%;
-  padding: var(--space-2xl);
-  background: var(--page-bg);
 }
 
 @keyframes fadeIn {
@@ -3190,11 +3315,13 @@ const auditUserName = (user) => user?.name || '-';
 }
 
 .detail-page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-xl);
   margin-bottom: var(--space-2xl);
+}
+
+.detail-header-left {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-md);
 }
 
 .detail-title {
@@ -3239,10 +3366,7 @@ const auditUserName = (user) => user?.name || '-';
 }
 
 .detail-action-bar {
-  display: flex;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-sm);
 }
 
 .detail-primary-action,
@@ -3636,9 +3760,12 @@ fieldset legend {
   }
 
   .detail-page-header {
-    flex-direction: column;
     gap: var(--space-lg);
     margin-bottom: var(--space-xl);
+  }
+
+  .detail-header-left {
+    flex-direction: row;
   }
 
   .detail-title {

@@ -31,4 +31,9 @@ class PaymentAccount extends Model
     {
         return $this->belongsTo(Branch::class);
     }
+
+    public function rentToRentPayments()
+    {
+        return $this->hasMany(RentToRentPayment::class);
+    }
 }

@@ -136,13 +136,17 @@ class BookingService
 
             // 8. Create BookingPayment record for DP
             if ($hasDp) {
+                $dpPaidAt = isset($data['dp_paid_at'])
+                    ? Carbon::parse($data['dp_paid_at'])->format('Y-m-d H:i:s')
+                    : now();
+
                 BookingPayment::create([
                     'booking_id' => $booking->id,
                     'payment_account_id' => $data['rekening_dp_id'],
                     'amount' => $data['dp'],
                     'payment_type' => 'dp',
                     'catatan' => 'DP saat pembuatan booking',
-                    'paid_at' => now(),
+                    'paid_at' => $dpPaidAt,
                     'created_by' => auth()->id(),
                 ]);
             }
@@ -183,12 +187,7 @@ class BookingService
                 ]);
             }
 
-            // TODO: Rent-to-Rent logic
-            // Otomatis catat hutang rent-to-rent jika unit bukan milik sendiri
-            // $unit = $detail->unit;
-            // if ($unit && $unit->rentalOwner && !$unit->rentalOwner->is_owner) {
-            //     // Create RentToRentDebt record
-            // }
+            app(RentToRentService::class)->syncDetail($detail);
 
             return $detail;
         });
@@ -269,6 +268,8 @@ class BookingService
                     'keterangan'   => $costData['keterangan'] ?? null,
                 ]);
             }
+
+            app(RentToRentService::class)->syncDetail($detail->fresh(['booking', 'unit.rentalOwner']));
 
             $booking = $booking->fresh(['customer.member', 'bookingDetails']);
             $booking->update([
@@ -368,6 +369,8 @@ class BookingService
                     \App\Models\Unit::where('id', $activeDetail->unit_id)
                         ->update(['status' => 'Aktif']);
                 }
+
+                app(RentToRentService::class)->syncDetail($activeDetail->fresh(['booking', 'unit.rentalOwner']));
             }
 
             return $booking->fresh();
@@ -513,6 +516,13 @@ class BookingService
             $booking->update([
                 'due_date' => app(BookingBillingService::class)->calculateDueDate($booking),
             ]);
+        }
+
+        if (in_array($data['status'], ['waiting_list', 'batal', 'selesai'], true)) {
+            $booking->bookingDetails()
+                ->with(['booking', 'unit.rentalOwner'])
+                ->get()
+                ->each(fn(BookingDetail $detail) => app(RentToRentService::class)->syncDetail($detail));
         }
 
         return $booking->fresh();

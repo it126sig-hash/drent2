@@ -1,6 +1,7 @@
 # DRENT Frontend Design Guide
 
-Halaman acuan: `src/views/bookings/BookingDetailView.vue`.
+Halaman acuan detail: `src/views/bookings/BookingDetailView.vue`.
+Halaman acuan list/table: `src/views/bookings/BookingListView.vue`.
 
 ## Prinsip Umum
 
@@ -15,12 +16,34 @@ Halaman acuan: `src/views/bookings/BookingDetailView.vue`.
   - Background: `var(--page-bg)`.
   - Padding: `var(--space-2xl)`, turun ke `var(--space-lg)` di mobile.
 - Header halaman:
-  - Pakai pola `.detail-page-header`.
+  - Pakai pola `.page-header` untuk list page dan `.detail-page-header` untuk detail page.
   - Kiri: tombol back + title + metadata/status.
-  - Kanan: action bar dengan tombol primary/secondary.
+  - Kanan: `.header-actions` berisi tab toggle jika ada dan tombol utama jika ada.
 - Konten detail:
   - Gunakan grid 1 kolom di mobile, 2 kolom di desktop.
   - Kolom kanan boleh sticky untuk ringkasan finansial/status.
+
+## List Page dan Table
+
+- Struktur standar list page:
+  - Root memakai `.page-container`.
+  - Jika table harus memenuhi tinggi layar, tambahkan `.table-page-active` pada root, `.list-tab-fill` pada konten tab, dan `.table-shell` pada wrapper `DataTable`.
+  - Header kiri memakai `.header-left` untuk tombol back opsional, judul, dan subtitle.
+  - Header kanan memakai `.header-actions` untuk `.pill-toggle` dan tombol aksi utama.
+- Filter:
+  - Pakai `.filter-bar.surface-card`, `.filter-groups`, `.filter-group`, `.filter-search`, dan `.filter-actions`.
+  - Filter utama dibuat compact dalam satu baris di desktop.
+  - Jika filter banyak, taruh filter tambahan di `.advanced-filter-groups` dan tampilkan lewat tombol `Filter Lainnya`.
+  - Search/input/select/date memakai tinggi 36px, radius `var(--radius-default)`, dan font kecil operasional.
+- Table:
+  - PrimeVue `DataTable` memakai `.drent-datatable`.
+  - Untuk list operasional desktop, aktifkan `scrollable` dan `scrollHeight="flex"` agar scroll vertical hanya terjadi di area table.
+  - Kolom `Aksi` diletakkan di depan bila memungkinkan.
+  - Aksi row utama didukung double click, dan aksi tambahan boleh disediakan lewat right click `ContextMenu`.
+- Aksi dan badge:
+  - Tombol ikon kecil di table memakai `.action-pill-group` dan `.action-btn`.
+  - Status memakai `BookingStatusBadge` atau `.status-badge` dengan warna global: `neutral`, `info`, `success`, `warning`, `error`.
+  - Font table tetap ringkas; teks panjang gunakan clamp/truncate, bukan membuat tinggi row meledak.
 
 ## Cards dan Section
 
@@ -42,6 +65,8 @@ Halaman acuan: `src/views/bookings/BookingDetailView.vue`.
 - Tombol aksi halaman:
   - Primary: `.btn-pill.btn-primary`.
   - Secondary: `.btn-pill.btn-secondary`.
+  - Tombol utama halaman mengikuti style `+ Buat Booking`: pill, background `var(--text-primary)`, icon di kiri.
+  - Tombol secondary mengikuti style `Reset`: background muted, border `var(--surface-border)`.
 - Tombol dialog dan konfirmasi:
   - Default submit: `.app-dialog-button.app-dialog-button-primary`.
   - Secondary/cancel pada ConfirmDialog: `.app-dialog-button.app-dialog-button-secondary`.

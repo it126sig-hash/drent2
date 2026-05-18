@@ -6,22 +6,22 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreBookingDetailRequest;
 use App\Http\Resources\BookingResource;
 use App\Models\Booking;
+use App\Services\BookingBillingService;
 use App\Services\BookingService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 use App\Http\Requests\UpdateBookingDetailRequest;
 use App\Models\BookingDetail;
+use App\Services\RentToRentService;
 
 class BookingDetailController extends Controller
 {
     use AuthorizesRequests;
 
-    protected $bookingService;
-
-    public function __construct(BookingService $bookingService)
-    {
-        $this->bookingService = $bookingService;
-    }
+    public function __construct(
+        protected BookingService $bookingService,
+        protected BookingBillingService $billingService,
+    ) {}
 
     public function store(StoreBookingDetailRequest $request, Booking $booking)
     {
@@ -71,6 +71,12 @@ class BookingDetailController extends Controller
                 'keterangan' => $costData['keterangan'] ?? null,
             ]);
         }
+
+        app(RentToRentService::class)->syncDetail($bookingDetail->fresh(['booking', 'unit.rentalOwner']));
+
+        // Harga/costs berubah — sync cache sisa tagihan
+        $booking = $bookingDetail->booking->load(['bookingDetails.costs', 'payments']);
+        $this->billingService->updateCachedSisaTagihan($booking);
 
         return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }

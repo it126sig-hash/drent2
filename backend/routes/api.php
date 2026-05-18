@@ -21,13 +21,18 @@ use App\Http\Controllers\Api\V1\RefundController;
 use App\Http\Controllers\Api\V1\PhysicalCheckController;
 use App\Http\Controllers\Api\V1\PhysicalCheckItemController;
 use App\Http\Controllers\Api\V1\ReceivableController;
+use App\Http\Controllers\Api\V1\RentToRentController;
 use App\Http\Controllers\Api\V1\SupervisorRequestController;
+use App\Http\Controllers\Api\V1\DriverOperationalFundController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::get('public/invoices/{token}', [ReceivableController::class, 'publicInvoice']);
+    Route::get('public/rent-to-rent-bills/{token}', [RentToRentController::class, 'publicBill']);
+    Route::get('public/rent-to-rent-bills/{token}/pdf', [RentToRentController::class, 'publicBillPdf']);
     Route::get('public/physical-checks/{token}', [PhysicalCheckController::class, 'publicShow']);
     Route::post('public/physical-checks/{token}/otp', [PhysicalCheckController::class, 'publicRequestOtp']);
     Route::post('public/physical-checks/{token}/activities', [PhysicalCheckController::class, 'publicActivity']);
@@ -36,6 +41,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:sanctum', 'branch.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
+        Route::get('dashboard', [DashboardController::class, 'index']);
         
         Route::get('branches', [BranchController::class, 'index']);
         Route::apiResource('rental-owners', RentalOwnerController::class);
@@ -90,14 +96,51 @@ Route::prefix('v1')->group(function () {
 
         // Receivables & Invoices
         Route::get('receivables', [ReceivableController::class, 'index']);
+        Route::get('receivables/payment-history', [ReceivableController::class, 'paymentHistory']);
         Route::post('receivables/invoices', [ReceivableController::class, 'generateInvoice']);
         Route::get('invoices', [ReceivableController::class, 'invoices']);
         Route::get('invoices/{invoice}/pdf', [ReceivableController::class, 'invoicePdf']);
         Route::post('invoices/{invoice}/mark-sent', [ReceivableController::class, 'markInvoiceSent']);
+        Route::post('invoices/{invoice}/refresh-amount', [ReceivableController::class, 'refreshInvoiceAmount']);
         Route::post('invoices/{invoice}/payments', [ReceivableController::class, 'storeInvoicePayment']);
+
+        // Rent-to-rent payables
+        Route::get('rent-to-rent', [RentToRentController::class, 'index']);
+        Route::get('rent-to-rent/payment-history', [RentToRentController::class, 'paymentHistory']);
+        Route::post('rent-to-rent/payments/{payment}/void', [RentToRentController::class, 'requestVoidPayment']);
+        Route::post('rent-to-rent/payments/{payment}/approve-void', [RentToRentController::class, 'approveVoidPayment']);
+        Route::post('rent-to-rent/payments/{payment}/reject-void', [RentToRentController::class, 'rejectVoidPayment']);
+        Route::get('rent-to-rent/bills', [RentToRentController::class, 'bills']);
+        Route::post('rent-to-rent/bills', [RentToRentController::class, 'generateBill']);
+        Route::get('rent-to-rent/bills/{bill}', [RentToRentController::class, 'showBill']);
+        Route::get('rent-to-rent/bills/{bill}/pdf', [RentToRentController::class, 'billPdf']);
+        Route::post('rent-to-rent/bills/{bill}/mark-paid', [RentToRentController::class, 'markBillPaid']);
+        Route::post('rent-to-rent/bills/{bill}/request-void', [RentToRentController::class, 'requestVoid']);
+        Route::post('rent-to-rent/bills/{bill}/approve-void', [RentToRentController::class, 'approveVoid']);
+        Route::post('rent-to-rent/bills/{bill}/reject-void', [RentToRentController::class, 'rejectVoid']);
+        Route::get('rent-to-rent/{debt}', [RentToRentController::class, 'show']);
+        Route::patch('rent-to-rent/{debt}/amount', [RentToRentController::class, 'updateAmount']);
+        Route::post('rent-to-rent/{debt}/mark-paid', [RentToRentController::class, 'markDebtPaid']);
+        Route::post('rent-to-rent/{debt}/payments', [RentToRentController::class, 'storeDebtPayment']);
+        Route::post('rent-to-rent/bills/{bill}/mark-sent', [RentToRentController::class, 'markSent']);
+        Route::post('rent-to-rent/bills/{bill}/payments', [RentToRentController::class, 'storePayment']);
 
         // Supervisor approval inbox
         Route::get('supervisor-requests', [SupervisorRequestController::class, 'index']);
+
+        // Driver operational funds
+        Route::get('operational-funds/bookings', [DriverOperationalFundController::class, 'bookings']);
+        Route::get('operational-funds/history', [DriverOperationalFundController::class, 'history']);
+        Route::get('operational-funds/{fund}', [DriverOperationalFundController::class, 'show']);
+        Route::post('bookings/{booking}/operational-funds', [DriverOperationalFundController::class, 'store']);
+        Route::post('operational-funds/{fund}/close', [DriverOperationalFundController::class, 'close']);
+        Route::post('operational-funds/{fund}/accept', [DriverOperationalFundController::class, 'accept']);
+        Route::post('operational-funds/{fund}/expenses', [DriverOperationalFundController::class, 'storeExpense']);
+        Route::get('operational-expenses/{expense}/photo', [DriverOperationalFundController::class, 'showExpensePhoto']);
+        Route::post('operational-expenses/{expense}/approve', [DriverOperationalFundController::class, 'approveExpense']);
+        Route::post('operational-expenses/{expense}/reject', [DriverOperationalFundController::class, 'rejectExpense']);
+        Route::get('driver/operational-funds', [DriverOperationalFundController::class, 'driverFunds']);
+        Route::get('driver/schedules', [DriverOperationalFundController::class, 'driverSchedules']);
 
         // Bookings
         Route::patch('bookings/{booking}/status', [BookingController::class, 'updateStatus']);

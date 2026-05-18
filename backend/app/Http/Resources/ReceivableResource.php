@@ -12,6 +12,10 @@ class ReceivableResource extends JsonResource
         $invoice = $this->latest_active_invoice;
         $detail = $this->display_detail;
         $unit = $detail?->unit;
+        $receivableService = app(\App\Services\ReceivableService::class);
+        $invoiceReconciliation = $invoice
+            ? ($this->invoice_reconciliation ?? $receivableService->invoiceReconciliation($invoice))
+            : null;
 
         return [
             'id' => $this->id,
@@ -47,6 +51,9 @@ class ReceivableResource extends JsonResource
                 'pdf_url' => $invoice ? url("/api/v1/invoices/{$invoice->id}/pdf") : null,
                 'public_path' => $invoice?->public_token ? "/invoice/{$invoice->public_token}" : null,
                 'public_url' => $invoice?->public_token ? config('app.frontend_url', url('/')) . "/invoice/{$invoice->public_token}" : null,
+                'invoice_reconciliation' => $invoiceReconciliation,
+                'items' => $invoice ? $receivableService->invoiceItems($invoice) : [],
+                'payments' => $invoice ? $receivableService->invoicePaymentHistory($invoice) : [],
             ],
         ];
     }

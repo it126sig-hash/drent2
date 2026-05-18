@@ -44,6 +44,7 @@ class Booking extends Model
         'rental_unit_return_rejected_at',
         'rental_unit_return_rejection_note',
         'due_date',
+        'cached_sisa_tagihan',
     ];
 
     protected $casts = [
@@ -137,10 +138,25 @@ class Booking extends Model
         return $this->hasMany(PhysicalCheck::class);
     }
 
+    public function operationalFunds()
+    {
+        return $this->hasMany(DriverOperationalFund::class);
+    }
+
+    public function operationalExpenses()
+    {
+        return $this->hasMany(DriverOperationalExpense::class);
+    }
+
     public function invoices()
     {
         return $this->belongsToMany(Invoice::class, 'invoice_bookings')
             ->withPivot('amount')
             ->withTimestamps();
+    }
+
+    public function rentToRentDebts()
+    {
+        return $this->hasMany(RentToRentDebt::class);
     }
 }

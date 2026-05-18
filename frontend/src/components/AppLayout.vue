@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
-import Button from 'primevue/button'
 import Toast from 'primevue/toast'
 
 const router = useRouter()
@@ -11,10 +10,21 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const sidebarCollapsed = ref(false)
+const sidebarHovered = ref(false)
 const mobileSidebarVisible = ref(false)
+
+const isSidebarCompact = computed(() => sidebarCollapsed.value && !sidebarHovered.value)
 
 const toggleSidebar = () => {
   sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
+const handleSidebarMouseEnter = () => {
+  sidebarHovered.value = true
+}
+
+const handleSidebarMouseLeave = () => {
+  sidebarHovered.value = false
 }
 
 const toggleMobileSidebar = () => {
@@ -26,22 +36,56 @@ const handleLogout = async () => {
   router.push({ name: 'login' })
 }
 
-const menuItems = [
-  { label: 'Dashboard', icon: 'pi pi-home', route: '/' },
-  { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings' },
-  { label: 'Request Supervisor', icon: 'pi pi-inbox', route: '/supervisor/requests', roles: ['superadmin', 'supervisor'] },
-  { label: 'Piutang', icon: 'pi pi-wallet', route: '/finance/receivables', roles: ['superadmin', 'admin_branch', 'finance'] },
-  { label: 'Cek Fisik', icon: 'pi pi-check-square', route: '/physical-checks' },
-  { label: 'Pemilik Rental', icon: 'pi pi-users', route: '/rental-owners' },
-  { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units' },
-  { label: 'Driver', icon: 'pi pi-id-card', route: '/drivers' },
-  { label: 'Pelanggan', icon: 'pi pi-users', route: '/customers' },
-  { label: 'Member', icon: 'pi pi-id-card', route: '/mdm/members' },
-  { label: 'Manajemen User', icon: 'pi pi-user-plus', route: '/users', roles: ['superadmin', 'admin_branch'] },
-  { label: 'Akun Pembayaran', icon: 'pi pi-credit-card', route: '/master/payment-accounts', roles: ['superadmin', 'admin_branch'] },
-  { label: 'List Kota', icon: 'pi pi-map-marker', route: '/master/cities', roles: ['superadmin', 'admin_branch', 'cs'] },
-  { label: 'Tipe Biaya', icon: 'pi pi-list', route: '/master/cost-types', roles: ['superadmin', 'admin_branch'] },
-  { label: 'Paket Harga', icon: 'pi pi-tag', route: '/master/pricing-packages', roles: ['superadmin', 'admin_branch'] },
+const menuSections = [
+  {
+    label: '',
+    items: [
+      { label: 'Dashboard', icon: 'pi pi-home', route: '/' },
+    ],
+  },
+  {
+    label: 'Transaksi',
+    items: [
+      { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings' },
+      { label: 'Request Supervisor', icon: 'pi pi-inbox', route: '/supervisor/requests', roles: ['superadmin', 'supervisor'] },
+      { label: 'Cek Fisik', icon: 'pi pi-check-square', route: '/physical-checks' },
+    ],
+  },
+  {
+    label: 'Keuangan',
+    items: [
+      { label: 'Piutang', icon: 'pi pi-wallet', route: '/finance/receivables', roles: ['superadmin', 'admin_branch', 'finance'] },
+      { label: 'Rent to Rent', icon: 'pi pi-building', route: '/finance/rent-to-rent', roles: ['superadmin', 'admin_branch', 'finance'] },
+      { label: 'Biaya Operasional', icon: 'pi pi-receipt', route: '/finance/operational-costs', roles: ['superadmin', 'admin_branch', 'finance'] },
+      { label: 'Operasional Driver', icon: 'pi pi-briefcase', route: '/driver/operational', roles: ['driver_tetap'] },
+    ],
+  },
+  
+  {
+    label: 'Kendaraan',
+    items: [
+      { label: 'Pemilik Rental', icon: 'pi pi-users', route: '/rental-owners' },
+      { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units' },
+      { label: 'Driver', icon: 'pi pi-id-card', route: '/drivers' },
+    ],
+  },
+  {
+    label: 'Pelanggan',
+    items: [
+       { label: 'Pelanggan', icon: 'pi pi-users', route: '/customers' },
+      { label: 'Member', icon: 'pi pi-id-card', route: '/mdm/members' },
+    ],
+  },
+  {
+    label: 'Data Master',
+    items: [
+      { label: 'Manajemen User', icon: 'pi pi-user-plus', route: '/users', roles: ['superadmin', 'admin_branch'] },
+      { label: 'Akun Pembayaran', icon: 'pi pi-credit-card', route: '/master/payment-accounts', roles: ['superadmin', 'admin_branch'] },
+      { label: 'List Kota', icon: 'pi pi-map-marker', route: '/master/cities', roles: ['superadmin', 'admin_branch', 'cs'] },
+      { label: 'Tipe Biaya', icon: 'pi pi-list', route: '/master/cost-types', roles: ['superadmin', 'admin_branch'] },
+      { label: 'Paket Harga', icon: 'pi pi-tag', route: '/master/pricing-packages', roles: ['superadmin', 'admin_branch'] },
+    ],
+  },
 ]
 
 const normalizePath = (path) => path.replace(/\/+$/, '') || '/'
@@ -57,48 +101,86 @@ const isMenuItemActive = (targetRoute) => {
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`)
 }
 
-const filteredMenuItems = computed(() => {
-  return menuItems.filter(item => {
+const canShowMenuItem = (item) => {
     if (!item.roles) return true
     return item.roles.includes(authStore.user?.role)
-  })
+}
+
+const filteredMenuSections = computed(() => {
+  return menuSections
+    .map(section => ({
+      ...section,
+      items: section.items.filter(canShowMenuItem),
+    }))
+    .filter(section => section.items.length > 0)
 })
 </script>
 
 <template>
-  <div class="layout-wrapper" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <div
+    class="layout-wrapper"
+    :class="{
+      'sidebar-collapsed': sidebarCollapsed,
+      'sidebar-compact': isSidebarCompact
+    }"
+  >
     <Toast />
     
     <!-- Desktop Sidebar -->
-    <aside class="layout-sidebar hide-mobile">
-      <div class="sidebar-header">
-        <h1 class="logo-text">DRENT <span class="tosca-text">Vibe</span></h1>
-      </div>
-      
-      <nav class="sidebar-nav">
-        <RouterLink 
-          v-for="item in filteredMenuItems" 
-          :key="item.route" 
-          :to="item.route" 
-          class="nav-item"
-          :class="{ active: isMenuItemActive(item.route) }"
-        >
-          <i :class="item.icon"></i>
-          <span v-if="!sidebarCollapsed">{{ item.label }}</span>
-        </RouterLink>
-      </nav>
-      
-      <div class="sidebar-footer">
-        <div class="user-avatar-initials">
-          {{ authStore.user?.name?.substring(0, 2).toUpperCase() }}
+    <aside
+      class="layout-sidebar hide-mobile"
+      @mouseenter="handleSidebarMouseEnter"
+      @mouseleave="handleSidebarMouseLeave"
+    >
+      <div class="sidebar-panel">
+        <div class="sidebar-header">
+          <h1 v-if="!isSidebarCompact" class="logo-text">DRENT <span class="tosca-text">Vibe</span></h1>
+          <button
+            class="sidebar-toggle-btn"
+            type="button"
+            :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+            :aria-pressed="sidebarCollapsed"
+            v-tooltip.right="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+            @click="toggleSidebar"
+          >
+            <i :class="sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'"></i>
+          </button>
         </div>
-        <div v-if="!sidebarCollapsed" class="user-info">
-          <span class="user-name">{{ authStore.user?.name }}</span>
-          <span class="user-role">{{ authStore.user?.role }}</span>
+
+        <nav class="sidebar-nav">
+          <div
+            v-for="section in filteredMenuSections"
+            :key="section.label || 'main'"
+            class="nav-section"
+            :class="{ 'nav-section-main': !section.label }"
+          >
+            <div v-if="section.label && !isSidebarCompact" class="nav-section-title">{{ section.label }}</div>
+            <RouterLink 
+              v-for="item in section.items" 
+              :key="item.route" 
+              :to="item.route" 
+              class="nav-item"
+              :class="{ active: isMenuItemActive(item.route) }"
+              v-tooltip.right="isSidebarCompact ? item.label : null"
+            >
+              <i :class="item.icon"></i>
+              <span v-if="!isSidebarCompact" class="nav-label">{{ item.label }}</span>
+            </RouterLink>
+          </div>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="user-avatar-initials">
+            {{ authStore.user?.name?.substring(0, 2).toUpperCase() }}
+          </div>
+          <div v-if="!isSidebarCompact" class="user-info">
+            <span class="user-name">{{ authStore.user?.name }}</span>
+            <span class="user-role">{{ authStore.user?.role }}</span>
+          </div>
+          <button class="logout-btn" @click="handleLogout" v-tooltip.right="'Logout'">
+            <i class="pi pi-power-off"></i>
+          </button>
         </div>
-        <button class="logout-btn" @click="handleLogout" v-tooltip.right="'Logout'">
-          <i class="pi pi-power-off"></i>
-        </button>
       </div>
     </aside>
 
@@ -124,8 +206,15 @@ const filteredMenuItems = computed(() => {
           <button class="close-btn" @click="toggleMobileSidebar"><i class="pi pi-times"></i></button>
        </div>
        <nav class="drawer-nav">
+        <div
+          v-for="section in filteredMenuSections"
+          :key="section.label || 'main'"
+          class="nav-section"
+          :class="{ 'nav-section-main': !section.label }"
+        >
+          <div v-if="section.label" class="nav-section-title">{{ section.label }}</div>
           <RouterLink 
-            v-for="item in filteredMenuItems" 
+            v-for="item in section.items" 
             :key="item.route" 
             :to="item.route" 
             class="nav-item"
@@ -135,6 +224,7 @@ const filteredMenuItems = computed(() => {
             <i :class="item.icon"></i>
             <span>{{ item.label }}</span>
           </RouterLink>
+        </div>
        </nav>
        <div class="drawer-footer">
           <button class="btn-pill btn-secondary w-full" @click="handleLogout">
@@ -157,7 +247,11 @@ const filteredMenuItems = computed(() => {
         <i class="pi pi-home"></i>
         <span>Home</span>
       </RouterLink>
-      <RouterLink to="/bookings" class="bottom-nav-item" :class="{ active: isMenuItemActive('/bookings') }">
+      <RouterLink v-if="authStore.user?.role === 'driver_tetap'" to="/driver/operational" class="bottom-nav-item" :class="{ active: isMenuItemActive('/driver/operational') }">
+        <i class="pi pi-briefcase"></i>
+        <span>Ops</span>
+      </RouterLink>
+      <RouterLink v-else to="/bookings" class="bottom-nav-item" :class="{ active: isMenuItemActive('/bookings') }">
         <i class="pi pi-calendar"></i>
         <span>Booking</span>
       </RouterLink>
@@ -187,27 +281,60 @@ const filteredMenuItems = computed(() => {
 /* === Desktop Sidebar === */
 .layout-sidebar {
   width: 260px;
-  background-color: var(--text-primary);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  flex-direction: column;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 0 0 260px;
   position: sticky;
   top: 0;
   height: 100vh;
   z-index: 100;
+  transition:
+    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    flex-basis 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-panel {
+  width: 260px;
+  height: 100%;
+  background-color: var(--text-primary);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  transition:
+    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s ease;
+  overflow: hidden;
 }
 
 .sidebar-collapsed .layout-sidebar {
+  flex-basis: 80px;
   width: 80px;
+}
+
+.sidebar-collapsed .sidebar-panel {
+  width: 80px;
+}
+
+.sidebar-collapsed:not(.sidebar-compact) {
+  z-index: 200;
+}
+
+.sidebar-collapsed:not(.sidebar-compact) .sidebar-panel {
+  width: 260px;
+  box-shadow: var(--shadow-modal);
 }
 
 .sidebar-header {
   height: 64px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
   padding: 0 var(--space-xl);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-compact .sidebar-header {
+  justify-content: center;
+  padding: 0;
 }
 
 .logo-text {
@@ -216,9 +343,32 @@ const filteredMenuItems = computed(() => {
   font-weight: 700;
   color: #FFFFFF;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tosca-text { color: #7DD3FC; }
+
+.sidebar-toggle-btn {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
 
 .sidebar-nav {
   flex: 1;
@@ -227,6 +377,60 @@ const filteredMenuItems = computed(() => {
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+  border-radius: var(--radius-full);
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.36);
+}
+
+.sidebar-compact .sidebar-nav {
+  align-items: center;
+}
+
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding-top: var(--space-md);
+  margin-top: var(--space-md);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-section-main {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
+
+.sidebar-compact .nav-section {
+  align-items: center;
+}
+
+.nav-section-title {
+  padding: 0 var(--space-lg) var(--space-xs);
+  color: rgba(255, 255, 255, 0.42);
+  font-family: var(--font-headline);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .nav-item {
@@ -238,12 +442,33 @@ const filteredMenuItems = computed(() => {
   color: rgba(255, 255, 255, 0.72);
   text-decoration: none;
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 500;
   transition: all 0.2s;
+  width: 100%;
+  min-height: 32px;
+  min-width: 0;
 }
 
-.nav-item i { font-size: 1.1rem; }
+.sidebar-compact .nav-item {
+  width: 44px;
+  justify-content: center;
+  padding: var(--space-md);
+}
+
+.nav-item i {
+  width: 18px;
+  flex: 0 0 18px;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .nav-item:hover {
   background-color: rgba(255, 255, 255, 0.08);
@@ -264,9 +489,16 @@ const filteredMenuItems = computed(() => {
   gap: var(--space-md);
 }
 
+.sidebar-compact .sidebar-footer {
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-md) 0;
+}
+
 .user-avatar-initials {
   width: 32px;
   height: 32px;
+  flex: 0 0 32px;
   background-color: rgba(255, 255, 255, 0.12);
   color: #FFFFFF;
   border-radius: var(--radius-full);
@@ -440,6 +672,12 @@ const filteredMenuItems = computed(() => {
    flex: 1;
    padding: var(--space-lg);
    overflow-y: auto;
+}
+
+.drawer-nav .nav-section:first-child {
+   padding-top: 0;
+   margin-top: 0;
+   border-top: none;
 }
 
 .drawer-footer {

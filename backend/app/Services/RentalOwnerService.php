@@ -12,7 +12,12 @@ class RentalOwnerService
         $query = RentalOwner::where('tenant_id', Auth::user()->tenant_id);
 
         if (isset($filters['search'])) {
-            $query->where('nama', 'like', '%' . $filters['search'] . '%');
+            $query->where(function ($q) use ($filters) {
+                $q->where('nama', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('kontak_1', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('kota', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('alamat', 'like', '%' . $filters['search'] . '%');
+            });
         }
 
         return $query->latest()->paginate($filters['per_page'] ?? 15);

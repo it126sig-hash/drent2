@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateInvoiceRequest;
+use App\Http\Requests\RefreshInvoiceAmountRequest;
 use App\Http\Requests\StoreInvoicePaymentRequest;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\PublicInvoiceResource;
@@ -33,6 +34,7 @@ class ReceivableController extends Controller
             'page',
             'per_page',
             'invoice_status',
+            'search',
         ]);
 
         $user = auth()->user();
@@ -72,7 +74,7 @@ class ReceivableController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $filters = $request->only(['page', 'per_page', 'status']);
+        $filters = $request->only(['page', 'per_page', 'status', 'search']);
         $user = auth()->user();
         $filters['tenant_id'] = $user->tenant_id;
         if ($user->role !== 'superadmin') {
@@ -82,11 +84,52 @@ class ReceivableController extends Controller
         return InvoiceResource::collection($this->receivableService->invoices($filters));
     }
 
+    public function paymentHistory(Request $request)
+    {
+        $this->authorize('viewAny', Invoice::class);
+
+        $filters = $request->only([
+            'view',
+            'latest_page',
+            'latest_per_page',
+            'latest_limit',
+            'group_page',
+            'group_per_page',
+            'group_limit',
+        ]);
+        $user = auth()->user();
+        $filters['tenant_id'] = $user->tenant_id;
+        if ($user->role !== 'superadmin') {
+            $filters['branch_id'] = $user->branch_id;
+        }
+
+        return response()->json([
+            'data' => $this->receivableService->paymentHistory($filters),
+        ]);
+    }
+
     public function markInvoiceSent(Invoice $invoice): InvoiceResource
     {
         $this->authorize('update', $invoice);
 
         return new InvoiceResource($this->receivableService->markSent($invoice));
+    }
+
+    public function refreshInvoiceAmount(RefreshInvoiceAmountRequest $request, Invoice $invoice): InvoiceResource
+    {
+        $this->authorize('update', $invoice);
+
+        try {
+            return new InvoiceResource($this->receivableService->refreshInvoiceAmount(
+                $invoice,
+                (bool) $request->boolean('confirm_sent_revision')
+            ));
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['invoice' => [$exception->getMessage()]],
+            ], 422));
+        }
     }
 
     public function storeInvoicePayment(StoreInvoicePaymentRequest $request, Invoice $invoice): InvoiceResource

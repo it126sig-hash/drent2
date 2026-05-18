@@ -60,13 +60,25 @@ class BookingController extends Controller
         $statuses = $this->arrayFilter($request->input('status'));
         $sortBy = $request->input('sort_by', 'created_at');
         $sortDirection = $request->input('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
+        $usePeriodOverlap = $request->boolean('period_overlap') && ($request->date_from || $request->date_to);
 
         $bookings = Booking::query()
             ->with(collect($this->bookingRelations)->reject(fn($relation) => $relation === 'refunds')->all())
             ->withMin('bookingDetails as first_rental_date', 'tgl_sewa')
             ->when($statuses, fn($q, $v) => $q->whereIn('status', $v))
-            ->when($request->date_from, fn($q, $v) => $q->whereHas('bookingDetails', fn($detail) => $detail->whereDate('tgl_sewa', '>=', $v)))
-            ->when($request->date_to,   fn($q, $v) => $q->whereHas('bookingDetails', fn($detail) => $detail->whereDate('tgl_sewa', '<=', $v)))
+            ->when($request->date_from && ! $usePeriodOverlap, fn($q) => $q->whereHas('bookingDetails', fn($detail) => $detail->whereDate('tgl_sewa', '>=', $request->date_from)))
+            ->when($request->date_to && ! $usePeriodOverlap,   fn($q) => $q->whereHas('bookingDetails', fn($detail) => $detail->whereDate('tgl_sewa', '<=', $request->date_to)))
+            ->when($usePeriodOverlap, function ($q) use ($request) {
+                $q->whereHas('bookingDetails', function ($detail) use ($request) {
+                    if ($request->date_to) {
+                        $detail->whereDate('tgl_sewa', '<=', $request->date_to);
+                    }
+
+                    if ($request->date_from) {
+                        $detail->whereDate('tgl_kembali', '>=', $request->date_from);
+                    }
+                });
+            })
             ->when($request->customer_id, fn($q, $v) => $q->where('customer_id', $v))
             ->when($request->rental_owner_id, fn($q, $v) => $q->whereHas('bookingDetails.unit', fn($unit) => $unit->where('rental_owner_id', $v)))
             ->when($request->kota, fn($q, $v) => $q->where('kota', $v))

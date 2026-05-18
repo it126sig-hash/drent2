@@ -6,6 +6,10 @@ export const getReceivables = (params) => {
   return api.get(prefix, { params })
 }
 
+export const getPaymentHistory = (params) => {
+  return api.get(`${prefix}/payment-history`, { params })
+}
+
 export const generateInvoice = (payload) => {
   return api.post(`${prefix}/invoices`, payload)
 }
@@ -16,6 +20,10 @@ export const getInvoices = (params) => {
 
 export const markInvoiceSent = (invoiceId) => {
   return api.post(`/v1/invoices/${invoiceId}/mark-sent`)
+}
+
+export const refreshInvoiceAmount = (invoiceId, data = {}) => {
+  return api.post(`/v1/invoices/${invoiceId}/refresh-amount`, data)
 }
 
 export const downloadInvoicePdf = (invoiceId) => {
@@ -32,9 +40,11 @@ export const getPublicInvoice = (token) => {
 
 export default {
   getReceivables,
+  getPaymentHistory,
   generateInvoice,
   getInvoices,
   markInvoiceSent,
+  refreshInvoiceAmount,
   downloadInvoicePdf,
   addInvoicePayment,
   getPublicInvoice,

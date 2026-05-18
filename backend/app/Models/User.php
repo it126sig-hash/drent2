@@ -43,6 +43,11 @@ class User extends Authenticatable
         return $this->belongsTo(Branch::class);
     }
 
+    public function driver()
+    {
+        return $this->hasOne(Driver::class);
+    }
+
     public function getRoleLabelAttribute(): string
     {
         return match($this->role) {

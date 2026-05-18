@@ -26,7 +26,9 @@ class CustomerService
                 $q->where('nama', 'like', '%' . $filters['search'] . '%')
                   ->orWhere('kontak_1', 'like', '%' . $filters['search'] . '%')
                   ->orWhere('email', 'like', '%' . $filters['search'] . '%')
-                  ->orWhere('kota', 'like', '%' . $filters['search'] . '%');
+                  ->orWhere('kota', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('status', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('catatan', 'like', '%' . $filters['search'] . '%');
             });
         }
 

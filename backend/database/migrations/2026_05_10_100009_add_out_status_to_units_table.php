@@ -12,6 +12,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         DB::statement("ALTER TABLE units MODIFY COLUMN status ENUM('Aktif', 'Tidak Aktif', 'Dalam Servis', 'Out') DEFAULT 'Aktif'");
     }
 
@@ -20,6 +24,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         DB::statement("ALTER TABLE units MODIFY COLUMN status ENUM('Aktif', 'Tidak Aktif', 'Dalam Servis') DEFAULT 'Aktif'");
     }
 };

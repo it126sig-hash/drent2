@@ -48,6 +48,13 @@ class CustomerController extends Controller
     public function show(Customer $customer)
     {
         $this->authorize('view', $customer);
+        $customer->load([
+            'member.surveyor',
+            'bookings.bookingDetails.unit.rentalOwner',
+            'bookings.bookingDetails.costs',
+            'bookings.payments',
+        ]);
+
         return new CustomerResource($customer);
     }
 

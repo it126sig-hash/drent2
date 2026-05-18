@@ -415,6 +415,7 @@ const getCheckSummary = (booking, type) => ({
   color: var(--text-primary);
   font-weight: 800;
   cursor: pointer;
+  font-size: 11px;
 }
 
 .vehicle-cell,

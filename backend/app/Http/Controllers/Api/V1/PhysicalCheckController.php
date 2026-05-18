@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PublicSignPhysicalCheckRequest;
 use App\Http\Requests\RequestPhysicalCheckRequest;
 use App\Http\Requests\StorePhysicalCheckRequest;
 use App\Http\Resources\PhysicalCheckBookingResource;
@@ -153,10 +154,10 @@ class PhysicalCheckController extends Controller
         ]);
     }
 
-    public function publicStore(string $token, StorePhysicalCheckRequest $request): PhysicalCheckResource
+    public function publicStore(string $token, PublicSignPhysicalCheckRequest $request): PhysicalCheckResource
     {
         $check = $this->service->findPublic($token);
-        $stored = $this->service->storeCompleted($request->validated(), $request, $check);
+        $stored = $this->service->storePublicSignature($check, $request->validated(), $request);
 
         return new PhysicalCheckResource($stored);
     }

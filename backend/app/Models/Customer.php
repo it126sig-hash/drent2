@@ -33,4 +33,9 @@ class Customer extends Model
     {
         return $this->hasOne(Member::class);
     }
+
+    public function bookings()
+    {
+        return $this->hasMany(Booking::class)->latest();
+    }
 }

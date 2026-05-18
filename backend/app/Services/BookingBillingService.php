@@ -20,7 +20,11 @@ class BookingBillingService
 
             if ($detail->pricing_mode === 'all_in') {
                 $additional = $detail->relationLoaded('costs')
-                    ? $detail->costs->sum(fn($cost) => $cost->type === 'diskon' ? -((int) $cost->amount) : 0)
+                    ? $detail->costs->sum(fn($cost) =>
+                        $cost->type === 'diskon'
+                            ? -((int) $cost->amount)
+                            : ((bool) $cost->is_additional ? (int) $cost->amount : 0)
+                    )
                     : 0;
 
                 return ((int) ($detail->harga_all_in ?? 0) * $duration) + $additional;
@@ -49,6 +53,25 @@ class BookingBillingService
     public function sisaTagihan(Booking $booking): int
     {
         return max(0, $this->totalTagihan($booking) - $this->paidAmount($booking));
+    }
+
+    /**
+     * Hitung ulang sisa tagihan dan simpan ke kolom cached_sisa_tagihan.
+     * Dipanggil setiap kali ada perubahan pada biaya atau pembayaran booking.
+     */
+    public function updateCachedSisaTagihan(Booking $booking): void
+    {
+        if (! $booking->relationLoaded('bookingDetails')) {
+            $booking->load('bookingDetails.costs');
+        }
+        if (! $booking->relationLoaded('payments')) {
+            $booking->load('payments');
+        }
+
+        $sisa = $this->sisaTagihan($booking);
+
+        // updateQuietly agar tidak trigger observer/event & tidak update updated_at
+        $booking->updateQuietly(['cached_sisa_tagihan' => $sisa]);
     }
 
     public function calculateDueDate(Booking $booking): ?Carbon

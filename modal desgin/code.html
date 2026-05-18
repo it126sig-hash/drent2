@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>DRENT Vibe - Biaya Operasional</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "secondary-fixed": "#d8e2ff",
+                "on-error": "#ffffff",
+                "outline-variant": "#c7c5cd",
+                "secondary-fixed-dim": "#adc7ff",
+                "on-primary-container": "#8689a0",
+                "background": "#f8f9fa",
+                "on-primary-fixed": "#161b2d",
+                "surface-bright": "#f8f9fa",
+                "tertiary-fixed-dim": "#66df75",
+                "outline": "#77767d",
+                "on-surface-variant": "#46464c",
+                "tertiary-fixed": "#83fc8e",
+                "inverse-primary": "#c2c5de",
+                "on-surface": "#191c1d",
+                "on-error-container": "#93000a",
+                "on-tertiary": "#ffffff",
+                "surface-container-high": "#e7e8e9",
+                "primary-container": "#1e2235",
+                "on-secondary-container": "#fefcff",
+                "primary-fixed-dim": "#c2c5de",
+                "inverse-on-surface": "#f0f1f2",
+                "on-secondary": "#ffffff",
+                "tertiary-container": "#002a09",
+                "secondary": "#0059bb",
+                "surface-tint": "#595d73",
+                "surface-container": "#edeeef",
+                "surface-container-low": "#f3f4f5",
+                "on-primary-fixed-variant": "#42465a",
+                "tertiary": "#001102",
+                "secondary-container": "#0070ea",
+                "on-tertiary-container": "#1c9f3e",
+                "surface-variant": "#e1e3e4",
+                "inverse-surface": "#2e3132",
+                "primary": "#080c1e",
+                "surface": "#f8f9fa",
+                "on-tertiary-fixed": "#002106",
+                "surface-container-lowest": "#ffffff",
+                "error": "#ba1a1a",
+                "on-tertiary-fixed-variant": "#00531a",
+                "surface-dim": "#d9dadb",
+                "on-secondary-fixed": "#001a41",
+                "on-primary": "#ffffff",
+                "surface-container-highest": "#e1e3e4",
+                "error-container": "#ffdad6",
+                "primary-fixed": "#dee1fb",
+                "on-secondary-fixed-variant": "#004493",
+                "on-background": "#191c1d"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+            },
+            "spacing": {
+                "gutter": "12px",
+                "modal-padding": "32px",
+                "sidebar-width": "240px",
+                "margin-md": "24px",
+                "margin-sm": "16px"
+            },
+            "fontFamily": {
+                "headline-lg": ["Plus Jakarta Sans"],
+                "body-md": ["Plus Jakarta Sans"],
+                "table-header": ["Plus Jakarta Sans"],
+                "body-sm": ["Plus Jakarta Sans"],
+                "headline-xl": ["Plus Jakarta Sans"],
+                "label-md": ["Plus Jakarta Sans"]
+            },
+            "fontSize": {
+                "headline-lg": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                "table-header": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                "headline-xl": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                "label-md": ["13px", {"lineHeight": "18px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body class="font-body-md text-on-surface">
+<!-- Sidebar Navigation Shell -->
+<aside class="flex flex-col w-sidebar-width fixed left-0 top-0 bottom-0 py-gutter bg-primary dark:bg-primary z-10">
+<div class="px-6 mb-8">
+<h1 class="text-headline-xl font-headline-xl font-bold text-secondary-fixed dark:text-secondary-fixed-dim">DRENT Vibe</h1>
+<p class="font-body-sm text-body-sm text-on-primary-container">Fleet Management</p>
+</div>
+<nav class="flex-1 overflow-y-auto px-3 space-y-1">
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</div>
+<div class="pt-4 pb-2 px-3">
+<span class="text-[10px] font-bold uppercase tracking-wider text-outline-variant/50">Transaksi</span>
+</div>
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">calendar_today</span>
+<span class="font-label-md text-label-md">Booking</span>
+</div>
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">supervisor_account</span>
+<span class="font-label-md text-label-md">Request Supervisor</span>
+</div>
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">fact_check</span>
+<span class="font-label-md text-label-md">Cek Fisik</span>
+</div>
+<div class="pt-4 pb-2 px-3">
+<span class="text-[10px] font-bold uppercase tracking-wider text-outline-variant/50">Keuangan</span>
+</div>
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">account_balance_wallet</span>
+<span class="font-label-md text-label-md">Piutang</span>
+</div>
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">key</span>
+<span class="font-label-md text-label-md">Rent to Rent</span>
+</div>
+<div class="flex items-center px-3 py-2.5 rounded-lg bg-surface-container-highest text-on-surface font-semibold border-r-4 border-secondary transition-all duration-150 scale-[0.98]">
+<span class="material-symbols-outlined mr-3">receipt_long</span>
+<span class="font-label-md text-label-md">Biaya Operasional</span>
+</div>
+</nav>
+<div class="mt-auto px-3 space-y-1">
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">account_circle</span>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md leading-tight">Super Admin DRENT</span>
+<span class="text-[10px] opacity-70">superadmin</span>
+</div>
+</div>
+<div class="flex items-center px-3 py-2.5 rounded-lg text-outline-variant hover:text-on-primary-fixed-variant transition-colors hover:bg-primary-container group cursor-pointer">
+<span class="material-symbols-outlined mr-3">logout</span>
+<span class="font-label-md text-label-md">Logout</span>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-sidebar-width min-h-screen">
+<!-- Top App Bar -->
+<header class="flex items-center justify-between px-margin-md h-16 bg-surface dark:bg-surface-dim sticky top-0 z-20">
+<h2 class="font-headline-xl text-headline-xl font-bold text-on-surface">Biaya Operasional</h2>
+<div class="flex items-center gap-4">
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-opacity opacity-80 active:opacity-100">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 hover:bg-surface-container-low rounded-full transition-opacity opacity-80 active:opacity-100">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-secondary-fixed overflow-hidden">
+<img alt="Admin Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_GM8Ia45zlipHcIrOvEZHI6T-gNAtQFtvKSaG3gRXG7ohM1dnzfSUdJSMdof743uVi5nxeCJDnHmwV8OmoSCK7SsVALDuALCIznPOL0eSeJD6DCV8Laz61hxQjU7A1fRNUqbqHmfmkDaDqtX3tRSUQ2iS9dMhLOK6jYLjYpkZnHTYZ8yq6SseRgh9qTl1CsdGt-UW0sDNucqdDAZ1aXZp1zoLp8wX94xEKgxMQN5zqr9-ufXySURYhjIkWYNdtoaFKl9kRtXp6n0I"/>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<div class="p-margin-md">
+<!-- Table Controls -->
+<div class="flex flex-wrap gap-4 items-end mb-6">
+<div class="flex-1 min-w-[300px]">
+<label class="block font-label-md text-on-surface-variant mb-1 ml-1">Pencarian</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-sm focus:ring-2 focus:ring-secondary/20 focus:border-secondary outline-none transition-all" placeholder="Kode, pelanggan, driver, tujuan..." type="text"/>
+</div>
+</div>
+<div>
+<label class="block font-label-md text-on-surface-variant mb-1 ml-1">Status Dana</label>
+<select class="w-48 py-2 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-sm focus:ring-2 focus:ring-secondary/20 outline-none">
+<option>Semua</option>
+<option>Pending</option>
+<option>Accepted</option>
+</select>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-4 py-2 flex items-center gap-2 text-on-surface-variant font-label-md hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[20px]">restart_alt</span> Reset
+                    </button>
+<button class="px-6 py-2 flex items-center gap-2 bg-primary text-on-primary font-label-md rounded-lg hover:shadow-lg transition-all active:scale-95">
+<span class="material-symbols-outlined text-[20px]">filter_list</span> Filter
+                    </button>
+</div>
+</div>
+<!-- Page Background Content (Mocked) -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+<table class="w-full text-left">
+<thead class="bg-surface-container text-table-header uppercase">
+<tr>
+<th class="px-gutter py-4">Booking</th>
+<th class="px-gutter py-4">Driver &amp; Jadwal</th>
+<th class="px-gutter py-4">Anggaran</th>
+<th class="px-gutter py-4">Dana Pegangan</th>
+<th class="px-gutter py-4">Gaji Sopir</th>
+<th class="px-gutter py-4 text-right">Aksi</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<tr class="hover:bg-secondary/5 transition-colors cursor-pointer">
+<td class="px-gutter py-4">
+<span class="font-bold text-secondary">BK-202605-00002</span>
+<div class="text-[10px] text-outline mt-1">Latif</div>
+<span class="inline-block mt-2 px-2 py-0.5 bg-tertiary-fixed-dim/20 text-on-tertiary-fixed-variant text-[10px] font-bold rounded">SELESAI</span>
+</td>
+<td class="px-gutter py-4">
+<div class="flex items-center gap-2">
+<span class="font-semibold">Asep</span>
+<span class="px-1.5 py-0.5 bg-secondary-fixed text-on-secondary-fixed text-[10px] font-bold rounded">Initial</span>
+</div>
+<div class="text-body-sm text-on-surface-variant mt-1">15 May 2026 07:00 - 23:59</div>
+</td>
+<td class="px-gutter py-4 font-semibold">Rp 50.000</td>
+<td class="px-gutter py-4 font-semibold">Rp 100.000</td>
+<td class="px-gutter py-4 font-semibold">Rp 0</td>
+<td class="px-gutter py-4 text-right">
+<button class="px-3 py-1.5 bg-primary text-on-primary text-body-sm font-semibold rounded-lg hover:opacity-90 transition-opacity">
+                                    Detail
+                                </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+<!-- IMPROVED MODAL: Detail Dana Reimburs -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+<!-- Backdrop -->
+<div class="absolute inset-0 bg-primary/40 backdrop-blur-sm"></div>
+<!-- Modal Container -->
+<div class="relative bg-white w-full max-w-5xl rounded-xl shadow-[0px_20px_60px_-15px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col max-h-[921px]">
+<!-- Modal Header -->
+<div class="px-modal-padding py-6 border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest sticky top-0 z-10">
+<div>
+<h3 class="font-headline-lg text-headline-lg text-primary">Detail Dana Reimburs</h3>
+<p class="text-body-sm text-outline">Kelola rincian pengeluaran dan verifikasi bukti transaksi driver</p>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-error-container hover:text-error transition-colors group">
+<span class="material-symbols-outlined group-active:scale-90 transition-transform">close</span>
+</button>
+</div>
+<!-- Modal Scrollable Content -->
+<div class="flex-1 overflow-y-auto p-modal-padding">
+<!-- 1. Header Hierarchy: Financial Summary Grid -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+<div class="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1">
+<span class="font-label-md text-on-surface-variant text-[11px] uppercase tracking-wider">Total Anggaran</span>
+<span class="font-headline-lg text-primary">Rp 250.000</span>
+</div>
+<div class="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1">
+<span class="font-label-md text-on-surface-variant text-[11px] uppercase tracking-wider">Deposit OP</span>
+<span class="font-headline-lg text-secondary">Rp 100.000</span>
+</div>
+<div class="p-4 rounded-xl bg-secondary-fixed/30 border border-secondary/20 flex flex-col gap-1">
+<span class="font-label-md text-on-secondary-fixed text-[11px] uppercase tracking-wider">Dana Reimburs</span>
+<span class="font-headline-lg text-secondary-container">Rp 100.000</span>
+</div>
+<div class="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1">
+<span class="font-label-md text-on-surface-variant text-[11px] uppercase tracking-wider">Pengembalian</span>
+<span class="font-headline-lg text-on-surface-variant">Rp 0</span>
+</div>
+<div class="p-4 rounded-xl bg-error-container/10 border border-error/10 flex flex-col gap-1">
+<span class="font-label-md text-error text-[11px] uppercase tracking-wider">Request ACC</span>
+<span class="font-headline-lg text-error">Rp 0</span>
+</div>
+</div>
+<!-- 2 & 3. Action Buttons & Tabbed Navigation -->
+<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-6">
+<!-- Tabbed Navigation -->
+<div class="flex p-1 bg-surface-container rounded-xl">
+<button class="px-4 py-2 rounded-lg bg-surface-container-lowest shadow-sm text-primary font-bold text-label-md transition-all">
+                            Transaksi Terpilih
+                        </button>
+<button class="px-4 py-2 rounded-lg text-outline hover:text-on-surface font-semibold text-label-md transition-all">
+                            Semua Initial / Extend / Rolling
+                        </button>
+</div>
+<!-- Action Buttons Cluster -->
+<div class="flex flex-wrap items-center gap-2">
+<button class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-secondary text-secondary font-bold text-label-md hover:bg-secondary-fixed transition-colors active:scale-[0.98]">
+<span class="material-symbols-outlined text-[18px]">add_card</span>
+                            Input Bon Finance
+                        </button>
+<button class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-secondary text-secondary font-bold text-label-md hover:bg-secondary-fixed transition-colors active:scale-[0.98]">
+<span class="material-symbols-outlined text-[18px]">keyboard_return</span>
+                            Input Pengembalian
+                        </button>
+<button class="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-primary text-on-primary font-bold text-label-md hover:shadow-lg transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined text-[18px]">lock</span>
+                            Close Manual
+                        </button>
+</div>
+</div>
+<!-- 4 & 5. Information Grouping & Enhanced Data Table -->
+<div class="border border-outline-variant rounded-xl overflow-hidden">
+<!-- Section Info Header -->
+<div class="px-gutter py-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-4">
+<span class="font-label-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">payments</span> Deposit &amp; Realisasi
+                            </span>
+<div class="h-4 w-px bg-outline-variant"></div>
+<span class="text-body-sm text-outline-variant">Driver: <b class="text-on-surface">Asep</b> (D 123 AB)</span>
+</div>
+<div class="text-[11px] font-bold text-outline-variant uppercase">3 Sub Transaksi</div>
+</div>
+<table class="w-full text-left">
+<thead class="bg-surface-container text-table-header uppercase">
+<tr>
+<th class="px-6 py-4">Aksi</th>
+<th class="px-6 py-4">Bukti</th>
+<th class="px-6 py-4">Tanggal</th>
+<th class="px-6 py-4">Sub Transaksi</th>
+<th class="px-6 py-4">Jenis</th>
+<th class="px-6 py-4">Nominal</th>
+<th class="px-6 py-4 text-center">Status</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<!-- Row 1 (Approved) -->
+<tr class="hover:bg-tertiary-fixed-dim/5 bg-tertiary-fixed-dim/5 transition-colors">
+<td class="px-6 py-5">
+<button class="p-2 hover:bg-surface-container rounded-full text-secondary transition-colors" title="Edit">
+<span class="material-symbols-outlined">edit_square</span>
+</button>
+</td>
+<td class="px-6 py-5">
+<button class="flex items-center gap-1.5 text-secondary font-bold text-label-md hover:underline group">
+<span class="material-symbols-outlined text-[18px]">image</span>
+                                        Lihat foto
+                                    </button>
+</td>
+<td class="px-6 py-5">
+<div class="font-semibold text-primary">16 May 2026</div>
+<div class="text-body-sm text-outline">00:10</div>
+</td>
+<td class="px-6 py-5 text-body-sm">
+<div class="font-bold">Initial</div>
+<div class="text-outline">D 123 AB</div>
+</td>
+<td class="px-6 py-5">
+<span class="px-3 py-1 bg-tertiary-fixed-dim text-on-tertiary-fixed-variant text-[11px] font-extrabold rounded-md shadow-sm">BBM</span>
+</td>
+<td class="px-6 py-5 font-bold text-primary">Rp 50.000</td>
+<td class="px-6 py-5 text-center">
+<span class="px-4 py-1.5 bg-tertiary-fixed text-on-tertiary-fixed-variant text-[11px] font-extrabold rounded-full inline-flex items-center gap-1 uppercase">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Approved
+                                    </span>
+</td>
+</tr>
+<!-- Row 2 (Deposit) -->
+<tr class="hover:bg-secondary-fixed/5 transition-colors">
+<td class="px-6 py-5 text-outline">
+                                    —
+                                </td>
+<td class="px-6 py-5 text-outline">
+                                    —
+                                </td>
+<td class="px-6 py-5">
+<div class="font-semibold text-primary">15 May 2026</div>
+<div class="text-body-sm text-outline">07:00</div>
+</td>
+<td class="px-6 py-5 text-body-sm">
+<div class="font-bold">Initial</div>
+<div class="text-outline">D 123 AB</div>
+</td>
+<td class="px-6 py-5">
+<span class="px-3 py-1 bg-secondary-fixed text-on-secondary-fixed text-[11px] font-extrabold rounded-md shadow-sm">Deposit OP</span>
+</td>
+<td class="px-6 py-5 font-bold text-primary">Rp 50.000</td>
+<td class="px-6 py-5 text-center">
+<span class="px-4 py-1.5 bg-secondary-fixed text-on-secondary-fixed text-[11px] font-extrabold rounded-full inline-flex items-center gap-1 uppercase">
+<span class="material-symbols-outlined text-[14px]">done_all</span> Accepted
+                                    </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Footer Summary info -->
+<div class="mt-8 flex justify-end">
+<div class="w-full md:w-1/3 bg-surface-container-lowest p-6 rounded-xl border border-outline-variant space-y-3">
+<div class="flex justify-between items-center text-body-sm">
+<span class="text-outline">Subtotal Transaksi</span>
+<span class="font-semibold text-primary">Rp 100.000</span>
+</div>
+<div class="flex justify-between items-center text-body-sm">
+<span class="text-outline">Biaya Administrasi</span>
+<span class="font-semibold text-primary">Rp 0</span>
+</div>
+<div class="pt-3 border-t border-outline-variant flex justify-between items-center">
+<span class="font-bold text-primary">Total Realisasi</span>
+<span class="font-headline-lg text-secondary">Rp 100.000</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Modal Fixed Bottom Actions (Optional) -->
+<div class="px-modal-padding py-6 border-t border-outline-variant flex justify-end gap-3 bg-surface-container-lowest">
+<button class="px-8 py-2.5 rounded-lg border border-outline text-outline font-bold hover:bg-surface-container-low transition-colors">
+                    Kembali
+                </button>
+<button class="px-10 py-2.5 rounded-lg bg-primary text-on-primary font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all active:scale-[0.98]">
+                    Konfirmasi Data
+                </button>
+</div>
+</div>
+</div>
+</body></html>

@@ -2,12 +2,11 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
-import { useUnit } from '../../composables/useUnit';
 import { useRentalOwner } from '../../composables/useRentalOwner';
 import { useCity } from '../../composables/useCity';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import BookingCalendar from '../../components/bookings/BookingCalendar.vue';
-import { format, addMonths, subMonths, startOfMonth } from 'date-fns';
+import { format, addDays, addMonths, subMonths, startOfMonth } from 'date-fns';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -25,43 +24,102 @@ const {
   fetchAll, fetchForCalendar, changeStatus, requestReturnToRentalUnit, statusLoading 
 } = useBooking();
 
-const { units, loading: unitsLoading, fetchAll: fetchUnits } = useUnit();
 const { rentalOwners, fetchAll: fetchRentalOwners } = useRentalOwner();
 const { cities, fetchAll: fetchCities } = useCity();
 
 const activeTab = ref(0);
 const calendarStart = ref(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
 const calendarBookings = ref([]);
+const calendarLoading = ref(false);
+const calendarVisibleLimit = ref(50);
+const showAdvancedFilters = ref(false);
 
 // Calendar filters
 const calendarOwnerFilter = ref(null);
-const calendarTransactionFilter = ref('all'); // 'all' | 'has_booking'
+const calendarVehicleSearch = ref('');
 
-const calendarTransactionOptions = [
-  { label: 'Semua Unit', value: 'all' },
-  { label: 'Hanya Ada Transaksi', value: 'has_booking' },
-];
-
-const filteredCalendarUnits = computed(() => {
-  let list = units.value;
-
-  // Filter by rental owner
-  if (calendarOwnerFilter.value) {
-    list = list.filter(u => u.rental_owner_id === calendarOwnerFilter.value);
-  }
-
-  // Filter by transaction presence in this date window
-  if (calendarTransactionFilter.value === 'has_booking') {
-    const unitIdsWithBookings = new Set(
-      calendarBookings.value.flatMap(b =>
-        b.booking_details.map(d => d.unit_id)
-      ).filter(Boolean)
-    );
-    list = list.filter(u => unitIdsWithBookings.has(u.id));
-  }
-
-  return list;
+const sortedRentalOwners = computed(() => {
+  return [...rentalOwners.value].sort((a, b) => (a?.nama || '').localeCompare(b?.nama || '', 'id', { sensitivity: 'base' }));
 });
+
+const calendarEnd = computed(() => format(addDays(new Date(calendarStart.value), 29), 'yyyy-MM-dd'));
+
+const normalizeDateKey = (value) => {
+  if (!value) return null;
+  return format(new Date(value), 'yyyy-MM-dd');
+};
+
+const isDetailInCalendarPeriod = (detail) => {
+  const detailStart = normalizeDateKey(detail?.tgl_sewa);
+  const detailEnd = normalizeDateKey(detail?.tgl_kembali);
+
+  return Boolean(detailStart && detailEnd && detailStart <= calendarEnd.value && detailEnd >= calendarStart.value);
+};
+
+const getUnitOwnerId = (unit) => unit?.rental_owner_id || unit?.rental_owner?.id || null;
+
+const baseCalendarUnits = computed(() => {
+  const unitMap = new Map();
+
+  calendarBookings.value.forEach((booking) => {
+    (booking.booking_details || []).forEach((detail) => {
+      if (!detail?.unit_id || !detail?.unit || !isDetailInCalendarPeriod(detail)) return;
+
+      const existing = unitMap.get(detail.unit_id);
+      if (existing) {
+        existing.transaction_count += 1;
+        return;
+      }
+
+      unitMap.set(detail.unit_id, {
+        ...detail.unit,
+        rental_owner_id: getUnitOwnerId(detail.unit),
+        transaction_count: 1,
+      });
+    });
+  });
+
+  return [...unitMap.values()];
+});
+
+const calendarOwnerOptions = computed(() => {
+  const ownerMap = new Map();
+
+  baseCalendarUnits.value.forEach((unit) => {
+    const owner = unit.rental_owner;
+    const ownerId = getUnitOwnerId(unit);
+    if (!ownerId || !owner?.nama) return;
+    ownerMap.set(ownerId, { ...owner, id: ownerId });
+  });
+
+  return [...ownerMap.values()].sort((a, b) => (a?.nama || '').localeCompare(b?.nama || '', 'id', { sensitivity: 'base' }));
+});
+
+const matchesCalendarVehicleSearch = (unit) => {
+  const keyword = calendarVehicleSearch.value.trim().toLowerCase();
+  if (!keyword) return true;
+
+  return [unit?.no_polisi, unit?.tipe, unit?.merk]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(keyword));
+};
+
+const calendarUnits = computed(() => {
+  return baseCalendarUnits.value
+    .filter((unit) => !calendarOwnerFilter.value || getUnitOwnerId(unit) === calendarOwnerFilter.value)
+    .filter(matchesCalendarVehicleSearch)
+    .sort((a, b) => {
+      if (b.transaction_count !== a.transaction_count) return b.transaction_count - a.transaction_count;
+
+      const ownerCompare = (a.rental_owner?.nama || '').localeCompare(b.rental_owner?.nama || '', 'id', { sensitivity: 'base' });
+      if (ownerCompare !== 0) return ownerCompare;
+
+      return (a.no_polisi || '').localeCompare(b.no_polisi || '', 'id', { sensitivity: 'base' });
+    });
+});
+
+const visibleCalendarUnits = computed(() => calendarUnits.value.slice(0, calendarVisibleLimit.value));
+const hasMoreCalendarUnits = computed(() => visibleCalendarUnits.value.length < calendarUnits.value.length);
 
 const showStatusDialog = ref(false);
 const showReturnRequestDialog = ref(false);
@@ -90,7 +148,10 @@ const statusOptions = [
 const mainTabStatusValues = ['follow_up', 'confirm', 'waiting_list', 'rental_unit'];
 const closedTabStatusValues = ['selesai', 'batal'];
 const activeStatusOptions = statusOptions.filter(option => mainTabStatusValues.includes(option.value));
+const closedStatusOptions = statusOptions.filter(option => closedTabStatusValues.includes(option.value));
+const currentStatusOptions = computed(() => activeTab.value === 1 ? closedStatusOptions : activeStatusOptions);
 const selectedStatusFilters = ref([]);
+const selectedClosedStatusFilters = ref([]);
 
 const sortOptions = [
   { label: 'Terbaru dibuat', value: 'created_at:desc' },
@@ -108,9 +169,26 @@ const getActiveTabStatusFilter = () => {
     : [...mainTabStatusValues];
 };
 
-const isStatusSelected = (status) => selectedStatusFilters.value.includes(status);
+const getClosedTabStatusFilter = () => {
+  return selectedClosedStatusFilters.value.length
+    ? selectedClosedStatusFilters.value.filter(status => closedTabStatusValues.includes(status))
+    : [...closedTabStatusValues];
+};
+
+const isStatusSelected = (status) => {
+  return activeTab.value === 1
+    ? selectedClosedStatusFilters.value.includes(status)
+    : selectedStatusFilters.value.includes(status);
+};
 
 const toggleStatusFilter = (status) => {
+  if (activeTab.value === 1) {
+    selectedClosedStatusFilters.value = isStatusSelected(status)
+      ? selectedClosedStatusFilters.value.filter(selectedStatus => selectedStatus !== status)
+      : [...selectedClosedStatusFilters.value, status];
+    return;
+  }
+
   selectedStatusFilters.value = isStatusSelected(status)
     ? selectedStatusFilters.value.filter(selectedStatus => selectedStatus !== status)
     : [...selectedStatusFilters.value, status];
@@ -123,17 +201,25 @@ const loadFilterOptions = async () => {
   ]);
 };
 
+const loadCalendarData = async () => {
+  calendarLoading.value = true;
+  calendarVisibleLimit.value = 50;
+  try {
+    calendarBookings.value = await fetchForCalendar(calendarStart.value, calendarEnd.value);
+  } finally {
+    calendarLoading.value = false;
+  }
+};
+
 const loadData = async () => {
   if (activeTab.value === 0) {
     filters.value.status = getActiveTabStatusFilter();
     await fetchAll(pagination.value.current_page);
   } else if (activeTab.value === 1) {
-    filters.value.status = [...closedTabStatusValues];
+    filters.value.status = getClosedTabStatusFilter();
     await fetchAll(pagination.value.current_page);
   } else {
-    await fetchUnits({ per_page: 100 }); // Get all units for calendar
-    const endDate = format(addMonths(new Date(calendarStart.value), 1), 'yyyy-MM-dd');
-    calendarBookings.value = await fetchForCalendar(calendarStart.value, endDate);
+    await loadCalendarData();
   }
 };
 
@@ -148,6 +234,16 @@ onUnmounted(() => {
 });
 
 watch(activeTab, loadData);
+watch(calendarOwnerFilter, () => {
+  calendarVisibleLimit.value = 50;
+});
+watch(calendarVehicleSearch, () => {
+  calendarVisibleLimit.value = 50;
+});
+
+const loadMoreCalendarUnits = () => {
+  calendarVisibleLimit.value += 50;
+};
 
 const onPage = (event) => {
   pagination.value.current_page = event.page + 1;
@@ -161,7 +257,7 @@ const applyFilters = () => {
   if (activeTab.value === 0) {
     filters.value.status = getActiveTabStatusFilter();
   } else if (activeTab.value === 1) {
-    filters.value.status = [...closedTabStatusValues];
+    filters.value.status = getClosedTabStatusFilter();
   }
   pagination.value.current_page = 1;
   fetchAll(1);
@@ -169,7 +265,8 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   selectedStatusFilters.value = [];
-  filters.value.status = activeTab.value === 1 ? [...closedTabStatusValues] : [...mainTabStatusValues];
+  selectedClosedStatusFilters.value = [];
+  filters.value.status = activeTab.value === 1 ? getClosedTabStatusFilter() : getActiveTabStatusFilter();
   filters.value.date_from = null;
   filters.value.date_to = null;
   filters.value.search = '';
@@ -257,12 +354,6 @@ const onRowContextMenu = (event) => {
       command: () => goToDetail(event.data.id),
     },
     {
-      label: 'Ubah Status',
-      icon: 'pi pi-sync',
-      disabled: !canUpdateStatus(event.data),
-      command: () => openStatusDialog(event.data),
-    },
-    {
       label: 'Request Kembali Rental Unit',
       icon: 'pi pi-undo',
       disabled: !canRequestReturnToRentalUnit(event.data),
@@ -270,6 +361,28 @@ const onRowContextMenu = (event) => {
     },
   ];
   bookingContextMenu.value.show(event.originalEvent);
+};
+
+const openCalendarContextMenu = ({ originalEvent, unitId, date, bookingId }) => {
+  originalEvent?.preventDefault?.();
+  contextMenuSelection.value = { unitId, date, bookingId };
+  contextMenuItems.value = [
+    {
+      label: 'Tambah Booking',
+      icon: 'pi pi-plus',
+      disabled: !unitId || !date,
+      command: () => openCreateWithPreFill({ unitId, date }),
+    },
+    ...(bookingId ? [
+      {
+        label: 'Lihat Detail',
+        icon: 'pi pi-eye',
+        command: () => goToDetail(bookingId),
+      },
+    ] : []),
+  ];
+
+  bookingContextMenu.value.show(originalEvent);
 };
 
 const openCreateWithPreFill = ({ unitId, date }) => {
@@ -312,6 +425,34 @@ const getExtraDetailCount = (booking) => {
   return Math.max(count - 1, 0);
 };
 
+const getRentableDetails = (booking) => {
+  return (booking?.booking_details || []).filter(detail => detail.status !== 'batal');
+};
+
+const getEarliestDate = (details, field) => {
+  return details
+    .map(detail => detail?.[field])
+    .filter(Boolean)
+    .sort((a, b) => new Date(a) - new Date(b))[0] || null;
+};
+
+const getLatestDate = (details, field) => {
+  return details
+    .map(detail => detail?.[field])
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a))[0] || null;
+};
+
+const getPeriodStartDate = (booking) => {
+  const details = getRentableDetails(booking);
+  return getEarliestDate(details, 'tgl_sewa') || getDisplayDetail(booking)?.tgl_sewa;
+};
+
+const getPeriodEndDate = (booking) => {
+  const details = getRentableDetails(booking);
+  return getLatestDate(details, 'tgl_kembali') || getDisplayDetail(booking)?.tgl_kembali;
+};
+
 const getVehicleInfo = (booking) => {
   const detail = getDisplayDetail(booking);
   const unit = detail?.unit;
@@ -343,6 +484,32 @@ const getVehicleInfo = (booking) => {
 };
 
 const getRentalDuration = (booking) => {
+  const details = getRentableDetails(booking);
+  const durationGroups = details.reduce((groups, detail) => {
+    const paket = detail?.paket_sewa || booking?.paket_sewa;
+    const lama = Number(detail?.lama_sewa || 0);
+    if (!paket || !lama) return groups;
+
+    groups[paket] = (groups[paket] || 0) + lama;
+    return groups;
+  }, {});
+
+  const groupEntries = Object.entries(durationGroups);
+  if (groupEntries.length) {
+    const initialDetail = details.find(detail => detail.detail_type === 'initial')
+      || [...details].sort((a, b) => new Date(a?.tgl_sewa || 0) - new Date(b?.tgl_sewa || 0))[0];
+    const mainPackage = initialDetail?.paket_sewa && durationGroups[initialDetail.paket_sewa]
+      ? initialDetail.paket_sewa
+      : groupEntries[0][0];
+    const mainDuration = durationGroups[mainPackage];
+    const otherDuration = groupEntries
+      .filter(([paket]) => paket !== mainPackage)
+      .reduce((sum, [, lama]) => sum + lama, 0);
+    const otherLabel = otherDuration ? ` (${otherDuration} lainnya)` : '';
+
+    return `${mainDuration} x ${formatPackage(mainPackage)}${otherLabel}`;
+  }
+
   const detail = getDisplayDetail(booking);
   const lamaSewa = detail?.lama_sewa || booking?.lama_sewa;
   const paketSewa = detail?.paket_sewa || booking?.paket_sewa;
@@ -418,10 +585,10 @@ const getTotalSewa = (booking) => {
 const getLateInfo = (booking) => {
   if (['selesai', 'batal'].includes(booking?.status)) return null;
 
-  const detail = getDisplayDetail(booking);
-  if (!detail?.tgl_kembali) return null;
+  const tglKembali = getPeriodEndDate(booking);
+  if (!tglKembali) return null;
 
-  const returnDate = new Date(detail.tgl_kembali);
+  const returnDate = new Date(tglKembali);
   const now = new Date();
   const diffMs = now.getTime() - returnDate.getTime();
   if (Number.isNaN(diffMs) || diffMs <= 0) return null;
@@ -439,6 +606,7 @@ const getLateInfo = (booking) => {
     days,
     hours,
     label: parts.join(' '),
+    note: `Terlambat ${parts.join(' ')}`,
   };
 };
 
@@ -452,7 +620,7 @@ const getBookingCardClass = (booking) => {
     confirm: 'booking-card-info',
     waiting_list: 'booking-card-neutral',
     rental_unit: 'booking-card-success',
-    selesai: 'booking-card-success',
+    selesai: 'booking-card-completed',
     batal: 'booking-card-error',
   };
 
@@ -461,63 +629,67 @@ const getBookingCardClass = (booking) => {
 </script>
 
 <template>
-  <div class="page-container" :class="{ 'booking-list-active': activeTab !== 2 }">
+  <div class="page-container" :class="{ 'table-page-active': activeTab !== 2 }">
     <!-- Page Header -->
     <div class="page-header">
       <div class="header-left">
         <h1 class="text-h1">Manajemen Booking</h1>
         <p class="text-secondary text-xs">Kelola semua pesanan rental kendaraan dalam satu panel.</p>
       </div>
-      <button class="btn-pill btn-primary create-booking-button" @click="router.push('/bookings/create')">
-        <i class="pi pi-plus"></i>
-        <span class="create-label-desktop">Buat Booking</span>
-        <span class="create-label-mobile">Booking</span>
-      </button>
-    </div>
+      <div class="header-actions">
+        <!-- Tab Toggle -->
+        <div class="tab-toggle-container">
+          <div class="pill-toggle">
+            <button
+              class="toggle-item"
+              :class="{ active: activeTab === 0 }"
+              @click="activeTab = 0"
+            >
+              Daftar Booking
+            </button>
+            <button
+              class="toggle-item"
+              :class="{ active: activeTab === 1 }"
+              @click="activeTab = 1"
+            >
+              Booking Selesai
+            </button>
+            <button
+              class="toggle-item"
+              :class="{ active: activeTab === 2 }"
+              @click="activeTab = 2"
+            >
+              Kalender Unit
+            </button>
+          </div>
+        </div>
 
-    <!-- Tab Toggle -->
-    <div class="tab-toggle-container">
-      <div class="pill-toggle">
-        <button 
-          class="toggle-item" 
-          :class="{ active: activeTab === 0 }" 
-          @click="activeTab = 0"
-        >
-          Daftar Booking
-        </button>
-        <button 
-          class="toggle-item" 
-          :class="{ active: activeTab === 1 }" 
-          @click="activeTab = 1"
-        >
-          Booking Selesai
-        </button>
-        <button 
-          class="toggle-item" 
-          :class="{ active: activeTab === 2 }" 
-          @click="activeTab = 2"
-        >
-          Kalender Unit
+        <button class="btn-pill btn-primary create-booking-button" @click="router.push('/bookings/create')">
+          <i class="pi pi-plus"></i>
+          <span class="create-label-desktop">Buat Booking</span>
+          <span class="create-label-mobile">Booking</span>
         </button>
       </div>
     </div>
 
-    <div v-if="activeTab === 0 || activeTab === 1" class="tab-content booking-list-tab">
+    <ContextMenu ref="bookingContextMenu" :model="contextMenuItems" />
+
+    <div v-if="activeTab === 0 || activeTab === 1" class="tab-content list-tab-fill booking-list-tab">
       <!-- Filter Bar -->
       <div class="filter-bar surface-card">
         <div class="filter-groups">
           <div class="filter-group filter-group-wide">
-            <label>Cari</label>
+            <label>Pencarian</label>
             <span class="filter-search">
               <i class="pi pi-search"></i>
               <InputText v-model="filters.search" placeholder="Kode, pelanggan, tujuan..." class="w-full" @keyup.enter="applyFilters" />
             </span>
           </div>
-          <div v-if="activeTab === 0" class="filter-group filter-group-status">
-            <label>Status</label>
+          <div class="filter-group filter-group-status">
+            <label>Status Rental</label>
             <div class="status-filter-buttons" role="group" aria-label="Filter status booking">
               <button
-                v-for="option in activeStatusOptions"
+                v-for="option in currentStatusOptions"
                 :key="option.value"
                 type="button"
                 class="status-filter-button"
@@ -529,30 +701,40 @@ const getBookingCardClass = (booking) => {
               </button>
             </div>
           </div>
-          <div class="filter-group">
-            <label>Mulai</label>
-            <DatePicker v-model="filters.date_from" dateFormat="yy-mm-dd" placeholder="Dari Tanggal" class="w-full md:w-36" />
-          </div>
-          <div class="filter-group">
-            <label>Sampai</label>
-            <DatePicker v-model="filters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai Tanggal" class="w-full md:w-36" />
-          </div>
-          <div class="filter-group">
-            <label>Pemilik</label>
-            <Dropdown v-model="filters.rental_owner_id" :options="rentalOwners" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" showClear filter class="w-full md:w-48" />
-          </div>
-          <div class="filter-group">
-            <label>Kota</label>
-            <Dropdown v-model="filters.kota" :options="cities" optionLabel="nama" optionValue="nama" placeholder="Semua Kota" showClear filter class="w-full md:w-40" />
-          </div>
-          <div class="filter-group">
-            <label>Sort</label>
-            <Dropdown v-model="selectedSort" :options="sortOptions" optionLabel="label" optionValue="value" class="w-full md:w-44" />
+          <div v-if="showAdvancedFilters" class="advanced-filter-groups">
+            <div class="filter-group">
+              <label>Mulai</label>
+              <DatePicker v-model="filters.date_from" dateFormat="yy-mm-dd" placeholder="Dari Tanggal" class="w-full md:w-36" />
+            </div>
+            <div class="filter-group">
+              <label>Sampai</label>
+              <DatePicker v-model="filters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai Tanggal" class="w-full md:w-36" />
+            </div>
+            <div class="filter-group">
+              <label>Pemilik</label>
+              <Dropdown v-model="filters.rental_owner_id" :options="sortedRentalOwners" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" showClear filter class="w-full md:w-48" />
+            </div>
+            <div class="filter-group">
+              <label>Kota</label>
+              <Dropdown v-model="filters.kota" :options="cities" optionLabel="nama" optionValue="nama" placeholder="Semua Kota" showClear filter class="w-full md:w-40" />
+            </div>
+            <div class="filter-group">
+              <label>Sort</label>
+              <Dropdown v-model="selectedSort" :options="sortOptions" optionLabel="label" optionValue="value" class="w-full md:w-44" />
+            </div>
           </div>
         </div>
         <div class="filter-actions">
+          <button
+            class="btn-pill btn-secondary btn-pill-compact"
+            type="button"
+            :aria-expanded="showAdvancedFilters"
+            @click="showAdvancedFilters = !showAdvancedFilters"
+          >
+            <i class="pi" :class="showAdvancedFilters ? 'pi-chevron-up' : 'pi-sliders-h'"></i>
+          </button>
           <button class="btn-pill btn-secondary btn-pill-compact" @click="resetFilters" :disabled="loading">
-            <i class="pi pi-refresh"></i> Reset
+            <i class="pi pi-refresh"></i>
           </button>
           <button class="btn-pill btn-primary btn-pill-compact" @click="applyFilters" :disabled="loading">
             <i class="pi pi-filter"></i> Filter
@@ -560,10 +742,10 @@ const getBookingCardClass = (booking) => {
         </div>
       </div>
 
-      <ContextMenu ref="bookingContextMenu" :model="contextMenuItems" />
+      <ProgressBar v-if="loading" mode="indeterminate" style="height: 4px" class="mb-4" />
 
       <!-- Desktop DataTable -->
-      <div v-if="!isMobile" class="booking-table-shell">
+      <div v-if="!isMobile" class="table-shell booking-table-shell">
         <DataTable
           :value="bookings"
           lazy
@@ -630,9 +812,13 @@ const getBookingCardClass = (booking) => {
            <Column header="Periode" style="min-width: 13rem">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
-                <span class="font-medium text-xs">{{ formatDateTime(getDisplayDetail(data)?.tgl_sewa) }}</span>
-                <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getDisplayDetail(data)?.tgl_kembali) }}</span>
+                <span class="font-medium text-xs">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
+                <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(data)) }}</span>
                 <span class="text-[11px] font-bold text-secondary mt-1">{{ getRentalDuration(data) }}</span>
+                <span v-if="getLateInfo(data)" class="late-note">
+                  <i class="pi pi-clock"></i>
+                  {{ getLateInfo(data).note }}
+                </span>
               </div>
             </template>
           </Column>
@@ -688,20 +874,17 @@ const getBookingCardClass = (booking) => {
 
       <!-- Mobile Card List -->
       <div v-else class="mobile-card-list">
-         <div v-if="loading" class="p-4 text-center">
-            <ProgressBar mode="indeterminate" style="height: 4px" />
-         </div>
-         <div v-else-if="bookings.length === 0" class="p-8 text-center text-secondary">
+         <div v-if="!loading && bookings.length === 0" class="p-8 text-center text-secondary">
             Tidak ada booking ditemukan.
          </div>
+         <template v-else-if="!loading">
          <div
-           v-else
-           v-for="booking in bookings"
-           :key="booking.id"
-           class="booking-card surface-card"
-           :class="getBookingCardClass(booking)"
-           @click="goToDetail(booking.id)"
-         >
+            v-for="booking in bookings"
+            :key="booking.id"
+            class="booking-card surface-card"
+            :class="getBookingCardClass(booking)"
+            @click="goToDetail(booking.id)"
+          >
             <div class="card-header">
                <BookingStatusBadge :status="booking.status" />
                <span class="font-bold text-sm">{{ getVehicleInfo(booking).title }}</span>
@@ -721,7 +904,8 @@ const getBookingCardClass = (booking) => {
                <div class="info-row mt-3">
                   <div class="info-col">
                      <span class="label">Periode</span>
-                     <span class="value text-xs">{{ formatDateTime(getDisplayDetail(booking)?.tgl_sewa) }}</span>
+                     <span class="value text-xs">{{ formatDateTime(getPeriodStartDate(booking)) }}</span>
+                     <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(booking)) }}</span>
                   </div>
                   <div class="info-col items-end">
                      <span class="label">Durasi</span>
@@ -729,7 +913,7 @@ const getBookingCardClass = (booking) => {
                   </div>
                </div>
                <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
-                  <i class="pi pi-clock"></i> Terlambat {{ getLateInfo(booking).label }}
+                  <i class="pi pi-clock"></i> {{ getLateInfo(booking).note }}
                </div>
             </div>
             <div class="card-footer">
@@ -752,8 +936,9 @@ const getBookingCardClass = (booking) => {
               {{ booking.rental_unit_return_request?.status === 'pending' ? 'Menunggu Supervisor' : 'Request Rental Unit' }}
             </button>
          </div>
+         </template>
          <!-- Mobile Paginator -->
-         <div class="mobile-paginator mt-4">
+         <div v-if="!loading" class="mobile-paginator mt-4">
             <Button icon="pi pi-chevron-left" :disabled="pagination.current_page === 1" @click="onPage({page: pagination.current_page - 2})" text />
             <span class="text-sm">Hal {{ pagination.current_page }} dari {{ pagination.last_page }}</span>
             <Button icon="pi pi-chevron-right" :disabled="pagination.current_page === pagination.last_page" @click="onPage({page: pagination.current_page})" text />
@@ -773,9 +958,17 @@ const getBookingCardClass = (booking) => {
 
         <!-- Filters -->
         <div class="calendar-filters-group">
+          <span class="calendar-search">
+            <i class="pi pi-search"></i>
+            <InputText
+              v-model="calendarVehicleSearch"
+              placeholder="Cari nopol / tipe"
+              class="w-full"
+            />
+          </span>
           <Dropdown
             v-model="calendarOwnerFilter"
-            :options="rentalOwners"
+            :options="calendarOwnerOptions"
             optionLabel="nama"
             optionValue="id"
             placeholder="Semua Pemilik"
@@ -783,40 +976,40 @@ const getBookingCardClass = (booking) => {
             filter
             class="calendar-filter-dropdown"
           />
-          <Dropdown
-            v-model="calendarTransactionFilter"
-            :options="calendarTransactionOptions"
-            optionLabel="label"
-            optionValue="value"
-            class="calendar-filter-dropdown"
-          />
           <!-- Refresh button -->
           <button
             class="btn-pill btn-secondary btn-pill-compact"
-            :disabled="unitsLoading"
+            :disabled="calendarLoading"
             @click="loadData"
           >
-            <i class="pi pi-refresh" :class="{ 'pi-spin': unitsLoading }"></i>
+            <i class="pi pi-refresh" :class="{ 'pi-spin': calendarLoading }"></i>
             Refresh
           </button>
         </div>
       </div>
 
-      <ProgressBar v-if="unitsLoading" mode="indeterminate" style="height: 4px" class="mb-4" />
+      <ProgressBar v-if="calendarLoading" mode="indeterminate" style="height: 4px" class="mb-4" />
 
-      <div v-if="!unitsLoading && units.length === 0" class="drent-empty-state">
+      <div v-if="!calendarLoading && calendarUnits.length === 0" class="drent-empty-state">
         <i class="pi pi-info-circle text-4xl text-tertiary mb-3"></i>
-        <p class="text-secondary">Tidak ada unit kendaraan yang tersedia.</p>
+        <p class="text-secondary">Tidak ada unit dengan transaksi pada periode ini.</p>
       </div>
 
       <BookingCalendar
-        v-else
+        v-else-if="!calendarLoading"
         :bookings="calendarBookings"
-        :units="filteredCalendarUnits"
+        :units="visibleCalendarUnits"
         :startDate="calendarStart"
-        @booking-click="goToDetail"
-        @cell-click="openCreateWithPreFill"
+        @calendar-context="openCalendarContextMenu"
       />
+
+      <div v-if="!calendarLoading && hasMoreCalendarUnits" class="calendar-load-more">
+        <button class="btn-pill btn-secondary btn-pill-compact" @click="loadMoreCalendarUnits">
+          <i class="pi pi-angle-down"></i>
+          Muat {{ Math.min(50, calendarUnits.length - visibleCalendarUnits.length) }} unit lagi
+        </button>
+        <span class="text-tertiary text-xs">{{ visibleCalendarUnits.length }} dari {{ calendarUnits.length }} unit</span>
+      </div>
     </div>
 
     <!-- Status Dialog -->
@@ -889,393 +1082,163 @@ const getBookingCardClass = (booking) => {
 </template>
 
 <style scoped>
-.page-container {
-  padding: var(--space-2xl);
-  width: 100%;
-  max-width: none;
-  margin: 0 auto;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-3xl);
-}
-
 .create-label-mobile {
-   display: none;
-}
-
-
-/* === Filter Bar === */
-.filter-bar {
-   padding: var(--space-md);
-   display: flex;
-   justify-content: space-between;
-   align-items: flex-end;
-   margin-bottom: var(--space-lg);
-   gap: var(--space-lg);
-   flex-wrap: wrap;
-}
-
-.filter-groups {
-   display: flex;
-   gap: var(--space-xl);
-   flex-wrap: wrap;
-   align-items: flex-end;
-   flex: 1 1 auto;
-}
-
-.filter-group {
-   display: flex;
-   flex-direction: column;
-   gap: 4px;
-}
-
-.filter-group-wide {
-   min-width: min(260px, 100%);
-}
-
-.filter-group-status {
-   flex: 1 1 520px;
-   min-width: min(520px, 100%);
-}
-
-.filter-search {
-   display: block;
-   position: relative;
-   width: 100%;
-}
-
-.filter-search > i {
-   position: absolute;
-   top: 50%;
-   left: 12px;
-   z-index: 1;
-   color: var(--text-tertiary);
-   font-size: 12px;
-   transform: translateY(-50%);
-   pointer-events: none;
-}
-
-.filter-search :deep(.p-inputtext) {
-   padding-left: 34px;
-}
-
-.filter-bar :deep(.p-inputtext),
-.filter-bar :deep(.p-datepicker input),
-.filter-bar :deep(.p-select),
-.filter-bar :deep(.p-dropdown) {
-   min-height: 36px;
-   border-radius: var(--radius-default);
-   border-color: var(--surface-border);
-   font-size: 13px;
-}
-
-.filter-bar :deep(.p-select),
-.filter-bar :deep(.p-dropdown) {
-   display: inline-flex;
-   align-items: center;
-}
-
-.filter-bar :deep(.p-select-label),
-.filter-bar :deep(.p-dropdown-label) {
-   display: flex;
-   align-items: center;
-   padding-top: 0;
-   padding-bottom: 0;
-}
-
-.filter-bar :deep(.p-select-dropdown),
-.filter-bar :deep(.p-dropdown-trigger) {
-   width: 36px;
-}
-
-.filter-actions {
-   display: flex;
-   align-items: center;
-   gap: var(--space-sm);
-}
-
-.filter-group label {
-   font-size: 11px;
-   font-weight: 600;
-   color: var(--text-tertiary);
-   margin-left: 4px;
-}
-
-.status-filter-buttons {
-   display: flex;
-   flex-wrap: wrap;
-   gap: 4px;
-   max-width: 100%;
-}
-
-.status-filter-button {
-   min-height: 32px;
-   padding: 7px 14px;
-   border-radius: var(--radius-full);
-   border: 1px solid var(--surface-border);
-   background: var(--surface-default);
-   color: var(--text-secondary);
-   font-family: var(--font-body);
-   font-size: 11px;
-   font-weight: 700;
-   line-height: 1.2;
-   white-space: nowrap;
-   cursor: pointer;
-   box-shadow: inset 0 0 0 1px rgba(26, 29, 46, 0.02);
-   transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
-}
-
-.status-filter-button:hover {
-   border-color: var(--neutral-6);
-   background: var(--card-bg-hover);
-   color: var(--text-primary);
-}
-
-.status-filter-button.active {
-   border-color: var(--primary);
-   background: var(--primary);
-   color: var(--text-white);
-   box-shadow: 0 4px 10px rgba(26, 29, 46, 0.18);
-}
-
-.status-filter-button.active:hover {
-   background: var(--primary);
-   color: var(--text-white);
-}
-
-/* === DataTable Styling === */
-.booking-table-shell {
-   width: 100%;
+  display: none;
 }
 
 :deep(.booking-row-late) {
-   background-color: rgba(229, 83, 75, 0.04) !important;
+  background-color: rgba(229, 83, 75, 0.04) !important;
 }
 
 :deep(.booking-row-late td:first-child) {
-   border-left: 3px solid var(--negative);
+  border-left: 3px solid var(--negative);
 }
 
-.drent-datatable {
-   width: 100%;
-   border: 1px solid var(--surface-border);
-   border-radius: var(--radius-default);
-   overflow: hidden;
-   background: var(--surface-default);
-   box-shadow: var(--shadow-tile);
+.late-note,
+.late-banner-mini {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: var(--radius-xs);
+  background: rgba(229, 83, 75, 0.08);
+  color: var(--negative);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
-:deep(.drent-datatable .p-datatable-wrapper),
-:deep(.drent-datatable .p-datatable-table-container) {
-   border-radius: inherit;
+.late-note {
+  gap: 5px;
+  margin-top: 2px;
+  padding: 4px 8px;
 }
 
-:deep(.drent-datatable .p-datatable-thead > tr > th),
-:deep(.drent-datatable .p-datatable-tbody > tr > td) {
-   border-right: none;
-}
-
-:deep(.drent-datatable .p-datatable-tbody > tr:last-child > td) {
-   border-bottom: none;
-}
-
-:deep(.drent-datatable .p-paginator) {
-   border-top: 1px solid var(--surface-border);
-   border-radius: 0 0 var(--radius-default) var(--radius-default);
-}
-
-.booking-code-badge {
-   display: inline-flex;
-   align-items: center;
-   width: fit-content;
-   max-width: 100%;
-   padding: 5px 10px;
-   border-radius: var(--radius-full);
-   background: rgba(43, 52, 72, 0.08);
-   color: var(--text-primary);
-   font-size: 11px;
-   font-weight: 700;
-   line-height: 1.2;
-   white-space: nowrap;
-}
-
-.table-text-clamp {
-   display: -webkit-box;
-   -webkit-line-clamp: 2;
-   -webkit-box-orient: vertical;
-   overflow: hidden;
-   line-height: 1.35;
-}
-
-.table-note-stack {
-   display: flex;
-   flex-direction: column;
-   gap: 6px;
-}
-
-.table-note-line {
-   display: flex;
-   flex-direction: column;
-   gap: 2px;
-}
-
-.table-note-label {
-   width: fit-content;
-   color: var(--text-tertiary);
-   font-size: 10px;
-   font-weight: 700;
-   text-transform: uppercase;
+.late-note i {
+  font-size: 10px;
 }
 
 .driver-cell {
-   display: inline-flex;
-   flex-direction: column;
-   align-items: flex-start;
-   gap: 2px;
-   max-width: 100%;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 100%;
 }
 
 .driver-name {
-   color: var(--text-primary);
-   font-size: 12px;
-   font-weight: 700;
-   line-height: 1.25;
-}
-
-.driver-mode {
-   color: var(--text-tertiary);
-   font-size: 10px;
-   font-weight: 600;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .driver-cell-empty .driver-name {
-   color: var(--text-secondary);
+  color: var(--text-secondary);
 }
 
-.action-pill-group {
-   display: inline-flex;
-   background: var(--surface-default);
-   border: 1px solid var(--surface-border);
-   padding: 2px;
-   border-radius: var(--radius-full);
-   gap: 2px;
-}
-
-.action-btn {
-   width: 28px;
-   height: 28px;
-   border-radius: var(--radius-full);
-   border: none;
-   background: transparent;
-   display: flex;
-   align-items: center;
-   justify-content: center;
-   color: var(--text-secondary);
-   cursor: pointer;
-   transition: all 0.2s;
-}
-
-.action-btn:hover:not(:disabled) {
-   background: var(--card-bg-hover);
-   color: var(--text-primary);
-}
-
-.action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* === Mobile Card List === */
 .mobile-card-list {
-   display: flex;
-   flex-direction: column;
-   gap: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
 }
 
 .booking-card {
-   padding: var(--space-lg);
-   cursor: pointer;
+  padding: var(--space-lg);
+  cursor: pointer;
 }
 
 .card-header {
-   display: flex;
-   justify-content: space-between;
-   align-items: center;
-   margin-bottom: var(--space-lg);
-   padding-bottom: var(--space-sm);
-   border-bottom: 1px solid var(--surface-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--surface-border);
 }
 
-.info-row { display: flex; justify-content: space-between; gap: var(--space-md); }
-.info-col { display: flex; flex-direction: column; gap: 2px; }
-.info-col .label { font-size: 10px; color: var(--text-tertiary); font-weight: 500; }
-.info-col .value { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.info-col .label {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.info-col .value {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
 
 .late-banner-mini {
-   display: inline-flex;
-   align-items: center;
-   gap: 6px;
-   padding: 4px 8px;
-   background: rgba(229, 83, 75, 0.08);
-   color: var(--negative);
-   border-radius: var(--radius-xs);
-   font-size: 10px;
-   font-weight: 700;
+  gap: 6px;
+  padding: 4px 8px;
 }
 
 .card-footer {
-   margin-top: var(--space-lg);
-   padding-top: var(--space-md);
-   border-top: 1px dashed var(--surface-border);
-   display: flex;
-   justify-content: space-between;
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px dashed var(--surface-border);
 }
 
-.amount-group { display: flex; flex-direction: column; }
+.amount-group {
+  display: flex;
+  flex-direction: column;
+}
 
 .mobile-paginator {
-   display: flex;
-   align-items: center;
-   justify-content: center;
-   gap: var(--space-xl);
-   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xl);
+  color: var(--text-secondary);
 }
 
-/* === Calendar Polish === */
 .calendar-header {
-   margin-bottom: var(--space-xl);
+  margin-bottom: var(--space-xl);
 }
 
 .calendar-title {
-   font-family: var(--font-headline);
-   font-size: 16px;
-   font-weight: 700;
-   color: var(--text-primary);
-   text-transform: capitalize;
+  font-family: var(--font-headline);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: capitalize;
 }
 
 .drent-empty-state {
-   padding: var(--space-3xl);
-   text-align: center;
-   background: var(--card-bg);
-   border-radius: var(--radius-default);
-   border: 1px dashed var(--surface-border);
+  padding: var(--space-3xl);
+  text-align: center;
+  background: var(--card-bg);
+  border-radius: var(--radius-default);
+  border: 1px dashed var(--surface-border);
 }
 
-/* === Dialog/Bottom Sheet === */
 .status-summary-card {
-   background: var(--card-bg);
-   padding: var(--space-lg);
-   border-radius: var(--radius-default);
-   font-size: 12px;
+  background: var(--card-bg);
+  padding: var(--space-lg);
+  border-radius: var(--radius-default);
+  font-size: 12px;
 }
 
 :deep(.mobile-bottom-sheet) {
-   margin: 0 !important;
-   width: 100% !important;
-   border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
-   max-height: 80vh;
+  margin: 0 !important;
+  width: 100% !important;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+  max-height: 80vh;
 }
 
 @media (max-width: 768px) {
@@ -1364,84 +1327,89 @@ const getBookingCardClass = (booking) => {
   }
 
   .create-booking-button {
-     position: fixed;
-     right: var(--space-lg);
-     bottom: calc(72px + env(safe-area-inset-bottom));
-     z-index: 150;
-     padding: 12px 16px;
-     box-shadow: 0 12px 28px rgba(26, 29, 46, 0.22);
+    position: fixed;
+    right: var(--space-lg);
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    z-index: 150;
+    padding: 12px 16px;
+    box-shadow: 0 12px 28px rgba(26, 29, 46, 0.22);
   }
-  .create-label-desktop { display: none; }
-  .create-label-mobile { display: inline; }
+
+  .create-label-desktop {
+    display: none;
+  }
+
+  .create-label-mobile {
+    display: inline;
+  }
 
   .mobile-card-list {
-     gap: var(--space-md);
-     padding-bottom: 80px;
+    gap: var(--space-md);
+    padding-bottom: 80px;
   }
 
   .booking-card {
-     padding: var(--space-md);
-     border-width: 1px;
-     border-style: solid;
-     border-radius: var(--radius-default);
-     box-shadow: var(--shadow-tile);
+    padding: var(--space-md);
+    border-width: 1px;
+    border-style: solid;
+    border-radius: var(--radius-default);
+    box-shadow: var(--shadow-tile);
   }
 
   .booking-card-neutral {
-     border-color: var(--neutral-4);
+    border-color: var(--neutral-4);
   }
 
   .booking-card-info {
-     border-color: var(--info-cyan);
+    border-color: var(--info-cyan);
   }
 
   .booking-card-success {
-     border-color: var(--positive);
+    border-color: var(--positive);
+  }
+
+  .booking-card-completed {
+    border-color: var(--text-secondary);
   }
 
   .booking-card-error {
-     border-color: var(--negative);
+    border-color: var(--negative);
   }
 
   .card-header {
-     margin-bottom: var(--space-md);
-     padding-bottom: var(--space-sm);
-     align-items: center;
+    margin-bottom: var(--space-md);
+    padding-bottom: var(--space-sm);
+    align-items: center;
   }
 
   .card-header :deep(.status-badge) {
-     padding: 5px 10px;
-     font-size: 10px;
+    padding: 5px 10px;
+    font-size: 10px;
   }
 
   .card-body {
-     display: flex;
-     flex-direction: column;
-     gap: var(--space-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
   }
 
   .info-row {
-     align-items: flex-start;
-     gap: var(--space-md);
+    align-items: flex-start;
+    gap: var(--space-md);
   }
 
   .info-col {
-     flex: 1 1 0;
-     min-width: 0;
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .info-col.items-end {
-     text-align: right;
-  }
-
-  .info-col .label {
-     font-size: 10px;
+    text-align: right;
   }
 
   .info-col .value {
-     font-size: 12px;
-     line-height: 1.25;
-     overflow-wrap: anywhere;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
 
   .card-body .info-row {
@@ -1461,69 +1429,20 @@ const getBookingCardClass = (booking) => {
   }
 
   .card-footer {
-     margin-top: var(--space-md);
-     padding-top: var(--space-sm);
-     align-items: flex-end;
+    margin-top: var(--space-md);
+    padding-top: var(--space-sm);
+    align-items: flex-end;
   }
 
   .amount-group {
-     min-width: 0;
+    min-width: 0;
   }
 
   .amount-group.items-end {
-     text-align: right;
+    text-align: right;
   }
 }
 
-@media (min-width: 769px) {
-  .page-container.booking-list-active {
-     height: 100dvh;
-     min-height: 0;
-     display: flex;
-     flex-direction: column;
-     overflow: hidden;
-  }
-
-  .page-container.booking-list-active .page-header,
-  .page-container.booking-list-active .tab-toggle-container {
-     flex: 0 0 auto;
-  }
-
-  .booking-list-tab {
-     flex: 1 1 auto;
-     min-height: 0;
-     display: flex;
-     flex-direction: column;
-     overflow: hidden;
-  }
-
-  .filter-bar {
-     flex: 0 0 auto;
-  }
-
-  .booking-table-shell {
-     flex: 1 1 auto;
-     min-height: 0;
-     display: flex;
-     overflow: hidden;
-  }
-
-  .drent-datatable {
-     flex: 1 1 auto;
-     min-height: 0;
-     display: flex;
-     flex-direction: column;
-  }
-
-  :deep(.drent-datatable .p-datatable-table-container),
-  :deep(.drent-datatable .p-datatable-wrapper) {
-     flex: 1 1 auto;
-     min-height: 0;
-     overflow: auto;
-  }
-}
-
-/* === Calendar Controls Bar === */
 .calendar-controls-bar {
   display: flex;
   align-items: center;
@@ -1564,11 +1483,42 @@ const getBookingCardClass = (booking) => {
   min-width: 160px;
 }
 
+.calendar-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 220px;
+}
+
+.calendar-search .pi {
+  position: absolute;
+  left: 10px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  z-index: 1;
+}
+
+.calendar-search :deep(.p-inputtext) {
+  min-height: 34px;
+  padding-left: 30px;
+  border-radius: var(--radius-default);
+  border-color: var(--surface-border);
+  font-size: 12px;
+}
+
 .calendar-filter-dropdown :deep(.p-select),
 .calendar-filter-dropdown :deep(.p-dropdown) {
   min-height: 34px;
   border-radius: var(--radius-default);
   border-color: var(--surface-border);
   font-size: 12px;
+}
+
+.calendar-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
 }
 </style>

@@ -40,4 +40,19 @@ class Driver extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function operationalFunds()
+    {
+        return $this->hasMany(DriverOperationalFund::class);
+    }
+
+    public function operationalExpenses()
+    {
+        return $this->hasMany(DriverOperationalExpense::class);
+    }
+
+    public function balanceLedgers()
+    {
+        return $this->hasMany(DriverBalanceLedger::class);
+    }
 }

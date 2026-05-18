@@ -14,12 +14,15 @@ class PublicInvoiceResource extends JsonResource
 
     public function toArray(Request $request): array
     {
+        $receivableService = app(\App\Services\ReceivableService::class);
+        $paidAmount = $receivableService->invoicePaidAmount($this->resource);
+
         return [
             'invoice_number' => $this->invoice_number,
             'status' => $this->status,
             'total_amount' => (int) $this->total_amount,
-            'paid_amount' => (int) $this->paid_amount,
-            'remaining_amount' => max(0, (int) $this->total_amount - (int) $this->paid_amount),
+            'paid_amount' => $paidAmount,
+            'remaining_amount' => max(0, (int) $this->total_amount - $paidAmount),
             'due_date' => $this->due_date?->toISOString(),
             'generated_at' => $this->generated_at?->toISOString(),
             'sent_at' => $this->sent_at?->toISOString(),
@@ -27,19 +30,30 @@ class PublicInvoiceResource extends JsonResource
                 'id' => $this->branch->id,
                 'name' => $this->branch->name ?? $this->branch->nama ?? null,
             ] : null,
-            'bookings' => $this->whenLoaded('bookings', fn() => $this->bookings->map(fn($booking) => [
-                'kode_booking' => $booking->kode_booking,
-                'customer_name' => $booking->customer?->nama,
-                'amount' => (int) $booking->pivot->amount,
-                'status' => $booking->status,
-            ])),
-            'payments' => $this->whenLoaded('payments', fn() => $this->payments->map(fn($payment) => [
-                'payment_account_name' => $payment->paymentAccount
-                    ? trim($payment->paymentAccount->nama_bank . ' ' . $payment->paymentAccount->nomor_rekening)
-                    : null,
-                'amount' => (int) $payment->amount,
-                'paid_at' => $payment->paid_at?->toISOString(),
-            ])),
+            'bookings' => $this->whenLoaded('bookings', fn() => $this->bookings->map(function ($booking) {
+                $detail = $booking->relationLoaded('bookingDetails')
+                    ? $booking->bookingDetails->sortByDesc(fn($item) => $item->status === 'aktif')->first()
+                    : null;
+                $unit = $detail?->unit;
+
+                return [
+                    'kode_booking' => $booking->kode_booking,
+                    'customer_name' => $booking->customer?->nama,
+                    'customer_phone' => $booking->customer?->kontak_1,
+                    'customer_phone_alt' => $booking->customer?->kontak_2,
+                    'customer_email' => $booking->customer?->email,
+                    'customer_address' => $booking->customer?->alamat,
+                    'customer_city' => $booking->customer?->kota,
+                    'vehicle_name' => trim(implode(' ', array_filter([$unit?->merk, $unit?->tipe]))) ?: ($detail?->unit_placeholder ?? null),
+                    'vehicle_plate' => $unit?->no_polisi,
+                    'rental_start_date' => $detail?->tgl_sewa,
+                    'rental_end_date' => $detail?->tgl_kembali,
+                    'amount' => (int) $booking->pivot->amount,
+                    'status' => $booking->status,
+                ];
+            })),
+            'items' => $this->whenLoaded('bookings', fn() => $receivableService->invoiceItems($this->resource)),
+            'payments' => $this->whenLoaded('payments', fn() => $receivableService->invoicePaymentHistory($this->resource)),
             'payment_accounts' => $this->paymentAccounts->map(fn($account) => [
                 'nama_bank' => $account->nama_bank,
                 'nomor_rekening' => $account->nomor_rekening,

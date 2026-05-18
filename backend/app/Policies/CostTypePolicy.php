@@ -12,7 +12,7 @@ class CostTypePolicy
      */
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch']);
+        return in_array($user->role, ['superadmin', 'admin_branch', 'finance', 'driver_tetap']);
     }
 
     /**

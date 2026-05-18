@@ -34,4 +34,14 @@ class RentalOwner extends Model
     {
         return $this->belongsTo(Tenant::class);
     }
+
+    public function rentToRentDebts()
+    {
+        return $this->hasMany(RentToRentDebt::class);
+    }
+
+    public function rentToRentBills()
+    {
+        return $this->hasMany(RentToRentBill::class);
+    }
 }
