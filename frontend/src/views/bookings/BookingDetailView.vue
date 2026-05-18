@@ -1597,7 +1597,7 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold" @click="openEditBookingDialog" v-if="!['selesai','batal','cancelled', 'rental_unit', 'waiting_list'].includes(booking.status)" />
           </div>
-          <div class="p-6 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
+          <div class="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Pelanggan</span>
               <span class="text-sm font-bold text-slate-800">{{ booking.customer?.nama }}</span>
@@ -1747,8 +1747,8 @@ const auditUserName = (user) => user?.name || '-';
                   Ada Transaksi Rolling
                 </div>
                 <!-- Unit Header -->
-                <div class="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-5 bg-slate-50/40">
-                  <div class="flex gap-4 items-center">
+                <div class="p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-slate-50/40">
+                  <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                     <div class="w-14 h-14 bg-white rounded-xl border border-slate-100 flex items-center justify-center shadow-sm flex-shrink-0">
                       <i class="pi pi-car text-2xl text-slate-300"></i>
                     </div>
@@ -1803,7 +1803,7 @@ const auditUserName = (user) => user?.name || '-';
                     </div>
                   </div>
 
-                  <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 text-right min-w-[220px] shadow-lg shadow-slate-200/70">
+                  <div class="w-full lg:w-auto bg-slate-900 p-4 rounded-xl border border-slate-700 text-right lg:min-w-[220px] shadow-lg shadow-slate-200/70 mt-4 lg:mt-0">
                     <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest block mb-0.5">
                       {{ detail.pricing_mode === 'all_in' ? 'Total Tagihan Unit' : 'Total Unit + Ops' }}
                     </span>

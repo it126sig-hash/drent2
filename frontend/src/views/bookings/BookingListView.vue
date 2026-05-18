@@ -1319,6 +1319,8 @@ const getBookingCardClass = (booking) => {
      padding: var(--space-lg);
      margin-bottom: var(--space-md);
      border-radius: var(--radius-default);
+     height: auto !important;
+     max-height: none !important;
   }
 
   .filter-groups {
@@ -1440,6 +1442,22 @@ const getBookingCardClass = (booking) => {
      font-size: 12px;
      line-height: 1.25;
      overflow-wrap: anywhere;
+  }
+
+  .card-body .info-row {
+     display: flex;
+     flex-wrap: wrap;
+     gap: var(--space-sm);
+  }
+
+  .card-body .info-col {
+     min-width: 48%;
+  }
+
+  .booking-card {
+     display: flex;
+     flex-direction: column;
+     gap: 8px;
   }
 
   .card-footer {
