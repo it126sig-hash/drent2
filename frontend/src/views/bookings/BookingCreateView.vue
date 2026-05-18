@@ -2120,7 +2120,7 @@ const formatDate = (value) => {
 
 @media (max-width: 767px) {
   .booking-create-container {
-    padding: var(--space-sm);
+    padding: var(--space-md);
   }
 
   .create-mode-grid,
@@ -2140,6 +2140,31 @@ const formatDate = (value) => {
 
   .summary-actions {
     flex-direction: column-reverse;
+  }
+
+  :deep(.premium-card .p-card-title) {
+    padding: var(--space-md) var(--space-lg);
+  }
+
+  :deep(.premium-card .p-card-content) {
+    padding: var(--space-md) var(--space-lg) var(--space-lg);
+  }
+
+  .cost-row {
+     display: flex;
+     flex-direction: column;
+     gap: 8px;
+     border: 1px solid var(--surface-border);
+     border-radius: var(--radius-sm);
+     padding: var(--space-md);
+     margin-bottom: var(--space-md);
+     position: relative;
+  }
+
+  .remove-cost-button {
+     position: absolute;
+     top: 4px;
+     right: 4px;
   }
 }
 </style>
