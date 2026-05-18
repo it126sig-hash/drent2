@@ -8,6 +8,7 @@ use App\Http\Requests\StoreAdditionalCostRequest;
 use App\Http\Resources\BookingResource;
 use App\Models\Booking;
 use App\Models\BookingDetail;
+use App\Services\BookingBillingService;
 use App\Services\BookingService;
 use App\Services\BookingModificationService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -19,21 +20,22 @@ class BookingCostController extends Controller
 {
     use AuthorizesRequests;
 
-    protected $bookingService;
-    protected $modificationService;
-
-    public function __construct(BookingService $bookingService, BookingModificationService $modificationService)
-    {
-        $this->bookingService = $bookingService;
-        $this->modificationService = $modificationService;
-    }
+    public function __construct(
+        protected BookingService $bookingService,
+        protected BookingModificationService $modificationService,
+        protected BookingBillingService $billingService,
+    ) {}
 
     public function store(StoreBookingCostRequest $request, BookingDetail $bookingDetail)
     {
         $this->authorize('update', $bookingDetail->booking);
         
         $this->bookingService->addCost($bookingDetail, $request->validated());
-        
+
+        // Biaya berubah — sync cache
+        $booking = $bookingDetail->booking->load(['bookingDetails.costs', 'payments']);
+        $this->billingService->updateCachedSisaTagihan($booking);
+
         return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType']));
     }
 
@@ -43,6 +45,10 @@ class BookingCostController extends Controller
 
         $bookingCost->update($request->validated());
 
+        // Biaya diupdate — sync cache
+        $booking = $bookingCost->bookingDetail->booking->load(['bookingDetails.costs', 'payments']);
+        $this->billingService->updateCachedSisaTagihan($booking);
+
         return new BookingResource($bookingCost->bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType']));
     }
 
@@ -51,7 +57,11 @@ class BookingCostController extends Controller
         $this->authorize('update', $booking);
         
         $this->modificationService->addAdditionalCost($booking, $request->validated());
-        
+
+        // Biaya tambahan berubah — sync cache
+        $booking->load(['bookingDetails.costs', 'payments']);
+        $this->billingService->updateCachedSisaTagihan($booking);
+
         return new BookingResource($booking->fresh()->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }
 }

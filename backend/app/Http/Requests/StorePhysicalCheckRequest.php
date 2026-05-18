@@ -43,10 +43,22 @@ class StorePhysicalCheckRequest extends FormRequest
             'checklist.*.is_present' => ['required', 'boolean'],
             'checklist.*.notes' => ['nullable', 'string'],
 
-            'signatures' => ['required', 'array', 'size:2'],
+            'signatures' => ['required', 'array', 'min:1'],
             'signatures.*.signer_type' => ['required', 'string', 'in:inspector,customer_driver'],
             'signatures.*.signer_name' => ['nullable', 'string', 'max:100'],
             'signatures.*.signature_base64' => ['required', 'string'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $hasInspectorSignature = collect($this->input('signatures', []))
+                ->contains(fn($signature) => ($signature['signer_type'] ?? null) === 'inspector');
+
+            if (! $hasInspectorSignature) {
+                $validator->errors()->add('signatures', 'Tanda tangan tim cek fisik wajib diisi.');
+            }
+        });
     }
 }

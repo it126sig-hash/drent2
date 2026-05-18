@@ -34,6 +34,7 @@ class ReceivableController extends Controller
             'page',
             'per_page',
             'invoice_status',
+            'search',
         ]);
 
         $user = auth()->user();
@@ -73,7 +74,7 @@ class ReceivableController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $filters = $request->only(['page', 'per_page', 'status']);
+        $filters = $request->only(['page', 'per_page', 'status', 'search']);
         $user = auth()->user();
         $filters['tenant_id'] = $user->tenant_id;
         if ($user->role !== 'superadmin') {
@@ -88,11 +89,19 @@ class ReceivableController extends Controller
         $this->authorize('viewAny', Invoice::class);
 
         $filters = $request->only([
-            'tenant_id',
-            'branch_id',
+            'view',
+            'latest_page',
+            'latest_per_page',
             'latest_limit',
+            'group_page',
+            'group_per_page',
             'group_limit',
         ]);
+        $user = auth()->user();
+        $filters['tenant_id'] = $user->tenant_id;
+        if ($user->role !== 'superadmin') {
+            $filters['branch_id'] = $user->branch_id;
+        }
 
         return response()->json([
             'data' => $this->receivableService->paymentHistory($filters),

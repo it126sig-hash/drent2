@@ -44,6 +44,7 @@ class Booking extends Model
         'rental_unit_return_rejected_at',
         'rental_unit_return_rejection_note',
         'due_date',
+        'cached_sisa_tagihan',
     ];
 
     protected $casts = [

@@ -138,6 +138,7 @@ class DriverOperationalFundService
 
             $fundType = $data['fund_type'] ?? $this->inferFundType($data['items']);
             $this->assertFundTypeMatchesItems($fundType, $data['items']);
+            $isOperationalWithoutLogin = $fundType === 'operational' && ! $driver->user_id;
 
             $itemTotal = collect($data['items'])->sum(fn ($item) => (int) $item['planned_amount']);
             if ($itemTotal !== (int) $data['amount']) {
@@ -156,7 +157,9 @@ class DriverOperationalFundService
                 'paid_at' => $data['paid_at'],
                 'recipient_destination' => $data['recipient_destination'],
                 'notes' => $data['notes'] ?? null,
-                'status' => $fundType === 'salary' ? 'closed' : 'pending_driver_acceptance',
+                'status' => $fundType === 'salary' ? 'closed' : ($isOperationalWithoutLogin ? 'accepted' : 'pending_driver_acceptance'),
+                'accepted_at' => $isOperationalWithoutLogin ? now() : null,
+                'accepted_by' => $isOperationalWithoutLogin ? Auth::id() : null,
                 'closed_at' => $fundType === 'salary' ? now() : null,
                 'closed_by' => $fundType === 'salary' ? Auth::id() : null,
                 'close_note' => $fundType === 'salary' ? ($data['notes'] ?? null) : null,
@@ -170,6 +173,18 @@ class DriverOperationalFundService
                     'planned_amount' => $item['planned_amount'],
                     'notes' => $item['notes'] ?? null,
                 ]);
+            }
+
+            if ($isOperationalWithoutLogin) {
+                $this->applyDriverBalance(
+                    driverId: $driver->id,
+                    direction: 'credit',
+                    amount: (int) $fund->amount,
+                    bookingId: $fund->booking_id,
+                    fundId: $fund->id,
+                    expenseId: null,
+                    description: 'Dana operasional diterima tanpa ACC driver'
+                );
             }
 
             if ($fundType === 'operational' && $driver->user_id) {
@@ -266,6 +281,7 @@ class DriverOperationalFundService
             ->map(fn ($expense) => [
                 'id' => 'expense-' . $expense->id,
                 'type' => 'expense',
+                'expense_type' => $expense->type,
                 'label' => $expense->type === 'return' ? 'Pengembalian Sisa Dana' : 'Pembayaran Bon',
                 'booking_id' => $expense->booking_id,
                 'booking_code' => $expense->booking?->kode_booking,

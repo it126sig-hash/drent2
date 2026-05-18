@@ -55,6 +55,25 @@ class BookingBillingService
         return max(0, $this->totalTagihan($booking) - $this->paidAmount($booking));
     }
 
+    /**
+     * Hitung ulang sisa tagihan dan simpan ke kolom cached_sisa_tagihan.
+     * Dipanggil setiap kali ada perubahan pada biaya atau pembayaran booking.
+     */
+    public function updateCachedSisaTagihan(Booking $booking): void
+    {
+        if (! $booking->relationLoaded('bookingDetails')) {
+            $booking->load('bookingDetails.costs');
+        }
+        if (! $booking->relationLoaded('payments')) {
+            $booking->load('payments');
+        }
+
+        $sisa = $this->sisaTagihan($booking);
+
+        // updateQuietly agar tidak trigger observer/event & tidak update updated_at
+        $booking->updateQuietly(['cached_sisa_tagihan' => $sisa]);
+    }
+
     public function calculateDueDate(Booking $booking): ?Carbon
     {
         if (! $booking->relationLoaded('customer')) {

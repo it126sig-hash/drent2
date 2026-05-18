@@ -107,15 +107,21 @@ Route::prefix('v1')->group(function () {
         // Rent-to-rent payables
         Route::get('rent-to-rent', [RentToRentController::class, 'index']);
         Route::get('rent-to-rent/payment-history', [RentToRentController::class, 'paymentHistory']);
+        Route::post('rent-to-rent/payments/{payment}/void', [RentToRentController::class, 'requestVoidPayment']);
+        Route::post('rent-to-rent/payments/{payment}/approve-void', [RentToRentController::class, 'approveVoidPayment']);
+        Route::post('rent-to-rent/payments/{payment}/reject-void', [RentToRentController::class, 'rejectVoidPayment']);
         Route::get('rent-to-rent/bills', [RentToRentController::class, 'bills']);
         Route::post('rent-to-rent/bills', [RentToRentController::class, 'generateBill']);
         Route::get('rent-to-rent/bills/{bill}', [RentToRentController::class, 'showBill']);
         Route::get('rent-to-rent/bills/{bill}/pdf', [RentToRentController::class, 'billPdf']);
+        Route::post('rent-to-rent/bills/{bill}/mark-paid', [RentToRentController::class, 'markBillPaid']);
         Route::post('rent-to-rent/bills/{bill}/request-void', [RentToRentController::class, 'requestVoid']);
         Route::post('rent-to-rent/bills/{bill}/approve-void', [RentToRentController::class, 'approveVoid']);
         Route::post('rent-to-rent/bills/{bill}/reject-void', [RentToRentController::class, 'rejectVoid']);
         Route::get('rent-to-rent/{debt}', [RentToRentController::class, 'show']);
         Route::patch('rent-to-rent/{debt}/amount', [RentToRentController::class, 'updateAmount']);
+        Route::post('rent-to-rent/{debt}/mark-paid', [RentToRentController::class, 'markDebtPaid']);
+        Route::post('rent-to-rent/{debt}/payments', [RentToRentController::class, 'storeDebtPayment']);
         Route::post('rent-to-rent/bills/{bill}/mark-sent', [RentToRentController::class, 'markSent']);
         Route::post('rent-to-rent/bills/{bill}/payments', [RentToRentController::class, 'storePayment']);
 

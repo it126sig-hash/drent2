@@ -4,8 +4,6 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
-
 class PhysicalCheckResource extends JsonResource
 {
     public function toArray(Request $request): array
@@ -40,9 +38,9 @@ class PhysicalCheckResource extends JsonResource
                     'id' => $photo->id,
                     'section' => $photo->section,
                     'notes' => $photo->notes,
-                    'url' => Storage::disk('public')->url($photo->path),
+                    'url' => $this->publicStorageUrl($photo->path),
                     'annotated_url' => $photo->annotated_path
-                        ? Storage::disk('public')->url($photo->annotated_path)
+                        ? $this->publicStorageUrl($photo->annotated_path)
                         : null,
                 ])->values()
             ),
@@ -61,7 +59,7 @@ class PhysicalCheckResource extends JsonResource
                     'signer_type' => $signature->signer_type,
                     'signer_name' => $signature->signer_name,
                     'signed_at' => $signature->signed_at?->toISOString(),
-                    'url' => Storage::disk('public')->url($signature->signature_path),
+                    'url' => $this->publicStorageUrl($signature->signature_path),
                 ])->values()
             ),
             'activities' => $this->whenLoaded('activities', fn() =>
@@ -91,5 +89,16 @@ class PhysicalCheckResource extends JsonResource
                 'role' => $user->role,
             ] : null;
         });
+    }
+
+    private function publicStorageUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $baseUrl = rtrim(request()->getSchemeAndHttpHost() . request()->getBaseUrl(), '/');
+
+        return $baseUrl . '/storage/' . ltrim($path, '/');
     }
 }

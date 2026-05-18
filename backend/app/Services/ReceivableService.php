@@ -14,16 +14,13 @@ use Illuminate\Support\Str;
 
 class ReceivableService
 {
-    public function __construct(private BookingBillingService $billingService)
-    {
-    }
+    public function __construct(private BookingBillingService $billingService) {}
 
     public function list(array $filters = []): LengthAwarePaginator
     {
         $perPage = (int) ($filters['per_page'] ?? 15);
-        $page = (int) ($filters['page'] ?? 1);
 
-        $bookings = Booking::query()
+        $paginator = Booking::query()
             ->with([
                 'customer.member',
                 'bookingDetails.unit.rentalOwner',
@@ -31,12 +28,31 @@ class ReceivableService
                 'payments',
                 'invoices' => fn($query) => $query
                     ->where('status', '!=', 'void')
-                    ->with(['bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments'])
+                    ->with(['payments.paymentAccount', 'payments.bookingPayments'])
                     ->latest('generated_at'),
             ])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($filters['search'] ?? null, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('kode_booking', 'like', "%{$search}%")
+                        ->orWhere('tujuan', 'like', "%{$search}%")
+                        ->orWhere('kota', 'like', "%{$search}%")
+                        ->orWhereHas('customer', fn($customer) => $customer->where('nama', 'like', "%{$search}%"))
+                        ->orWhereHas('bookingDetails.unit', function ($unit) use ($search) {
+                            $unit->where('merk', 'like', "%{$search}%")
+                                ->orWhere('tipe', 'like', "%{$search}%")
+                                ->orWhere('no_polisi', 'like', "%{$search}%");
+                        })
+                        ->orWhereHas('invoices', fn($invoice) => $invoice->where('invoice_number', 'like', "%{$search}%"));
+                });
+            })
             ->whereNotIn('status', ['batal'])
+            // Filter utama pakai cached column — O(log n) via index, bukan full-scan
+            ->when(
+                ($filters['invoice_status'] ?? null) !== 'changed',
+                fn($query) => $query->where('cached_sisa_tagihan', '>', 0)
+            )
             ->when($filters['invoice_status'] ?? null, function ($query, $status) {
                 if (in_array($status, ['generated', 'changed'], true)) {
                     $query->whereHas('invoices', fn($invoice) => $invoice
@@ -51,40 +67,51 @@ class ReceivableService
                 }
             })
             ->latest()
-            ->get()
-            ->map(function (Booking $booking) {
-                $booking->total_tagihan = $this->billingService->totalTagihan($booking);
-                $booking->total_payments = $this->billingService->paidAmount($booking);
-                $booking->sisa_tagihan = $this->billingService->sisaTagihan($booking);
-                $booking->latest_active_invoice = $booking->invoices
-                    ->first(fn(Invoice $invoice) => $invoice->status !== 'paid' && $this->invoiceRemaining($invoice) > 0);
-                $booking->invoice_reconciliation = $booking->latest_active_invoice
-                    ? $this->invoiceReconciliation($booking->latest_active_invoice)
-                    : null;
-                $booking->display_detail = $booking->bookingDetails->firstWhere('status', 'aktif')
-                    ?? $booking->bookingDetails->firstWhere('detail_type', 'initial')
-                    ?? $booking->bookingDetails->first();
+            ->paginate($perPage);
 
-                return $booking;
-            })
-            ->filter(function (Booking $booking) use ($filters) {
-                $hasChangedInvoice = (bool) ($booking->invoice_reconciliation['is_changed'] ?? false);
+        // Enrich hanya rows pada halaman ini (max $perPage rows, bukan semua data)
+        $paginator->getCollection()->transform(function (Booking $booking) use ($filters) {
+            $totalTagihan = $this->billingService->totalTagihan($booking);
+            $totalPayments = $this->billingService->paidAmount($booking);
+            $sisaTagihan = max(0, $totalTagihan - $totalPayments);
 
-                if (($filters['invoice_status'] ?? null) === 'changed') {
-                    return $hasChangedInvoice;
-                }
+            if ((int) $booking->cached_sisa_tagihan !== (int) $sisaTagihan) {
+                DB::table('bookings')
+                    ->where('id', $booking->id)
+                    ->update(['cached_sisa_tagihan' => (int) $sisaTagihan]);
+                $booking->cached_sisa_tagihan = (int) $sisaTagihan;
+            }
 
-                return $booking->sisa_tagihan > 0 || $hasChangedInvoice;
-            })
-            ->values();
+            $booking->total_tagihan = $totalTagihan;
+            $booking->total_payments = $totalPayments;
+            $booking->sisa_tagihan = $sisaTagihan;
+            $booking->latest_active_invoice = $booking->invoices
+                ->first(fn(Invoice $invoice) => $invoice->status !== 'paid' && $this->invoiceRemaining($invoice) > 0);
+            $booking->invoice_reconciliation = $booking->latest_active_invoice
+                ? $this->invoiceReconciliation($booking->latest_active_invoice)
+                : null;
+            $booking->display_detail = $booking->bookingDetails->firstWhere('status', 'aktif')
+                ?? $booking->bookingDetails->firstWhere('detail_type', 'initial')
+                ?? $booking->bookingDetails->first();
 
-        return new LengthAwarePaginator(
-            $bookings->forPage($page, $perPage)->values(),
-            $bookings->count(),
-            $perPage,
-            $page,
-            ['path' => request()->url(), 'query' => request()->query()]
-        );
+            return $booking;
+        });
+
+        if (($filters['invoice_status'] ?? null) !== 'changed') {
+            $paginator->setCollection($paginator->getCollection()
+                ->filter(fn(Booking $booking) => $booking->sisa_tagihan > 0)
+                ->values());
+        }
+
+        // Filter 'changed' masih dilakukan di PHP (hanya dari rows halaman saat ini)
+        if (($filters['invoice_status'] ?? null) === 'changed') {
+            $filtered = $paginator->getCollection()->filter(
+                fn(Booking $booking) => (bool) ($booking->invoice_reconciliation['is_changed'] ?? false)
+            )->values();
+            $paginator->setCollection($filtered);
+        }
+
+        return $paginator;
     }
 
     public function invoices(array $filters = []): LengthAwarePaginator
@@ -92,10 +119,17 @@ class ReceivableService
         $perPage = (int) ($filters['per_page'] ?? 15);
 
         return Invoice::query()
-            ->with(['bookings.customer', 'bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments'])
+            ->with(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments'])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($filters['status'] ?? null, fn($query, $status) => $query->where('status', $status))
+            ->when($filters['search'] ?? null, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('invoice_number', 'like', "%{$search}%")
+                        ->orWhereHas('bookings', fn($booking) => $booking->where('kode_booking', 'like', "%{$search}%")
+                            ->orWhereHas('customer', fn($customer) => $customer->where('nama', 'like', "%{$search}%")));
+                });
+            })
             ->latest('generated_at')
             ->paginate($perPage);
     }
@@ -119,7 +153,7 @@ class ReceivableService
     {
         return DB::transaction(function () use ($invoice, $confirmSentRevision) {
             $invoice = Invoice::query()
-                ->with(['bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments'])
+                ->with(['payments.paymentAccount', 'payments.bookingPayments'])
                 ->lockForUpdate()
                 ->findOrFail($invoice->id);
 
@@ -138,7 +172,7 @@ class ReceivableService
                     ->lockForUpdate()
                     ->get();
 
-                $invoice->load(['bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments']);
+                $invoice->load(['payments.paymentAccount', 'payments.bookingPayments']);
             }
 
             $amounts = $this->currentInvoiceBookingAmounts($invoice);
@@ -155,61 +189,132 @@ class ReceivableService
                 'status' => $this->invoiceStatus($totalAmount, $paidAmount),
             ]);
 
-            return $invoice->fresh(['bookings.customer', 'bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments']);
+            return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']);
         });
     }
 
     public function paymentHistory(array $filters = []): array
     {
-        $latestLimit = (int) ($filters['latest_limit'] ?? 20);
-        $groupLimit = (int) ($filters['group_limit'] ?? 30);
+        $view = $filters['view'] ?? 'all';
+        $latest = collect();
+        $groups = collect();
+        $latestMeta = $this->emptyPaginatorMeta((int) ($filters['latest_per_page'] ?? $filters['latest_limit'] ?? 20));
+        $groupMeta = $this->emptyPaginatorMeta((int) ($filters['group_per_page'] ?? $filters['group_limit'] ?? 15));
+
+        if (in_array($view, ['all', 'latest'], true)) {
+            $latestPaginator = $this->latestPaymentHistory($filters);
+            $latest = $latestPaginator->getCollection();
+            $latestMeta = $this->paginatorMeta($latestPaginator);
+        }
+
+        if (in_array($view, ['all', 'group'], true)) {
+            $groupPaginator = $this->groupedPaymentHistory($filters);
+            $groups = $groupPaginator->getCollection();
+            $groupMeta = $this->paginatorMeta($groupPaginator);
+        }
+
+        return [
+            'latest' => $latest,
+            'groups' => $groups,
+            'meta' => [
+                'latest' => $latestMeta,
+                'groups' => $groupMeta,
+            ],
+        ];
+    }
+
+    private function latestPaymentHistory(array $filters): LengthAwarePaginator
+    {
+        $perPage = $this->historyPerPage($filters['latest_per_page'] ?? $filters['latest_limit'] ?? 20);
+        $page = $this->historyPage($filters['latest_page'] ?? 1);
 
         $invoicePayments = Payment::query()
-            ->with(['invoice.bookings.customer', 'paymentAccount', 'creator'])
+            ->selectRaw("'invoice' as source_type, payments.id as source_id, payments.paid_at, payments.created_at")
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->whereHas('invoice', fn($invoice) => $invoice->where('tenant_id', $tenantId)))
-            ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->whereHas('invoice', fn($invoice) => $invoice->where('branch_id', $branchId)))
-            ->latest('paid_at')
-            ->limit($latestLimit)
-            ->get()
-            ->map(fn(Payment $payment) => $this->formatInvoicePaymentHistory($payment));
+            ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->whereHas('invoice', fn($invoice) => $invoice->where('branch_id', $branchId)));
 
         $transactionPayments = BookingPayment::query()
-            ->with(['booking.customer', 'paymentAccount', 'creator'])
+            ->selectRaw("'transaction' as source_type, booking_payments.id as source_id, booking_payments.paid_at, booking_payments.created_at")
             ->whereNull('invoice_payment_id')
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->whereHas('booking', fn($booking) => $booking->where('tenant_id', $tenantId)))
-            ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->whereHas('booking', fn($booking) => $booking->where('branch_id', $branchId)))
-            ->latest('paid_at')
-            ->limit($latestLimit)
+            ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->whereHas('booking', fn($booking) => $booking->where('branch_id', $branchId)));
+
+        $paginator = DB::query()
+            ->fromSub($invoicePayments->toBase()->unionAll($transactionPayments->toBase()), 'payment_history')
+            ->orderByDesc(DB::raw('COALESCE(paid_at, created_at)'))
+            ->orderByDesc('source_id')
+            ->paginate($perPage, ['*'], 'latest_page', $page);
+
+        $rows = $paginator->getCollection();
+        $invoiceIds = $rows->where('source_type', 'invoice')->pluck('source_id')->all();
+        $transactionIds = $rows->where('source_type', 'transaction')->pluck('source_id')->all();
+
+        $invoiceModels = Payment::query()
+            ->with(['invoice.bookings.customer', 'paymentAccount', 'creator'])
+            ->whereIn('id', $invoiceIds)
             ->get()
-            ->map(fn(BookingPayment $payment) => $this->formatBookingPaymentHistory($payment));
+            ->keyBy('id');
+        $transactionModels = BookingPayment::query()
+            ->with(['booking.customer', 'paymentAccount', 'creator'])
+            ->whereIn('id', $transactionIds)
+            ->get()
+            ->keyBy('id');
 
-        $latest = $invoicePayments
-            ->merge($transactionPayments)
-            ->sortByDesc(fn($payment) => $payment['paid_at'] ?? $payment['created_at'])
-            ->take($latestLimit)
-            ->values();
+        $paginator->setCollection($rows
+            ->map(function ($row) use ($invoiceModels, $transactionModels) {
+                if ($row->source_type === 'invoice') {
+                    $payment = $invoiceModels->get($row->source_id);
 
-        $groupSource = BookingPayment::query()
-            ->with(['booking.customer', 'paymentAccount', 'creator', 'invoicePayment.invoice', 'invoicePayment.creator'])
+                    return $payment ? $this->formatInvoicePaymentHistory($payment) : null;
+                }
+
+                $payment = $transactionModels->get($row->source_id);
+
+                return $payment ? $this->formatBookingPaymentHistory($payment) : null;
+            })
+            ->filter()
+            ->values());
+
+        return $paginator;
+    }
+
+    private function groupedPaymentHistory(array $filters): LengthAwarePaginator
+    {
+        $perPage = $this->historyPerPage($filters['group_per_page'] ?? $filters['group_limit'] ?? 15);
+        $page = $this->historyPage($filters['group_page'] ?? 1);
+
+        $paginator = BookingPayment::query()
+            ->select('booking_id')
+            ->selectRaw('SUM(CASE WHEN COALESCE(status, ?) != ? THEN amount ELSE 0 END) as total_amount', ['active', 'voided'])
+            ->selectRaw('COUNT(*) as payment_count')
+            ->selectRaw('MAX(paid_at) as latest_paid_at')
+            ->with(['booking.customer'])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->whereHas('booking', fn($booking) => $booking->where('tenant_id', $tenantId)))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->whereHas('booking', fn($booking) => $booking->where('branch_id', $branchId)))
-            ->latest('paid_at')
-            ->limit($groupLimit * 10)
-            ->get();
-
-        $groups = $groupSource
             ->groupBy('booking_id')
-            ->map(function ($payments) {
-                $booking = $payments->first()->booking;
-                $activePayments = $payments->filter(fn(BookingPayment $payment) => ($payment->status ?? 'active') !== 'voided');
+            ->orderByDesc('latest_paid_at')
+            ->paginate($perPage, ['*'], 'group_page', $page);
+
+        $bookingIds = $paginator->getCollection()->pluck('booking_id')->filter()->all();
+        $paymentsByBooking = BookingPayment::query()
+            ->with(['booking.customer', 'paymentAccount', 'creator', 'invoicePayment.invoice', 'invoicePayment.creator'])
+            ->whereIn('booking_id', $bookingIds)
+            ->latest('paid_at')
+            ->get()
+            ->groupBy('booking_id');
+
+        $paginator->setCollection($paginator->getCollection()
+            ->map(function (BookingPayment $summary) use ($paymentsByBooking) {
+                $payments = $paymentsByBooking->get($summary->booking_id, collect());
+                $booking = $summary->booking;
 
                 return [
                     'booking_id' => $booking?->id,
                     'kode_booking' => $booking?->kode_booking,
                     'customer_name' => $booking?->customer?->nama,
-                    'total_amount' => (int) $activePayments->sum('amount'),
-                    'payment_count' => $payments->count(),
-                    'latest_paid_at' => $payments->max(fn(BookingPayment $payment) => $payment->paid_at?->toISOString()),
+                    'total_amount' => (int) $summary->total_amount,
+                    'payment_count' => (int) $summary->payment_count,
+                    'latest_paid_at' => $summary->latest_paid_at ? Carbon::parse($summary->latest_paid_at)->toISOString() : null,
                     'payments' => $payments
                         ->sortByDesc(fn(BookingPayment $payment) => $payment->paid_at?->timestamp ?? 0)
                         ->values()
@@ -217,13 +322,38 @@ class ReceivableService
                         ->values(),
                 ];
             })
-            ->sortByDesc('latest_paid_at')
-            ->take($groupLimit)
-            ->values();
+            ->values());
 
+        return $paginator;
+    }
+
+    private function historyPerPage(int $perPage): int
+    {
+        return max(5, min(100, $perPage));
+    }
+
+    private function historyPage(int $page): int
+    {
+        return max(1, $page);
+    }
+
+    private function paginatorMeta(LengthAwarePaginator $paginator): array
+    {
         return [
-            'latest' => $latest,
-            'groups' => $groups,
+            'total' => $paginator->total(),
+            'per_page' => $paginator->perPage(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+        ];
+    }
+
+    private function emptyPaginatorMeta(int $perPage): array
+    {
+        return [
+            'total' => 0,
+            'per_page' => $this->historyPerPage($perPage),
+            'current_page' => 1,
+            'last_page' => 1,
         ];
     }
 
@@ -241,8 +371,10 @@ class ReceivableService
                 throw new \InvalidArgumentException('Sebagian booking tidak ditemukan pada branch aktif.');
             }
 
-            $activeInvoiceBooking = $bookings->first(fn(Booking $booking) =>
-                $booking->invoices->contains(fn(Invoice $invoice) =>
+            $activeInvoiceBooking = $bookings->first(
+                fn(Booking $booking) =>
+                $booking->invoices->contains(
+                    fn(Invoice $invoice) =>
                     ! in_array($invoice->status, ['void', 'paid'], true) && $this->invoiceRemaining($invoice) > 0
                 )
             );
@@ -284,7 +416,7 @@ class ReceivableService
 
             $invoice->update(['status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount)]);
 
-            return $invoice->load(['bookings.customer', 'bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments']);
+            return $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']);
         });
     }
 
@@ -333,14 +465,14 @@ class ReceivableService
                 'status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount),
             ]);
 
-            return $invoice->fresh(['bookings.customer', 'bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments']);
+            return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']);
         });
     }
 
     public function publicInvoice(string $token): array
     {
         $invoice = Invoice::query()
-            ->with(['branch', 'bookings.customer', 'bookings.bookingDetails.unit', 'bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.paymentAccount', 'payments.bookingPayments'])
+            ->with(['branch', 'bookings.customer', 'bookings.bookingDetails.unit', 'payments.paymentAccount', 'payments.bookingPayments'])
             ->where('public_token', $token)
             ->where('status', '!=', 'void')
             ->firstOrFail();
@@ -397,6 +529,10 @@ class ReceivableService
                 'created_by' => $payment->created_by,
             ]);
 
+            $booking->unsetRelation('payments');
+            $booking->load('bookingDetails.costs', 'payments');
+            $this->billingService->updateCachedSisaTagihan($booking);
+
             $remainingPayment -= $allocated;
         }
     }
@@ -404,7 +540,7 @@ class ReceivableService
     private function formatInvoicePaymentHistory(Payment $payment): array
     {
         return [
-            'id' => 'invoice-'.$payment->id,
+            'id' => 'invoice-' . $payment->id,
             'source' => 'invoice',
             'source_label' => 'Pembayaran Invoice',
             'reference_number' => $payment->invoice?->invoice_number,
@@ -412,7 +548,7 @@ class ReceivableService
             'transaction_codes' => $payment->invoice?->bookings?->pluck('kode_booking')->filter()->values() ?? collect(),
             'customer_names' => $payment->invoice?->bookings?->pluck('customer.nama')->filter()->unique()->values() ?? collect(),
             'payment_account_name' => $payment->paymentAccount
-                ? trim($payment->paymentAccount->nama_bank.' '.$payment->paymentAccount->nomor_rekening)
+                ? trim($payment->paymentAccount->nama_bank . ' ' . $payment->paymentAccount->nomor_rekening)
                 : null,
             'created_by_name' => $payment->creator?->name,
             'amount' => (int) $payment->amount,
@@ -429,7 +565,7 @@ class ReceivableService
         $invoiceNumber = $payment->invoicePayment?->invoice?->invoice_number;
 
         return [
-            'id' => 'transaction-'.$payment->id,
+            'id' => 'transaction-' . $payment->id,
             'source' => $invoiceNumber ? 'invoice_allocation' : 'transaction',
             'source_label' => $invoiceNumber ? 'Alokasi Invoice' : 'Pembayaran Transaksi',
             'reference_number' => $invoiceNumber ?: $payment->booking?->kode_booking,
@@ -437,7 +573,7 @@ class ReceivableService
             'transaction_codes' => collect([$payment->booking?->kode_booking])->filter()->values(),
             'customer_names' => collect([$payment->booking?->customer?->nama])->filter()->values(),
             'payment_account_name' => $payment->paymentAccount
-                ? trim($payment->paymentAccount->nama_bank.' '.$payment->paymentAccount->nomor_rekening)
+                ? trim($payment->paymentAccount->nama_bank . ' ' . $payment->paymentAccount->nomor_rekening)
                 : null,
             'created_by_name' => $payment->creator?->name ?? $payment->invoicePayment?->creator?->name,
             'amount' => (int) $payment->amount,
@@ -459,7 +595,7 @@ class ReceivableService
         $invoice->loadMissing(['bookings.payments.paymentAccount', 'payments.paymentAccount']);
 
         $invoicePayments = collect($invoice->payments->map(fn(Payment $payment) => [
-            'id' => 'invoice-'.$payment->id,
+            'id' => 'invoice-' . $payment->id,
             'source' => 'invoice',
             'payment_account_id' => $payment->payment_account_id,
             'payment_account_name' => $payment->paymentAccount
@@ -472,12 +608,12 @@ class ReceivableService
 
         $directPayments = collect($invoice->bookings
             ->flatMap(fn(Booking $booking) => $booking->payments)
-            ->filter(fn(BookingPayment $payment) =>
-                ($payment->status ?? 'active') !== 'voided'
-                && $payment->invoice_payment_id === null
+            ->filter(
+                fn(BookingPayment $payment) => ($payment->status ?? 'active') !== 'voided'
+                    && $payment->invoice_payment_id === null
             )
             ->map(fn(BookingPayment $payment) => [
-                'id' => 'booking-'.$payment->id,
+                'id' => 'booking-' . $payment->id,
                 'source' => 'booking',
                 'payment_account_id' => $payment->payment_account_id,
                 'payment_account_name' => $payment->paymentAccount
@@ -527,7 +663,7 @@ class ReceivableService
                         $detail->costs
                             ->where('is_additional', true)
                             ->each(function ($cost) use ($items, $booking, $detail, $unit, $vehicleName) {
-                                $amount = $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount;
+                                $amount = $cost->type === 'diskon' ? - ((int) $cost->amount) : (int) $cost->amount;
                                 $items->push([
                                     'type' => 'additional_cost',
                                     'description' => 'Biaya Tambahan',
@@ -576,9 +712,9 @@ class ReceivableService
         }
 
         return (int) $booking->payments
-            ->filter(fn(BookingPayment $payment) =>
-                ($payment->status ?? 'active') !== 'voided'
-                && $payment->invoice_payment_id === null
+            ->filter(
+                fn(BookingPayment $payment) => ($payment->status ?? 'active') !== 'voided'
+                    && $payment->invoice_payment_id === null
             )
             ->sum('amount');
     }
@@ -598,13 +734,13 @@ class ReceivableService
         $costs = $detail->relationLoaded('costs') ? $detail->costs : collect();
         $regularCosts = $costs
             ->where('is_additional', false)
-            ->sum(fn($cost) => $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount);
+            ->sum(fn($cost) => $cost->type === 'diskon' ? - ((int) $cost->amount) : (int) $cost->amount);
 
         if ($detail->pricing_mode === 'all_in') {
             $regularCosts = $costs
                 ->where('is_additional', false)
                 ->where('type', 'diskon')
-                ->sum(fn($cost) => -((int) $cost->amount));
+                ->sum(fn($cost) => - ((int) $cost->amount));
 
             return ((int) ($detail->harga_all_in ?? 0) * $duration) + $regularCosts;
         }

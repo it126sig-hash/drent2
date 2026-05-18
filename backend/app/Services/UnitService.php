@@ -26,15 +26,49 @@ class UnitService
             $query->where('status', $filters['status']);
         }
 
-        if (isset($filters['search'])) {
-            $query->where(function ($q) use ($filters) {
-                $q->where('tipe', 'like', '%' . $filters['search'] . '%')
-                  ->orWhere('merk', 'like', '%' . $filters['search'] . '%')
-                  ->orWhere('no_polisi', 'like', '%' . $filters['search'] . '%');
+        $searchTokens = $this->searchTokens($filters['search'] ?? null);
+        if (! empty($searchTokens)) {
+            $query->where(function ($q) use ($searchTokens) {
+                foreach ($searchTokens as $token) {
+                    $q->where(function ($tokenQuery) use ($token) {
+                        $like = '%' . $this->escapeLike($token) . '%';
+
+                        $tokenQuery
+                            ->where('tipe', 'like', $like)
+                            ->orWhere('merk', 'like', $like)
+                            ->orWhere('no_polisi', 'like', $like)
+                            ->orWhere('status', 'like', $like)
+                            ->orWhere('catatan', 'like', $like)
+                            ->orWhere('tahun', 'like', $like)
+                            ->orWhereHas('rentalOwner', function ($owner) use ($like) {
+                                $owner
+                                    ->where('nama', 'like', $like)
+                                    ->orWhere('kontak_1', 'like', $like)
+                                    ->orWhere('kontak_2', 'like', $like)
+                                    ->orWhere('kota', 'like', $like)
+                                    ->orWhere('alamat', 'like', $like);
+                            });
+                    });
+                }
             });
         }
 
         return $query->latest()->paginate($filters['per_page'] ?? 15);
+    }
+
+    private function searchTokens(?string $search): array
+    {
+        $search = trim(strtolower((string) $search));
+        if ($search === '') {
+            return [];
+        }
+
+        return array_values(array_filter(preg_split('/\s+/', $search) ?: []));
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return addcslashes($value, '%_\\');
     }
 
     public function create(array $data)

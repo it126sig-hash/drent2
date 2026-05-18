@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingPayment;
 use App\Models\RentToRentBill;
+use App\Models\RentToRentPayment;
 use Illuminate\Http\Request;
 
 class SupervisorRequestController extends Controller
@@ -133,9 +134,71 @@ class SupervisorRequestController extends Controller
                 ];
             });
 
+        $rentToRentVoidPayments = RentToRentPayment::query()
+            ->with(['bill.rentalOwner', 'bill.items.debt.booking.customer', 'allocations.debt.rentalOwner', 'allocations.debt.booking.customer', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover'])
+            ->whereIn('status', ['void_requested', 'voided'])
+            ->when($user->role !== 'superadmin', function ($query) use ($user) {
+                $query->where(function ($scope) use ($user) {
+                    $scope->whereHas('bill', fn($bill) => $bill->where('branch_id', $user->branch_id))
+                        ->orWhereHas('allocations.debt', fn($debt) => $debt->where('branch_id', $user->branch_id));
+                });
+            })
+            ->latest('updated_at')
+            ->get()
+            ->map(function (RentToRentPayment $payment) {
+                $directDebts = $payment->allocations->pluck('debt')->filter();
+                $bookingCodes = $payment->bill?->items?->pluck('debt.booking.kode_booking')->filter()->unique()->values()
+                    ?? $directDebts->pluck('booking.kode_booking')->filter()->unique()->values();
+                $ownerName = $payment->bill?->rentalOwner?->nama
+                    ?? $directDebts->pluck('rentalOwner.nama')->filter()->unique()->join(', ');
+
+                return [
+                    'id' => 'rent_to_rent_void_payment_'.$payment->id,
+                    'type' => 'rent_to_rent_void_payment',
+                    'type_label' => 'Void Pembayaran Rent to Rent',
+                    'status' => $payment->status === 'voided' ? 'approved' : 'pending',
+                    'status_label' => $payment->status === 'voided' ? 'Disetujui' : 'Menunggu ACC',
+                    'requested_at' => $payment->void_requested_at?->toISOString(),
+                    'approved_at' => $payment->void_approved_at?->toISOString(),
+                    'reason' => $payment->void_reason,
+                    'booking' => [
+                        'id' => null,
+                        'kode_booking' => $bookingCodes->join(', '),
+                        'customer_name' => $ownerName,
+                    ],
+                    'bill' => $payment->bill ? [
+                        'id' => $payment->bill->id,
+                        'bill_number' => $payment->bill->bill_number,
+                        'owner_name' => $payment->bill->rentalOwner?->nama,
+                        'total_amount' => (int) $payment->bill->total_amount,
+                        'paid_amount' => (int) $payment->bill->paid_amount,
+                        'booking_codes' => $bookingCodes,
+                    ] : null,
+                    'payment' => [
+                        'id' => $payment->id,
+                        'amount' => (int) $payment->amount,
+                        'payment_type' => 'rent_to_rent',
+                        'paid_at' => $payment->paid_at?->toISOString(),
+                        'payment_account' => $payment->paymentAccount ? [
+                            'nama_bank' => $payment->paymentAccount->nama_bank,
+                            'nomor_rekening' => $payment->paymentAccount->nomor_rekening,
+                        ] : null,
+                    ],
+                    'requester' => $payment->voidRequester ? [
+                        'id' => $payment->voidRequester->id,
+                        'name' => $payment->voidRequester->name,
+                    ] : null,
+                    'approver' => $payment->voidApprover ? [
+                        'id' => $payment->voidApprover->id,
+                        'name' => $payment->voidApprover->name,
+                    ] : null,
+                ];
+            });
+
         $requests = $voidPayments
             ->concat($returnRequests)
             ->concat($rentToRentVoidBills)
+            ->concat($rentToRentVoidPayments)
             ->sortByDesc(fn($item) => $item['approved_at'] ?? $item['requested_at'] ?? '')
             ->values();
 

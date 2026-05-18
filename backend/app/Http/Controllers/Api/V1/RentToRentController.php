@@ -13,6 +13,7 @@ use App\Http\Resources\RentToRentBillResource;
 use App\Http\Resources\RentToRentDebtResource;
 use App\Models\RentToRentBill;
 use App\Models\RentToRentDebt;
+use App\Models\RentToRentPayment;
 use App\Services\RentToRentPdfService;
 use App\Services\RentToRentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -41,7 +42,10 @@ class RentToRentController extends Controller
         $result = $this->service->listDebts($filters);
 
         return RentToRentDebtResource::collection($result['debts'])
-            ->additional(['summary' => $result['summary']]);
+            ->additional([
+                'summary' => $result['summary'],
+                'owner_options' => $result['owner_options'],
+            ]);
     }
 
     public function show(RentToRentDebt $debt): RentToRentDebtResource
@@ -139,6 +143,101 @@ class RentToRentController extends Controller
         }
     }
 
+    public function storeDebtPayment(StoreRentToRentPaymentRequest $request, RentToRentDebt $debt): RentToRentDebtResource
+    {
+        $this->authorize('create', RentToRentBill::class);
+        $this->assertDebtScope($debt);
+
+        try {
+            return new RentToRentDebtResource($this->service->storeDebtPayment($debt, $request->validated()));
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['amount' => [$exception->getMessage()]],
+            ], 422));
+        }
+    }
+
+    public function markDebtPaid(RentToRentDebt $debt): RentToRentDebtResource
+    {
+        $this->authorize('create', RentToRentBill::class);
+        $this->assertDebtScope($debt);
+
+        try {
+            return new RentToRentDebtResource($this->service->markDebtPaid($debt));
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['status' => [$exception->getMessage()]],
+            ], 422));
+        }
+    }
+
+    public function markBillPaid(RentToRentBill $bill): RentToRentBillResource
+    {
+        $this->authorize('update', $bill);
+
+        try {
+            return new RentToRentBillResource($this->service->markBillPaid($bill));
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['status' => [$exception->getMessage()]],
+            ], 422));
+        }
+    }
+
+    public function requestVoidPayment(Request $request, RentToRentPayment $payment)
+    {
+        $this->authorize('create', RentToRentBill::class);
+        $this->assertPaymentScope($payment);
+
+        $validated = $request->validate([
+            'void_reason' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            return response()->json(['data' => $this->service->requestVoidPayment($payment, $validated['void_reason'])]);
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['status' => [$exception->getMessage()]],
+            ], 422));
+        }
+    }
+
+    public function approveVoidPayment(RentToRentPayment $payment)
+    {
+        $this->assertPaymentSupervisorScope($payment);
+
+        try {
+            return response()->json(['data' => $this->service->approveVoidPayment($payment)]);
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['status' => [$exception->getMessage()]],
+            ], 422));
+        }
+    }
+
+    public function rejectVoidPayment(Request $request, RentToRentPayment $payment)
+    {
+        $this->assertPaymentSupervisorScope($payment);
+
+        $validated = $request->validate([
+            'void_rejection_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        try {
+            return response()->json(['data' => $this->service->rejectVoidPayment($payment, $validated['void_rejection_note'] ?? null)]);
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['status' => [$exception->getMessage()]],
+            ], 422));
+        }
+    }
+
     public function requestVoid(RequestVoidRentToRentBillRequest $request, RentToRentBill $bill): RentToRentBillResource
     {
         $this->authorize('update', $bill);
@@ -190,7 +289,12 @@ class RentToRentController extends Controller
 
         return response()->json([
             'data' => $this->service->paymentHistory($this->scopedFilters($request->only([
+                'view',
+                'latest_page',
+                'latest_per_page',
                 'latest_limit',
+                'group_page',
+                'group_per_page',
                 'group_limit',
             ]))),
         ]);
@@ -245,5 +349,39 @@ class RentToRentController extends Controller
         }
 
         abort_if($user->branch_id !== $bill->branch_id, 403);
+    }
+
+    private function assertPaymentScope(RentToRentPayment $payment): void
+    {
+        $user = auth()->user();
+
+        if ($user->role === 'superadmin') {
+            return;
+        }
+
+        $payment->loadMissing(['bill', 'allocations.debt']);
+
+        $branchId = $payment->bill?->branch_id
+            ?? $payment->allocations->pluck('debt.branch_id')->filter()->first();
+
+        abort_if($user->branch_id !== $branchId, 403);
+    }
+
+    private function assertPaymentSupervisorScope(RentToRentPayment $payment): void
+    {
+        $user = auth()->user();
+
+        abort_unless(in_array($user->role, ['superadmin', 'supervisor'], true), 403);
+
+        if ($user->role === 'superadmin') {
+            return;
+        }
+
+        $payment->loadMissing(['bill', 'allocations.debt']);
+
+        $branchId = $payment->bill?->branch_id
+            ?? $payment->allocations->pluck('debt.branch_id')->filter()->first();
+
+        abort_if($user->branch_id !== $branchId, 403);
     }
 }

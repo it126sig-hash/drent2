@@ -13,6 +13,9 @@ use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class BookingModificationService
 {
+    public function __construct(private BookingBillingService $billingService)
+    {
+    }
     /**
      * Extend: buat booking_detail baru type=extend dengan form lengkap (C7).
      */
@@ -48,6 +51,10 @@ class BookingModificationService
             }
 
             app(RentToRentService::class)->syncDetail($detail->fresh(['booking', 'unit.rentalOwner']));
+
+            // Biaya extend memengaruhi total tagihan — sync cache
+            $booking->load(['bookingDetails.costs', 'payments']);
+            $this->billingService->updateCachedSisaTagihan($booking);
 
             return $detail;
         });
@@ -140,6 +147,10 @@ class BookingModificationService
 
             app(RentToRentService::class)->syncDetail($newDetail->fresh(['booking', 'unit.rentalOwner']));
 
+            // Rolling mengubah biaya — sync cache
+            $booking->load(['bookingDetails.costs', 'payments']);
+            $this->billingService->updateCachedSisaTagihan($booking);
+
             return $newDetail;
         });
     }
@@ -210,6 +221,10 @@ class BookingModificationService
                 'tgl_kembali' => Carbon::parse($data['tgl_stop'])->format('Y-m-d H:i:s'),
                 'status'      => 'selesai',
             ]);
+
+            // Stop early bisa mengubah lama_sewa — sync cache
+            $booking->load(['bookingDetails.costs', 'payments']);
+            $this->billingService->updateCachedSisaTagihan($booking);
 
             return $detail;
         });

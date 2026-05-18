@@ -10,9 +10,11 @@ use App\Models\PaymentAccount;
 use App\Models\RentalOwner;
 use App\Models\RentToRentBill;
 use App\Models\RentToRentDebt;
+use App\Models\RentToRentPayment;
 use App\Models\Tenant;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\RentToRentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -52,7 +54,6 @@ class RentToRentPayableTest extends TestCase
 
         $this->bookingWithDetail($ctx, $this->unit($ctx, $ownerA->id)->id);
         $this->bookingWithDetail($ctx, $this->unit($ctx, $ownerB->id)->id);
-        $this->getJson('/api/v1/rent-to-rent')->assertOk();
 
         $response = $this->postJson('/api/v1/rent-to-rent/bills', [
             'debt_ids' => RentToRentDebt::pluck('id')->all(),
@@ -78,7 +79,6 @@ class RentToRentPayableTest extends TestCase
 
         $first = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2]);
         $second = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 3]);
-        $this->getJson('/api/v1/rent-to-rent')->assertOk();
 
         $secondDebt = RentToRentDebt::where('booking_detail_id', $second['detail']->id)->firstOrFail();
         $this->patchJson("/api/v1/rent-to-rent/{$secondDebt->id}/amount", [
@@ -128,7 +128,6 @@ class RentToRentPayableTest extends TestCase
         ]);
 
         $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2]);
-        $this->getJson('/api/v1/rent-to-rent')->assertOk();
 
         $billId = $this->postJson('/api/v1/rent-to-rent/bills', [
             'debt_ids' => RentToRentDebt::pluck('id')->all(),
@@ -174,6 +173,258 @@ class RentToRentPayableTest extends TestCase
         $bill->refresh();
         $this->assertSame('voided', $bill->payments()->first()->status);
         $this->assertSame('open', RentToRentDebt::first()->status);
+
+        Sanctum::actingAs($ctx['user']);
+
+        $this->getJson('/api/v1/rent-to-rent')
+            ->assertOk()
+            ->assertJsonPath('data.0.status', 'open');
+    }
+
+    public function test_it_records_direct_payment_without_generating_bill(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, false, 'Rental Mitra');
+        $unit = $this->unit($ctx, $owner->id, ['modal_1_hari' => 100000]);
+        $account = PaymentAccount::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'nama_bank' => 'BCA',
+            'nomor_rekening' => '123',
+            'atas_nama' => 'DRENT',
+            'is_active' => true,
+        ]);
+
+        $booking = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2]);
+        $debt = RentToRentDebt::where('booking_detail_id', $booking['detail']->id)->firstOrFail();
+
+        $this->postJson("/api/v1/rent-to-rent/{$debt->id}/payments", [
+            'payment_account_id' => $account->id,
+            'amount' => 75000,
+            'paid_at' => '2026-05-18',
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'partial_paid')
+            ->assertJsonPath('data.bill', null)
+            ->assertJsonPath('data.paid_amount', 75000)
+            ->assertJsonPath('data.remaining_amount', 125000);
+
+        $this->assertSame(0, RentToRentBill::count());
+
+        $payment = RentToRentPayment::firstOrFail();
+        $this->assertNull($payment->rent_to_rent_bill_id);
+        $this->assertNull($payment->allocations()->firstOrFail()->rent_to_rent_bill_item_id);
+
+        $this->getJson('/api/v1/rent-to-rent/payment-history')
+            ->assertOk()
+            ->assertJsonPath('data.latest.0.bill_number', null)
+            ->assertJsonPath('data.latest.0.owner_name', 'Rental Mitra')
+            ->assertJsonPath('data.latest.0.amount', 75000);
+    }
+
+    public function test_direct_payments_can_be_paid_in_stages_and_voided_from_history(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, false, 'Rental Mitra');
+        $unit = $this->unit($ctx, $owner->id, ['modal_1_hari' => 100000]);
+        $account = PaymentAccount::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'nama_bank' => 'BCA',
+            'nomor_rekening' => '123',
+            'atas_nama' => 'DRENT',
+            'is_active' => true,
+        ]);
+
+        $booking = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2]);
+        $debt = RentToRentDebt::where('booking_detail_id', $booking['detail']->id)->firstOrFail();
+
+        $this->postJson("/api/v1/rent-to-rent/{$debt->id}/payments", [
+            'payment_account_id' => $account->id,
+            'amount' => 75000,
+            'paid_at' => '2026-05-18',
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'partial_paid');
+
+        $this->postJson("/api/v1/rent-to-rent/{$debt->id}/payments", [
+            'payment_account_id' => $account->id,
+            'amount' => 125000,
+            'paid_at' => '2026-05-19',
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'paid')
+            ->assertJsonPath('data.remaining_amount', 0);
+
+        $paymentId = RentToRentPayment::orderBy('paid_at')->firstOrFail()->id;
+
+        $this->postJson("/api/v1/rent-to-rent/payments/{$paymentId}/void", [
+            'void_reason' => 'Nominal salah input',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'void_requested')
+            ->assertJsonPath('data.void_reason', 'Nominal salah input');
+
+        $supervisor = User::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'name' => 'Supervisor',
+            'email' => uniqid('supervisor-').'@example.test',
+            'password' => 'password',
+            'role' => 'supervisor',
+            'is_active' => true,
+        ]);
+
+        Sanctum::actingAs($supervisor);
+
+        $this->getJson('/api/v1/supervisor-requests')
+            ->assertOk()
+            ->assertJsonPath('data.0.type', 'rent_to_rent_void_payment')
+            ->assertJsonPath('data.0.status', 'pending')
+            ->assertJsonPath('data.0.reason', 'Nominal salah input');
+
+        $this->postJson("/api/v1/rent-to-rent/payments/{$paymentId}/approve-void")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'voided');
+
+        Sanctum::actingAs($ctx['user']);
+
+        $this->getJson('/api/v1/rent-to-rent/payment-history')
+            ->assertOk()
+            ->assertJsonPath('data.latest.1.status', 'voided');
+
+        $this->getJson('/api/v1/rent-to-rent')
+            ->assertOk()
+            ->assertJsonPath('data.0.status', 'partial_paid')
+            ->assertJsonPath('data.0.paid_amount', 125000)
+            ->assertJsonPath('data.0.remaining_amount', 75000);
+    }
+
+    public function test_debt_and_bill_can_be_tagged_paid_even_when_underpaid(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, false, 'Rental Mitra');
+        $unit = $this->unit($ctx, $owner->id, ['modal_1_hari' => 100000]);
+        $account = PaymentAccount::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'nama_bank' => 'BCA',
+            'nomor_rekening' => '123',
+            'atas_nama' => 'DRENT',
+            'is_active' => true,
+        ]);
+
+        $directBooking = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2]);
+        $directDebt = RentToRentDebt::where('booking_detail_id', $directBooking['detail']->id)->firstOrFail();
+
+        $this->postJson("/api/v1/rent-to-rent/{$directDebt->id}/payments", [
+            'payment_account_id' => $account->id,
+            'amount' => 50000,
+            'paid_at' => '2026-05-18',
+        ])->assertOk();
+
+        $this->postJson("/api/v1/rent-to-rent/{$directDebt->id}/mark-paid")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'paid')
+            ->assertJsonPath('data.paid_amount', 50000)
+            ->assertJsonPath('data.remaining_amount', 150000);
+
+        $billBooking = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2]);
+        $billDebt = RentToRentDebt::where('booking_detail_id', $billBooking['detail']->id)->firstOrFail();
+        $billId = $this->postJson('/api/v1/rent-to-rent/bills', [
+            'debt_ids' => [$billDebt->id],
+        ])->assertOk()->json('data.id');
+
+        $this->postJson("/api/v1/rent-to-rent/bills/{$billId}/payments", [
+            'payment_account_id' => $account->id,
+            'amount' => 50000,
+            'paid_at' => '2026-05-18',
+        ])->assertOk();
+
+        $this->postJson("/api/v1/rent-to-rent/bills/{$billId}/mark-paid")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'paid')
+            ->assertJsonPath('data.paid_amount', 50000)
+            ->assertJsonPath('data.remaining_amount', 150000);
+
+        $this->getJson('/api/v1/rent-to-rent?status=paid')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+    }
+
+    public function test_list_endpoint_does_not_create_missing_debts(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, false, 'Rental Mitra');
+
+        $this->bookingWithDetail($ctx, $this->unit($ctx, $owner->id)->id, syncDebt: false);
+
+        $this->assertSame(0, RentToRentDebt::count());
+
+        $this->getJson('/api/v1/rent-to-rent')
+            ->assertOk()
+            ->assertJsonPath('summary.debt_count', 0)
+            ->assertJsonCount(0, 'data');
+
+        $this->assertSame(0, RentToRentDebt::count());
+    }
+
+    public function test_sync_cache_command_creates_missing_debts_and_populates_cache(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, false, 'Rental Mitra');
+        $unit = $this->unit($ctx, $owner->id, ['modal_1_hari' => 125000]);
+        $booking = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2], syncDebt: false);
+
+        $this->assertSame(0, RentToRentDebt::count());
+
+        $this->artisan('rent-to-rent:sync-cache')->assertSuccessful();
+
+        $debt = RentToRentDebt::where('booking_detail_id', $booking['detail']->id)->firstOrFail();
+        $this->assertSame(250000, $debt->cached_total_amount);
+        $this->assertSame(0, $debt->cached_paid_amount);
+        $this->assertSame('open', $debt->cached_payment_status);
+    }
+
+    public function test_status_filter_uses_cached_payment_status(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, false, 'Rental Mitra');
+        $unit = $this->unit($ctx, $owner->id);
+        $openBooking = $this->bookingWithDetail($ctx, $unit->id);
+        $paidBooking = $this->bookingWithDetail($ctx, $unit->id);
+
+        RentToRentDebt::where('booking_detail_id', $paidBooking['detail']->id)->update([
+            'cached_payment_status' => 'paid',
+            'cached_paid_amount' => 100000,
+        ]);
+
+        $this->getJson('/api/v1/rent-to-rent?status=paid')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.booking_detail_id', $paidBooking['detail']->id)
+            ->assertJsonPath('data.0.status', 'paid')
+            ->assertJsonPath('summary.debt_count', 1);
+
+        $this->getJson('/api/v1/rent-to-rent?status=open')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.booking_detail_id', $openBooking['detail']->id);
+    }
+
+    public function test_owner_filter_options_are_limited_to_rent_to_rent_transactions_and_sorted(): void
+    {
+        $ctx = $this->context();
+        $ownerZ = $this->owner($ctx['tenant']->id, false, 'Zulu Rental');
+        $ownerA = $this->owner($ctx['tenant']->id, false, 'Alpha Rental');
+        $this->owner($ctx['tenant']->id, false, 'Kosong Rental');
+
+        $this->bookingWithDetail($ctx, $this->unit($ctx, $ownerZ->id)->id);
+        $this->bookingWithDetail($ctx, $this->unit($ctx, $ownerA->id)->id);
+
+        $response = $this->getJson('/api/v1/rent-to-rent')->assertOk();
+
+        $this->assertSame(
+            ['Alpha Rental', 'Zulu Rental'],
+            collect($response->json('owner_options'))->pluck('nama')->all()
+        );
     }
 
     private function context(): array
@@ -228,7 +479,7 @@ class RentToRentPayableTest extends TestCase
         ], $overrides));
     }
 
-    private function bookingWithDetail(array $ctx, int $unitId, array $bookingOverrides = [], array $detailOverrides = []): array
+    private function bookingWithDetail(array $ctx, int $unitId, array $bookingOverrides = [], array $detailOverrides = [], bool $syncDebt = true): array
     {
         $customer = Customer::create([
             'tenant_id' => $ctx['tenant']->id,
@@ -263,6 +514,10 @@ class RentToRentPayableTest extends TestCase
             'detail_type' => 'initial',
             'status' => 'draft',
         ], $detailOverrides));
+
+        if ($syncDebt) {
+            app(RentToRentService::class)->syncDetail($detail->fresh(['booking', 'unit.rentalOwner']));
+        }
 
         return compact('booking', 'detail');
     }

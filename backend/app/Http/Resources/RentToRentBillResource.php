@@ -16,7 +16,8 @@ class RentToRentBillResource extends JsonResource
         return [
             'id' => $this->id,
             'bill_number' => $this->bill_number,
-            'status' => $this->status,
+            'status' => $this->status === 'paid_manual' ? 'paid' : $this->status,
+            'raw_status' => $this->status,
             'public_token' => $this->public_token,
             'public_path' => $this->public_token ? "/rent-to-rent/{$this->public_token}" : null,
             'public_url' => $this->public_token ? url("/rent-to-rent/{$this->public_token}") : null,

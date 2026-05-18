@@ -180,9 +180,12 @@ class PhysicalCheckService
                 ]);
             }
 
+            $hasCustomerSignature = collect($data['signatures'])
+                ->contains(fn($signature) => ($signature['signer_type'] ?? null) === 'customer_driver');
+
             $check->fill([
                 'booking_detail_id' => $this->displayDetail($booking)?->id,
-                'status' => 'completed',
+                'status' => $hasCustomerSignature ? 'completed' : 'requested',
                 'km_odometer' => $data['km_odometer'],
                 'fuel_level' => $data['fuel_level'] ?? null,
                 'fuel_marker_x' => $data['fuel_marker_x'] ?? null,
@@ -219,6 +222,43 @@ class PhysicalCheckService
                 'photos_count' => count($data['photos'] ?? []),
                 'checklist_count' => count($data['checklist'] ?? []),
             ], $request, $publicCheck ? 'customer' : null);
+
+            return $check->load(self::RELATIONS);
+        });
+    }
+
+    public function storePublicSignature(PhysicalCheck $check, array $data, Request $request): PhysicalCheck
+    {
+        $check->loadMissing(['booking.bookingDetails', 'photos', 'checklists', 'signatures']);
+
+        if ($check->status === 'skipped') {
+            throw new UnprocessableEntityHttpException('Cek fisik ini sudah dilewati oleh tim internal.');
+        }
+
+        if ($check->status === 'completed') {
+            throw new UnprocessableEntityHttpException('Cek fisik ini sudah selesai.');
+        }
+
+        $this->ensureBookingStatusMatchesType($check->booking, $check->type);
+        $this->ensureWithinInspectionWindow($check->booking, $check->type);
+        $this->ensureReadyForPublicSignature($check);
+        $this->verifyOtp($check, $data['customer_email'] ?? null, $data['otp_code'] ?? null, $request);
+
+        return DB::transaction(function () use ($check, $data, $request) {
+            $this->replaceSignatureByType($check, 'customer_driver', [
+                'signer_type' => 'customer_driver',
+                'signer_name' => $data['signer_name'] ?? null,
+                'signature_base64' => $data['signature_base64'],
+            ]);
+
+            $check->forceFill([
+                'status' => 'completed',
+                'inspected_at' => $check->inspected_at ?: now(),
+            ])->save();
+
+            $this->recordActivity($check, 'public_submitted', [
+                'signature' => 'customer_driver',
+            ], $request, 'customer');
 
             return $check->load(self::RELATIONS);
         });
@@ -374,6 +414,32 @@ class PhysicalCheckService
         }
     }
 
+    private function replaceSignatureByType(PhysicalCheck $check, string $signerType, array $signature): void
+    {
+        $existing = $check->signatures()
+            ->where('signer_type', $signerType)
+            ->get();
+
+        foreach ($existing as $item) {
+            if (Storage::disk('public')->exists($item->signature_path)) {
+                Storage::disk('public')->delete($item->signature_path);
+            }
+            $item->delete();
+        }
+
+        $path = $this->storeBase64Image(
+            $signature['signature_base64'],
+            "physical-checks/{$check->booking_id}/{$check->type}/signatures"
+        );
+
+        $check->signatures()->create([
+            'signer_type' => $signature['signer_type'],
+            'signer_name' => $signature['signer_name'] ?? null,
+            'signature_path' => $path,
+            'signed_at' => now(),
+        ]);
+    }
+
     private function deletePhotoFiles(PhysicalCheckPhoto $photo): void
     {
         foreach ([$photo->path, $photo->annotated_path] as $path) {
@@ -405,6 +471,29 @@ class PhysicalCheckService
         Storage::disk('public')->put($path, $binary);
 
         return $path;
+    }
+
+    private function ensureReadyForPublicSignature(PhysicalCheck $check): void
+    {
+        $missingSections = collect(['front', 'left', 'right', 'rear', 'interior', 'km'])
+            ->reject(fn($section) => $check->photos->contains('section', $section))
+            ->values();
+
+        if ($missingSections->isNotEmpty()) {
+            throw new UnprocessableEntityHttpException('Foto cek fisik teknis belum lengkap.');
+        }
+
+        if ($check->km_odometer === null || $check->fuel_marker_x === null || $check->fuel_marker_y === null) {
+            throw new UnprocessableEntityHttpException('Data KM dan BBM cek fisik belum lengkap.');
+        }
+
+        if ($check->checklists->isEmpty()) {
+            throw new UnprocessableEntityHttpException('Checklist perlengkapan belum diisi.');
+        }
+
+        if (! $check->signatures->contains('signer_type', 'inspector')) {
+            throw new UnprocessableEntityHttpException('Tanda tangan tim cek fisik belum tersedia.');
+        }
     }
 
     private function verifyOtp(PhysicalCheck $check, ?string $email, ?string $code, ?Request $request): void

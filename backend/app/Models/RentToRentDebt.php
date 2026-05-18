@@ -17,10 +17,15 @@ class RentToRentDebt extends Model
         'booking_detail_id',
         'amount_override',
         'status',
+        'cached_total_amount',
+        'cached_paid_amount',
+        'cached_payment_status',
     ];
 
     protected $casts = [
         'amount_override' => 'integer',
+        'cached_total_amount' => 'integer',
+        'cached_paid_amount' => 'integer',
     ];
 
     public function tenant()
