@@ -8,6 +8,10 @@ import { usePhysicalCheck } from '../../composables/usePhysicalCheck'
 import SignaturePad from '../../components/physical-checks/SignaturePad.vue'
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue'
 import fuelGaugeImage from '../../assets/fuel-gauge.svg'
+import carBackImage from '../../assets/car/car back.svg'
+import carFrontImage from '../../assets/car/car front.svg'
+import carLeftImage from '../../assets/car/car left.svg'
+import carRightImage from '../../assets/car/car right.svg'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
@@ -52,18 +56,22 @@ const inspectorSignature = ref('')
 const customerSignature = ref('')
 const checklistRows = ref([])
 const activeStep = ref(0)
+const galleryVisible = ref(false)
+const galleryPhotos = ref([])
+const galleryIndex = ref(0)
+const galleryTitle = ref('')
 
 const sections = ref([
-  { key: 'front', label: 'Tampak depan', notes: '', photos: [] },
-  { key: 'left', label: 'Samping kiri', notes: '', photos: [] },
-  { key: 'right', label: 'Samping kanan', notes: '', photos: [] },
-  { key: 'rear', label: 'Tampak belakang', notes: '', photos: [] },
-  { key: 'interior', label: 'Interior', notes: '', photos: [] },
-  { key: 'km', label: 'Foto KM terakhir', notes: '', photos: [] },
-  { key: 'handover_selfie', label: 'Foto bersama penyewa', notes: '', photos: [] },
+  { key: 'front', label: 'Tampak depan', notes: '', photos: [], iconSrc: carFrontImage },
+  { key: 'left', label: 'Samping kiri', notes: '', photos: [], iconSrc: carLeftImage },
+  { key: 'right', label: 'Samping kanan', notes: '', photos: [], iconSrc: carRightImage },
+  { key: 'rear', label: 'Tampak belakang', notes: '', photos: [], iconSrc: carBackImage },
+  { key: 'interior', label: 'Interior', notes: '', photos: [], iconClass: 'pi pi-car' },
+  { key: 'km', label: 'Foto KM terakhir', notes: '', photos: [], iconClass: 'pi pi-gauge' },
+  { key: 'handover_selfie', label: 'Foto bersama penyewa', notes: '', photos: [], iconClass: 'pi pi-users', optional: true },
 ])
 
-const photoRequiredSections = ['front', 'left', 'right', 'rear', 'interior', 'km', 'handover_selfie']
+const photoRequiredSections = ['front', 'left', 'right', 'rear', 'interior', 'km']
 const publicToken = computed(() => route.params.token)
 const isPublicMode = computed(() => route.name === 'PublicPhysicalCheckForm')
 const type = computed(() => isPublicMode.value ? existingCheck.value?.type : route.params.type)
@@ -72,12 +80,15 @@ const isReturn = computed(() => type.value === 'return')
 const title = computed(() => isReturn.value ? 'Cek Fisik Pengembalian' : 'Cek Fisik Keberangkatan')
 const readonly = computed(() => ['completed', 'skipped'].includes(existingCheck.value?.status))
 const canSubmit = computed(() => !readonly.value && eligibility.value.allowed)
+const technicalReadonly = computed(() => readonly.value || isPublicMode.value)
+const selfieSection = computed(() => sections.value.find(section => section.key === 'handover_selfie'))
+const inspectionSections = computed(() => sections.value.filter(section => section.key !== 'handover_selfie'))
 
 const steps = computed(() => [
   { key: 'photos', label: 'Foto', icon: 'pi pi-camera', complete: photoRequiredSections.every(hasSectionPhoto) },
   { key: 'meter', label: 'KM & BBM', icon: 'pi pi-gauge', complete: (kmOdometer.value || kmOdometer.value === 0) && !!fuelMarker.value },
   { key: 'checklist', label: 'Perlengkapan', icon: 'pi pi-list-check', complete: checklistRows.value.length > 0 },
-  { key: 'signatures', label: 'TTD', icon: 'pi pi-pencil', complete: !!inspectorSignature.value && !!customerSignature.value },
+  { key: 'signatures', label: 'TTD', icon: 'pi pi-pencil', complete: isPublicMode.value ? !!customerSignature.value : !!inspectorSignature.value },
   { key: 'review', label: 'Kirim', icon: 'pi pi-send', complete: isPublicMode.value ? !!otpCode.value : true },
 ])
 
@@ -106,6 +117,39 @@ const publicLink = computed(() => {
   if (!existingCheck.value?.public_token) return ''
   return `${window.location.origin}/physical-checks/public/${existingCheck.value.public_token}`
 })
+
+const activeGalleryPhoto = computed(() => galleryPhotos.value[galleryIndex.value] || null)
+
+const resolveMediaUrl = (url) => {
+  if (!url) return ''
+
+  const apiRoot = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL?.replace(/\/api\/?$/, '') || ''
+  const normalizedApiRoot = apiRoot.replace(/\/$/, '')
+  if (/^(data:|blob:)/i.test(url)) return url
+
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const parsed = new URL(url)
+      if (parsed.pathname.startsWith('/storage/')) {
+        return `${normalizedApiRoot}${parsed.pathname}${parsed.search}`
+      }
+    } catch (err) {
+      return url
+    }
+
+    return url
+  }
+
+  if (url.startsWith('/storage/')) {
+    return `${normalizedApiRoot}${url}`
+  }
+
+  if (url.startsWith('storage/')) {
+    return `${normalizedApiRoot}/${url}`
+  }
+
+  return url
+}
 
 const statusText = (status) => ({
   requested: 'Diminta',
@@ -237,7 +281,7 @@ const hydrateExistingCheck = () => {
       .filter(photo => photo.section === section.key)
       .map(photo => ({
         id: `server-${photo.id}`,
-        preview: photo.annotated_url || photo.url,
+        preview: resolveMediaUrl(photo.annotated_url || photo.url),
         image_base64: '',
         annotated_base64: '',
         notes: photo.notes || '',
@@ -258,8 +302,8 @@ const hydrateExistingCheck = () => {
   const customer = check.signatures?.find(signature => signature.signer_type === 'customer_driver')
   inspectorName.value = inspector?.signer_name || ''
   customerName.value = customer?.signer_name || booking.value?.customer?.nama || ''
-  inspectorSignature.value = inspector?.url || ''
-  customerSignature.value = customer?.url || ''
+  inspectorSignature.value = resolveMediaUrl(inspector?.url) || ''
+  customerSignature.value = resolveMediaUrl(customer?.url) || ''
 }
 
 const compressImage = (file) => {
@@ -288,7 +332,7 @@ const compressImage = (file) => {
 }
 
 const onPhotoSelect = async (event, section) => {
-  if (readonly.value) return
+  if (technicalReadonly.value) return
   const files = Array.from(event.target.files || [])
   if (!files.length) return
 
@@ -310,9 +354,26 @@ const onPhotoSelect = async (event, section) => {
 }
 
 const removePhoto = (section, photo) => {
-  if (readonly.value) return
+  if (technicalReadonly.value) return
   section.photos = section.photos.filter(item => item.id !== photo.id)
   logFillActivity('photo_removed', { section: section.key })
+}
+
+const openGallery = (section, photo) => {
+  galleryPhotos.value = section.photos
+  galleryIndex.value = Math.max(0, section.photos.findIndex(item => item.id === photo.id))
+  galleryTitle.value = section.label
+  galleryVisible.value = true
+}
+
+const showPreviousGalleryPhoto = () => {
+  if (!galleryPhotos.value.length) return
+  galleryIndex.value = (galleryIndex.value - 1 + galleryPhotos.value.length) % galleryPhotos.value.length
+}
+
+const showNextGalleryPhoto = () => {
+  if (!galleryPhotos.value.length) return
+  galleryIndex.value = (galleryIndex.value + 1) % galleryPhotos.value.length
 }
 
 const annotatorVisible = ref(false)
@@ -323,7 +384,7 @@ const isAnnotating = ref(false)
 let annotatorContext = null
 
 const openAnnotator = async (photo) => {
-  if (readonly.value || photo.fromServer) return
+  if (technicalReadonly.value || photo.fromServer) return
   annotatorPhoto.value = photo
   annotatorSource.value = photo.annotated_base64 || photo.image_base64
   annotatorVisible.value = true
@@ -419,7 +480,7 @@ const saveAnnotation = () => {
 }
 
 const setFuelMarker = (event) => {
-  if (readonly.value) return
+  if (technicalReadonly.value) return
   const target = event.currentTarget
   const rect = target.getBoundingClientRect()
   const point = event.touches?.[0] || event
@@ -452,8 +513,13 @@ const validateStep = (index = activeStep.value) => {
     }
   }
 
-  if (index === 3 && (!inspectorSignature.value || !customerSignature.value)) {
-    toast.add({ severity: 'warn', summary: 'Tanda tangan belum lengkap', detail: 'Lengkapi tanda tangan tim cek fisik dan penyewa.', life: 4000 })
+  if (index === 3 && !inspectorSignature.value && !isPublicMode.value) {
+    toast.add({ severity: 'warn', summary: 'Tanda tangan belum lengkap', detail: 'Lengkapi tanda tangan tim cek fisik.', life: 4000 })
+    return false
+  }
+
+  if (index === 3 && !customerSignature.value && isPublicMode.value) {
+    toast.add({ severity: 'warn', summary: 'Tanda tangan belum lengkap', detail: 'Lengkapi tanda tangan penyewa.', life: 4000 })
     return false
   }
 
@@ -517,13 +583,15 @@ const buildPayload = () => ({
       signer_type: 'inspector',
       signer_name: inspectorName.value,
       signature_base64: inspectorSignature.value
-    },
-    {
-      signer_type: 'customer_driver',
-      signer_name: customerName.value,
-      signature_base64: customerSignature.value
     }
   ]
+})
+
+const buildPublicSignaturePayload = () => ({
+  customer_email: customerEmail.value,
+  otp_code: otpCode.value,
+  signer_name: customerName.value,
+  signature_base64: customerSignature.value
 })
 
 const sendOtp = async () => {
@@ -550,17 +618,16 @@ const copyPublicLink = async () => {
 
 const submit = async () => {
   if (!validateForm()) return
-  const payload = buildPayload()
 
   if (isPublicMode.value) {
-    await storePublic(publicToken.value, payload)
+    await storePublic(publicToken.value, buildPublicSignaturePayload())
     existingCheck.value = { ...existingCheck.value, status: 'completed' }
     logFillActivity('submit_completed')
     activeStep.value = steps.value.length - 1
     return
   }
 
-  await store(payload)
+  await store(buildPayload())
   router.push({ name: 'PhysicalCheckList' })
 }
 
@@ -673,23 +740,29 @@ onMounted(loadData)
                 <i class="pi pi-camera"></i>
                 <div>
                   <h2>Foto Kondisi Kendaraan</h2>
-                  <p>Ambil foto tiap sisi kendaraan, KM, dan foto bersama penyewa.</p>
+                  <p>Ambil foto tiap sisi kendaraan dan KM sebagai bukti kondisi unit.</p>
                 </div>
               </div>
             </div>
 
             <div class="section-body">
               <div class="section-grid">
-                <article v-for="section in sections" :key="section.key" class="photo-panel">
+                <article v-for="section in inspectionSections" :key="section.key" class="photo-panel">
                   <div class="panel-head">
-                    <strong>{{ section.label }}</strong>
-                    <label v-if="!readonly" class="photo-trigger btn-pill btn-primary">
+                    <div class="panel-title">
+                      <span class="photo-visual" :class="{ 'photo-visual-icon': !section.iconSrc }">
+                        <img v-if="section.iconSrc" :src="section.iconSrc" :alt="section.label" />
+                        <i v-else :class="section.iconClass"></i>
+                      </span>
+                      <strong>{{ section.label }}</strong>
+                    </div>
+                    <label v-if="!technicalReadonly" class="photo-trigger btn-pill btn-primary">
                       <i class="pi pi-camera"></i>
                       <span>Ambil</span>
                       <input
                         type="file"
                         accept="image/*"
-                        :capture="section.key === 'handover_selfie' ? 'user' : 'environment'"
+                        capture="environment"
                         multiple
                         @change="onPhotoSelect($event, section)"
                       />
@@ -701,22 +774,26 @@ onMounted(loadData)
                     rows="2"
                     autoResize
                     :readonly="readonly"
+                    :disabled="technicalReadonly"
                     placeholder="Keterangan bagian ini..."
                     class="full-control"
                   />
 
                   <div v-if="section.photos.length" class="photo-grid">
                     <div v-for="photo in section.photos" :key="photo.id" class="photo-card">
-                      <img :src="photo.preview" :alt="section.label" />
+                      <button type="button" class="photo-preview-button" @click="openGallery(section, photo)">
+                        <img :src="photo.preview" :alt="section.label" />
+                      </button>
                       <Textarea
                         v-model="photo.notes"
                         rows="1"
                         autoResize
-                        :readonly="readonly"
+                        :readonly="technicalReadonly"
+                        :disabled="technicalReadonly"
                         placeholder="Catatan foto..."
                         class="full-control"
                       />
-                      <div v-if="!readonly" class="photo-actions">
+                      <div v-if="!technicalReadonly" class="photo-actions">
                         <Button icon="pi pi-pencil" text rounded aria-label="Coret foto" @click="openAnnotator(photo)" />
                         <Button icon="pi pi-trash" text rounded severity="danger" aria-label="Hapus foto" @click="removePhoto(section, photo)" />
                       </div>
@@ -745,7 +822,7 @@ onMounted(loadData)
               <div class="section-body">
                 <InputNumber
                   v-model="kmOdometer"
-                  :disabled="readonly"
+                  :disabled="technicalReadonly"
                   :min="0"
                   inputId="km_odometer"
                   class="full-control"
@@ -778,7 +855,7 @@ onMounted(loadData)
                 <Dropdown
                   v-model="fuelLevel"
                   :options="fuelOptions"
-                  :disabled="readonly"
+                  :disabled="technicalReadonly"
                   editable
                   placeholder="Label BBM"
                   class="full-control"
@@ -801,10 +878,10 @@ onMounted(loadData)
 
             <div class="section-body checklist-list">
               <article v-for="row in checklistRows" :key="row.item_label" class="checklist-row">
-                <Checkbox v-model="row.is_present" :binary="true" :disabled="readonly" @change="logFillActivity('checklist_changed', { item: row.item_label })" />
+                <Checkbox v-model="row.is_present" :binary="true" :disabled="technicalReadonly" @change="logFillActivity('checklist_changed', { item: row.item_label })" />
                 <div>
                   <strong>{{ row.item_label }}</strong>
-                  <InputText v-model="row.notes" :readonly="readonly" placeholder="Keterangan..." class="full-control" />
+                  <InputText v-model="row.notes" :readonly="technicalReadonly" :disabled="technicalReadonly" placeholder="Keterangan..." class="full-control" />
                 </div>
               </article>
             </div>
@@ -823,12 +900,67 @@ onMounted(loadData)
 
             <div class="section-body signature-grid">
               <div class="signature-panel">
-                <InputText v-model="inspectorName" :readonly="readonly" placeholder="Nama tim cek fisik" class="full-control" />
-                <SignaturePad v-model="inspectorSignature" label="Tim Cek Fisik" :disabled="readonly" />
+                <InputText v-model="inspectorName" :readonly="readonly || isPublicMode" :disabled="isPublicMode" placeholder="Nama tim cek fisik" class="full-control" />
+                <SignaturePad v-model="inspectorSignature" label="Tim Cek Fisik" :disabled="readonly || isPublicMode" />
               </div>
-              <div class="signature-panel">
+              <div v-if="isPublicMode || customerSignature || readonly" class="signature-panel">
                 <InputText v-model="customerName" :readonly="readonly" placeholder="Nama penyewa" class="full-control" />
                 <SignaturePad v-model="customerSignature" label="Penyewa" :disabled="readonly" />
+              </div>
+              <div v-if="!isPublicMode && selfieSection" class="signature-panel handover-panel">
+                <div class="panel-head">
+                  <div class="panel-title">
+                    <span class="photo-visual photo-visual-icon">
+                      <i :class="selfieSection.iconClass"></i>
+                    </span>
+                    <div>
+                      <strong>{{ selfieSection.label }}</strong>
+                      <small>Opsional, dilakukan di akhir bila diperlukan.</small>
+                    </div>
+                  </div>
+                  <label v-if="!readonly" class="photo-trigger btn-pill btn-primary">
+                    <i class="pi pi-camera"></i>
+                    <span>Ambil</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="user"
+                      multiple
+                      @change="onPhotoSelect($event, selfieSection)"
+                    />
+                  </label>
+                </div>
+                <Textarea
+                  v-model="selfieSection.notes"
+                  rows="2"
+                  autoResize
+                  :readonly="readonly"
+                  placeholder="Keterangan foto bersama..."
+                  class="full-control"
+                />
+                <div v-if="selfieSection.photos.length" class="photo-grid">
+                  <div v-for="photo in selfieSection.photos" :key="photo.id" class="photo-card">
+                    <button type="button" class="photo-preview-button" @click="openGallery(selfieSection, photo)">
+                      <img :src="photo.preview" :alt="selfieSection.label" />
+                    </button>
+                    <Textarea
+                      v-model="photo.notes"
+                      rows="1"
+                      autoResize
+                      :readonly="readonly"
+                      placeholder="Catatan foto..."
+                      class="full-control"
+                    />
+                    <div v-if="!readonly" class="photo-actions">
+                      <Button icon="pi pi-pencil" text rounded aria-label="Coret foto" @click="openAnnotator(photo)" />
+                      <Button icon="pi pi-trash" text rounded severity="danger" aria-label="Hapus foto" @click="removePhoto(selfieSection, photo)" />
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-photo optional-photo">
+                  <i class="pi pi-image"></i>
+                  <span>Foto bersama belum ditambahkan</span>
+                </div>
               </div>
             </div>
           </section>
@@ -945,6 +1077,52 @@ onMounted(loadData)
         <Button label="Reset" icon="pi pi-refresh" class="app-dialog-button app-dialog-button-secondary" @click="resetAnnotation" />
         <Button label="Simpan Coretan" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="saveAnnotation" />
       </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="galleryVisible"
+      :header="galleryTitle"
+      modal
+      class="custom-dialog gallery-dialog"
+      :style="{ width: 'min(980px, 96vw)' }"
+      :breakpoints="{ '720px': '96vw' }"
+    >
+      <div v-if="activeGalleryPhoto" class="gallery-viewer">
+        <div class="gallery-stage">
+          <Button
+            v-if="galleryPhotos.length > 1"
+            icon="pi pi-chevron-left"
+            text
+            rounded
+            class="gallery-nav gallery-nav-left"
+            aria-label="Foto sebelumnya"
+            @click="showPreviousGalleryPhoto"
+          />
+          <img :src="activeGalleryPhoto.preview" :alt="galleryTitle" />
+          <Button
+            v-if="galleryPhotos.length > 1"
+            icon="pi pi-chevron-right"
+            text
+            rounded
+            class="gallery-nav gallery-nav-right"
+            aria-label="Foto berikutnya"
+            @click="showNextGalleryPhoto"
+          />
+        </div>
+        <p v-if="activeGalleryPhoto.notes" class="gallery-note">{{ activeGalleryPhoto.notes }}</p>
+        <div v-if="galleryPhotos.length > 1" class="gallery-thumbs">
+          <button
+            v-for="(photo, index) in galleryPhotos"
+            :key="photo.id"
+            type="button"
+            class="gallery-thumb"
+            :class="{ active: index === galleryIndex }"
+            @click="galleryIndex = index"
+          >
+            <img :src="photo.preview" :alt="`${galleryTitle} ${index + 1}`" />
+          </button>
+        </div>
+      </div>
     </Dialog>
   </div>
 </template>
@@ -1194,9 +1372,53 @@ onMounted(loadData)
   gap: var(--space-sm);
 }
 
+.panel-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.panel-title > div {
+  min-width: 0;
+}
+
+.panel-title small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .panel-head strong {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.photo-visual {
+  display: grid;
+  width: 50px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-default);
+}
+
+.photo-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 3px;
+}
+
+.photo-visual-icon {
+  width: 38px;
+  color: var(--info-cyan);
+  font-size: 17px;
 }
 
 .photo-trigger {
@@ -1224,6 +1446,16 @@ onMounted(loadData)
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-default);
   background: var(--surface-default);
+}
+
+.photo-preview-button,
+.gallery-thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
 }
 
 .photo-card img {
@@ -1325,6 +1557,14 @@ onMounted(loadData)
   min-width: 0;
 }
 
+.handover-panel {
+  grid-column: 1 / -1;
+}
+
+.optional-photo {
+  min-height: 76px;
+}
+
 .field-label {
   display: block;
   margin-bottom: var(--space-sm);
@@ -1408,6 +1648,76 @@ onMounted(loadData)
   display: block;
   width: 100%;
   touch-action: none;
+}
+
+.gallery-viewer {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.gallery-stage {
+  position: relative;
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--text-primary);
+}
+
+.gallery-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+}
+
+.gallery-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-50%);
+  background: color-mix(in srgb, var(--surface-default) 88%, transparent);
+  box-shadow: var(--shadow-tile);
+}
+
+.gallery-nav-left {
+  left: var(--space-md);
+}
+
+.gallery-nav-right {
+  right: var(--space-md);
+}
+
+.gallery-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.gallery-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: var(--space-sm);
+}
+
+.gallery-thumb {
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.gallery-thumb.active {
+  border-color: var(--info-cyan);
+}
+
+.gallery-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
 }
 
 @media (max-width: 1100px) {

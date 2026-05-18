@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { format } from 'date-fns'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -46,11 +46,13 @@ const showDetailDialog = ref(false)
 const showExpenseDialog = ref(false)
 const showRejectDialog = ref(false)
 const showCloseDialog = ref(false)
+const showCompleteOperationalDialog = ref(false)
 const selectedBooking = ref(null)
 const selectedExpense = ref(null)
 const isMobile = ref(window.innerWidth < 768)
 const fundMode = ref('operational')
 const closeNote = ref('')
+const completeOperationalNote = ref('')
 const detailLoadingFundId = ref(null)
 const detailDialogTab = ref('selected')
 
@@ -180,6 +182,41 @@ const allTransactionHistoryRows = computed(() =>
   transactionHistoryRows.value
 )
 
+const visibleTransactionHistoryRows = computed(() =>
+  detailDialogTab.value === 'selected' ? selectedTransactionHistoryRows.value : allTransactionHistoryRows.value
+)
+
+const visibleDetailCount = computed(() => {
+  const detailIds = visibleTransactionHistoryRows.value
+    .map(row => row.fund?.booking_detail?.id || row.fund?.booking_detail_id)
+    .filter(Boolean)
+
+  return new Set(detailIds).size || (visibleTransactionHistoryRows.value.length ? 1 : 0)
+})
+
+const visibleTransactionSubtotal = computed(() =>
+  visibleTransactionHistoryRows.value.reduce((sum, row) => sum + Number(row.amount || 0), 0)
+)
+
+const visibleRealizationTotal = computed(() =>
+  visibleTransactionHistoryRows.value
+    .filter(row => row.row_kind === 'reimbursement' && row.status === 'approved')
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0)
+)
+
+const selectedDetailContext = computed(() => {
+  const rowFund = visibleTransactionHistoryRows.value.find(row => row.fund)?.fund
+  const fund = rowFund || selectedFund.value || {}
+  const detail = fund.booking_detail || selectedFund.value?.booking_detail || {}
+
+  return {
+    driver: fund.driver?.nama || selectedFund.value?.driver?.nama || detail.driver?.nama || '-',
+    unit: detail.unit?.no_polisi || '-',
+    tanggal_sewa: formatDateTime(detail.tgl_sewa) || '-',
+    tanggal_selesai: formatDateTime(detail.tgl_kembali) || '-',
+  }
+})
+
 const selectedDepositTotal = computed(() =>
   bookingFundHistory.value
     .filter(fund => !fund.is_salary && fund.status !== 'cancelled')
@@ -263,11 +300,53 @@ const transactionKindSeverity = (kind) => {
   return 'success'
 }
 
+const isReturnHistoryItem = (item) => item.expense_type === 'return' || item.label === 'Pengembalian Sisa Dana'
+
+const historyKindSeverity = (item) => {
+  if (item.type === 'transfer') return 'info'
+  if (isReturnHistoryItem(item)) return 'success'
+  return 'warn'
+}
+
+const historyDirectionLabel = (item) => {
+  if (item.direction === 'out') return 'Keluar'
+  if (isReturnHistoryItem(item)) return 'Uang Masuk'
+  return 'Potong Saldo'
+}
+
+const historyDirectionClass = (item) => {
+  if (item.direction === 'out') return 'text-negative'
+  if (isReturnHistoryItem(item)) return 'text-positive'
+  return 'text-secondary'
+}
+
 const transactionRowClass = (row) => ({
   'transaction-row-deposit': row.row_kind === 'deposit',
   'transaction-row-reimbursement': row.row_kind === 'reimbursement',
   'transaction-row-return': row.row_kind === 'return',
 })
+
+const operationalRowClass = (row) => ({
+  'operational-row-summary': row.row_type === 'summary',
+})
+
+const operationalDepositBalance = (row) =>
+  Number(row.disbursed_total || 0) - Number(row.realization_total || 0) - Number(row.return_total || 0)
+
+const operationalSummaryLabel = (row) =>
+  row.row_type === 'summary' ? formatCurrency(operationalDepositBalance(row)) : 'Total transaksi'
+
+const bookingClosableFunds = (booking) =>
+  (booking?.operational_funds || []).filter(fund =>
+    !fund.is_salary
+    && fund.fund_type !== 'salary'
+    && fund.status === 'accepted'
+  )
+
+const canMarkOperationalComplete = (booking) =>
+  activeTab.value === 'active'
+  && bookingClosableFunds(booking).length > 0
+  && Number(booking?.summary?.pending_driver_acceptance_count || 0) === 0
 
 const detailTypeLabel = (type) => {
   if (type === 'extend') return 'Extend'
@@ -322,6 +401,12 @@ const detailRealizationTotal = (booking, detail) =>
     .filter(expense => expense.type === 'expense' && expense.status === 'approved')
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
 
+const detailReturnTotal = (booking, detail) =>
+  detailFunds(booking, detail)
+    .flatMap(fund => fund.expenses || [])
+    .filter(expense => expense.type === 'return' && expense.status === 'approved')
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
+
 const detailHasPendingDriverAcceptance = (booking, detail) =>
   detailFunds(booking, detail).some(fund => fund.status === 'pending_driver_acceptance')
 
@@ -329,6 +414,21 @@ const detailHasPendingDriverReceipts = (booking, detail) =>
   detailFunds(booking, detail)
     .flatMap(fund => fund.expenses || [])
     .some(expense => expense.status === 'submitted' && expense.source === 'driver')
+
+const selectedBudgetTotal = computed(() => {
+  const detailSources = [
+    selectedFund.value?.booking?.booking_details,
+    selectedBooking.value?.booking_details,
+    selectedFund.value?.booking_funds?.map(fund => fund.booking_detail).filter(Boolean),
+    selectedBooking.value?.operational_funds?.map(fund => fund.booking_detail).filter(Boolean),
+    selectedFund.value?.booking_detail ? [selectedFund.value.booking_detail] : [],
+  ]
+
+  const details = detailSources.find(source => source?.length) || []
+  const uniqueDetails = [...new Map(details.map(detail => [detail.id || detail.row_key || detail, detail])).values()]
+
+  return uniqueDetails.reduce((sum, detail) => sum + detailBudgetTotal(detail), 0)
+})
 
 const operationalRows = computed(() =>
   bookings.value.flatMap((booking) => {
@@ -345,6 +445,7 @@ const operationalRows = computed(() =>
       disbursed_total: detailDisbursedTotal(booking, detail),
       salary_total: detailSalaryTotal(booking, detail),
       realization_total: detailRealizationTotal(booking, detail),
+      return_total: detailReturnTotal(booking, detail),
       has_pending_driver_acceptance: detailHasPendingDriverAcceptance(booking, detail),
       has_pending_driver_receipts: detailHasPendingDriverReceipts(booking, detail),
     }))
@@ -362,6 +463,7 @@ const operationalRows = computed(() =>
         disbursed_total: detailRows.reduce((sum, row) => sum + row.disbursed_total, 0),
         salary_total: detailRows.reduce((sum, row) => sum + row.salary_total, 0),
         realization_total: detailRows.reduce((sum, row) => sum + row.realization_total, 0),
+        return_total: detailRows.reduce((sum, row) => sum + row.return_total, 0),
         has_pending_driver_acceptance: false,
         has_pending_driver_receipts: false,
       },
@@ -524,6 +626,24 @@ const submitCloseFund = async () => {
   await fetchBookings(pagination.value.current_page)
 }
 
+const openCompleteOperationalDialog = (booking) => {
+  selectedBooking.value = booking
+  completeOperationalNote.value = ''
+  showCompleteOperationalDialog.value = true
+}
+
+const submitCompleteOperational = async () => {
+  const funds = bookingClosableFunds(selectedBooking.value)
+  if (!funds.length) return
+
+  for (const fund of funds) {
+    await closeFund(fund.id, completeOperationalNote.value || 'Operasional selesai')
+  }
+
+  showCompleteOperationalDialog.value = false
+  await fetchBookings(pagination.value.current_page)
+}
+
 const openFundDetail = async (fundId, booking = null) => {
   if (booking) {
     selectedBooking.value = booking
@@ -601,132 +721,152 @@ const submitReject = async () => {
 const firstFund = (booking) =>
   booking.operational_funds?.find(fund => !fund.is_salary) || booking.operational_funds?.[0] || null
 
+const handleResize = () => {
+  isMobile.value = window.innerWidth < 768
+}
+
 onMounted(async () => {
-  window.addEventListener('resize', () => {
-    isMobile.value = window.innerWidth < 768
-  })
+  window.addEventListener('resize', handleResize)
   await Promise.all([
     fetchBookings(1),
     fetchCostTypes({ per_page: 100, is_active: true }),
     fetchPaymentAccounts({ per_page: 100, is_active: true }),
   ])
 })
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
 </script>
 
 <template>
-  <div class="page-container">
+  <div class="page-container operational-cost-page table-page-active">
     <div class="page-header">
       <div class="header-left">
         <h1 class="text-h1">Biaya Operasional</h1>
         <p class="text-secondary text-xs">Kelola pencairan dana driver, review bon, dan pengembalian sisa saldo.</p>
       </div>
+      <div class="header-actions">
+        <div class="tab-toggle-container">
+          <div class="pill-toggle">
+            <button
+              v-for="tab in tabOptions"
+              :key="tab.value"
+              class="toggle-item"
+              :class="{ active: activeTab === tab.value }"
+              @click="switchTab(tab.value)"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="tab-toggle-container">
-      <div class="pill-toggle">
-        <button
-          v-for="tab in tabOptions"
-          :key="tab.value"
-          class="toggle-item"
-          :class="{ active: activeTab === tab.value }"
-          @click="switchTab(tab.value)"
+    <div class="list-tab-fill operational-list-tab">
+      <div class="filter-bar surface-card">
+        <div class="filter-groups">
+          <div class="filter-group filter-group-wide">
+            <label>Pencarian</label>
+            <span class="filter-search">
+              <i class="pi pi-search"></i>
+              <InputText
+                v-if="activeTab === 'history'"
+                v-model="historyFilters.search"
+                placeholder="Kode, driver, keterangan..."
+                class="w-full"
+                @keyup.enter="applyFilters"
+              />
+              <InputText
+                v-else
+                v-model="filters.search"
+                placeholder="Kode, pelanggan, driver, tujuan..."
+                class="w-full"
+                @keyup.enter="applyFilters"
+              />
+            </span>
+          </div>
+          <div v-if="activeTab !== 'history'" class="filter-group">
+            <label>Status Dana</label>
+            <Dropdown
+              v-model="filters.status"
+              :options="[
+                { label: 'Semua', value: null },
+                { label: 'Menunggu Driver', value: 'pending_driver_acceptance' },
+                { label: 'Diterima', value: 'accepted' },
+                { label: 'Ditutup', value: 'closed' },
+              ]"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Semua"
+              class="w-full md:w-52"
+            />
+          </div>
+          <div class="filter-group">
+            <label>Mulai</label>
+            <DatePicker v-if="activeTab === 'history'" v-model="historyFilters.date_from" dateFormat="yy-mm-dd" placeholder="Dari" class="w-full md:w-36" />
+            <DatePicker v-else v-model="filters.date_from" dateFormat="yy-mm-dd" placeholder="Dari" class="w-full md:w-36" />
+          </div>
+          <div class="filter-group">
+            <label>Sampai</label>
+            <DatePicker v-if="activeTab === 'history'" v-model="historyFilters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai" class="w-full md:w-36" />
+            <DatePicker v-else v-model="filters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai" class="w-full md:w-36" />
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn-pill btn-secondary btn-pill-compact" :disabled="loading" @click="resetFilters">
+            <i class="pi pi-refresh"></i>
+            Reset
+          </button>
+          <button class="btn-pill btn-primary btn-pill-compact" :disabled="loading" @click="applyFilters">
+            <i class="pi pi-filter"></i>
+            Filter
+          </button>
+        </div>
+      </div>
+
+      <ProgressBar v-if="loading" mode="indeterminate" style="height: 4px" class="mb-4" />
+      <ProgressBar v-if="detailLoadingFundId" mode="indeterminate" style="height: 4px" class="mb-4 detail-loading-strip" />
+
+      <div v-if="!isMobile && activeTab !== 'history'" class="table-shell operational-table-shell">
+        <DataTable
+          :value="operationalRows"
+          dataKey="row_key"
+          rowGroupMode="rowspan"
+          groupRowsBy="booking_group_id"
+          lazy
+          paginator
+          scrollable
+          scrollHeight="flex"
+          :rows="pagination.per_page"
+          :totalRecords="pagination.total"
+          :loading="loading"
+          @page="onPage"
+          responsiveLayout="scroll"
+          class="drent-datatable"
+          :rowClass="operationalRowClass"
         >
-          {{ tab.label }}
-        </button>
-      </div>
-    </div>
-
-    <div class="filter-bar surface-card">
-      <div class="filter-groups">
-        <div class="filter-group filter-group-wide">
-          <label>Pencarian</label>
-          <span class="filter-search">
-            <i class="pi pi-search"></i>
-            <InputText
-              v-if="activeTab === 'history'"
-              v-model="historyFilters.search"
-              placeholder="Kode, driver, keterangan..."
-              class="w-full"
-              @keyup.enter="applyFilters"
-            />
-            <InputText
-              v-else
-              v-model="filters.search"
-              placeholder="Kode, pelanggan, driver, tujuan..."
-              class="w-full"
-              @keyup.enter="applyFilters"
-            />
-          </span>
-        </div>
-        <div v-if="activeTab !== 'history'" class="filter-group">
-          <label>Status Dana</label>
-          <Dropdown
-            v-model="filters.status"
-            :options="[
-              { label: 'Semua', value: null },
-              { label: 'Menunggu Driver', value: 'pending_driver_acceptance' },
-              { label: 'Diterima', value: 'accepted' },
-              { label: 'Ditutup', value: 'closed' },
-            ]"
-            optionLabel="label"
-            optionValue="value"
-            placeholder="Semua"
-            class="w-full md:w-52"
-          />
-        </div>
-        <div class="filter-group">
-          <label>Mulai</label>
-          <DatePicker v-if="activeTab === 'history'" v-model="historyFilters.date_from" dateFormat="yy-mm-dd" placeholder="Dari" class="w-full md:w-36" />
-          <DatePicker v-else v-model="filters.date_from" dateFormat="yy-mm-dd" placeholder="Dari" class="w-full md:w-36" />
-        </div>
-        <div class="filter-group">
-          <label>Sampai</label>
-          <DatePicker v-if="activeTab === 'history'" v-model="historyFilters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai" class="w-full md:w-36" />
-          <DatePicker v-else v-model="filters.date_to" dateFormat="yy-mm-dd" placeholder="Sampai" class="w-full md:w-36" />
-        </div>
-      </div>
-      <div class="filter-actions">
-        <button class="btn-pill btn-secondary btn-pill-compact" :disabled="loading" @click="resetFilters">
-          <i class="pi pi-refresh"></i>
-          Reset
-        </button>
-        <button class="btn-pill btn-primary btn-pill-compact" :disabled="loading" @click="applyFilters">
-          <i class="pi pi-filter"></i>
-          Filter
-        </button>
-      </div>
-    </div>
-
-    <ProgressBar v-if="loading" mode="indeterminate" style="height: 4px" class="mb-4" />
-    <ProgressBar v-if="detailLoadingFundId" mode="indeterminate" style="height: 4px" class="mb-4 detail-loading-strip" />
-
-    <DataTable
-      v-if="!isMobile && activeTab !== 'history'"
-      :value="operationalRows"
-      dataKey="row_key"
-      rowGroupMode="rowspan"
-      groupRowsBy="booking_group_id"
-      lazy
-      paginator
-      :rows="pagination.per_page"
-      :totalRecords="pagination.total"
-      :loading="loading"
-      @page="onPage"
-      responsiveLayout="scroll"
-      class="drent-datatable"
-    >
-      <Column field="booking_group_id" header="Booking" style="min-width: 13rem">
+      <Column field="booking_group_id" header="Booking" style="min-width: 10rem">
         <template #body="{ data }">
           <div class="rowspan-booking-cell">
             <button class="text-xs text-secondary mt-2 link-button" @click="router.push(`/bookings/${data.booking.id}`)">{{ data.booking.kode_booking }}</button>
             <div class="text-xs text-secondary mt-2">{{ data.booking.customer?.nama || '-' }}</div>
             <BookingStatusBadge :status="data.booking.status" />
+            <button
+              v-if="activeTab === 'active'"
+              class="btn-pill btn-secondary btn-pill-compact booking-complete-button"
+              :disabled="!canMarkOperationalComplete(data.booking) || actionLoading"
+              @click="openCompleteOperationalDialog(data.booking)"
+            >
+              <i class="pi pi-check"></i>
+              Tandai selesai
+            </button>
           </div>
         </template>
       </Column>
-      <Column header="Driver & Jadwal" style="min-width: 18rem">
+      <Column header="Driver & Jadwal" style="min-width: 15rem">
         <template #body="{ data }">
-          <div v-if="data.row_type === 'summary'" class="group-summary-label">
+          <div v-if="data.row_type === 'summary'"  class="group-summary-label">
             Total {{ data.detail_count }} sub transaksi
           </div>
           <div v-else class="detail-line detail-line-rowspan">
@@ -739,14 +879,21 @@ onMounted(async () => {
           </div>
         </template>
       </Column>
-      <Column header="Anggaran OP / Anggaran Awal" style="min-width: 9rem">
+       <Column header="Gaji Driver (Paid)" style="min-width: 9rem">
+        <template #body="{ data }">
+          <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+            <span>{{ formatCurrency(data.salary_total) }}</span>
+          </div>
+        </template>
+      </Column>
+      <Column header="Anggaran Awal" style="min-width: 9rem">
         <template #body="{ data }">
           <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
             <span>{{ formatCurrency(data.budget_total) }}</span>
           </div>
         </template>
       </Column>
-      <Column header="Dana Pegangan / Panjar Driver" style="min-width: 12rem">
+      <Column header="Deposit" style="min-width: 9rem">
         <template #body="{ data }">
           <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
             <span>{{ formatCurrency(data.disbursed_total) }}</span>
@@ -754,14 +901,8 @@ onMounted(async () => {
           </div>
         </template>
       </Column>
-      <Column header="Gaji Sopir" style="min-width: 12rem">
-        <template #body="{ data }">
-          <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
-            <span>{{ formatCurrency(data.salary_total) }}</span>
-          </div>
-        </template>
-      </Column>
-      <Column header="Realisasi OP / Total Bon ACC" style="min-width: 14rem">
+     
+      <Column header="Realisasi OP" style="min-width: 9rem">
         <template #body="{ data }">
           <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
             <span>{{ formatCurrency(data.realization_total) }}</span>
@@ -769,47 +910,58 @@ onMounted(async () => {
           </div>
         </template>
       </Column>
+      <Column header="Pengembalian" style="min-width: 9rem">
+        <template #body="{ data }">
+          <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+            <span>{{ formatCurrency(data.return_total) }}</span>
+          </div>
+        </template>
+      </Column>
+     
       <Column header="Aksi" style="min-width: 14rem">
         <template #body="{ data }">
-          <div v-if="data.row_type === 'summary'" class="group-summary-label text-right">
-            Total transaksi
+          <div v-if="data.row_type === 'summary'" class="group-summary-label group-summary-balance text-right">
+            <span>Sisa Saldo  </span>
+            <strong>{{ operationalSummaryLabel(data) }}</strong>
           </div>
-          <div v-else class="table-actions detail-action-cell">
-            <button class="btn-pill btn-primary btn-pill-compact" @click="openFundDialog(data.booking, 'operational', data.detail?.id)">
+          <div v-else class="action-pill-group detail-action-cell">
+            <button class="action-btn action-btn-primary" type="button" title="Tambah deposit" @click="openFundDialog(data.booking, 'operational', data.detail?.id)">
               <i class="pi pi-plus"></i>
-              Deposit
             </button>
-            <button class="btn-pill btn-secondary btn-pill-compact" @click="openFundDialog(data.booking, 'salary', data.detail?.id)">
+            <button class="action-btn" type="button" title="Bayar gaji driver" @click="openFundDialog(data.booking, 'salary', data.detail?.id)">
               <i class="pi pi-money-bill"></i>
-              Gaji Driver
             </button>
             <button
               v-if="firstFundForDetail(data.booking, data.detail)"
-              class="btn-pill btn-secondary btn-pill-compact"
+              class="action-btn"
+              type="button"
+              title="Lihat bon"
               :disabled="detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id || actionLoading"
               @click="openFundDetail(firstFundForDetail(data.booking, data.detail).id, data.booking)"
             >
               <i :class="detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id ? 'pi pi-spin pi-spinner' : 'pi pi-eye'"></i>
-              {{ detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id ? 'Memuat' : 'Detail' }}
             </button>
           </div>
         </template>
       </Column>
-    </DataTable>
+        </DataTable>
+      </div>
 
-    <DataTable
-      v-else-if="!isMobile && activeTab === 'history'"
-      :value="history"
-      dataKey="id"
-      lazy
-      paginator
-      :rows="pagination.per_page"
-      :totalRecords="pagination.total"
-      :loading="loading"
-      @page="onPage"
-      responsiveLayout="scroll"
-      class="drent-datatable"
-    >
+      <div v-else-if="!isMobile && activeTab === 'history'" class="table-shell operational-table-shell">
+        <DataTable
+          :value="history"
+          dataKey="id"
+          lazy
+          paginator
+          scrollable
+          scrollHeight="flex"
+          :rows="pagination.per_page"
+          :totalRecords="pagination.total"
+          :loading="loading"
+          @page="onPage"
+          responsiveLayout="scroll"
+          class="drent-datatable"
+        >
       <Column header="Tanggal" style="min-width: 11rem">
         <template #body="{ data }">
           <strong>{{ formatDateTime(data.happened_at) }}</strong>
@@ -818,7 +970,7 @@ onMounted(async () => {
       </Column>
       <Column header="Jenis" style="min-width: 13rem">
         <template #body="{ data }">
-          <Tag :value="data.label" :severity="data.type === 'transfer' ? 'info' : 'success'" />
+          <Tag :value="data.label" :severity="historyKindSeverity(data)" />
           <div class="text-xs text-secondary mt-2">{{ data.status }}</div>
         </template>
       </Column>
@@ -832,7 +984,7 @@ onMounted(async () => {
         <template #body="{ data }">
           <div class="amount-stack">
             <span>{{ formatCurrency(data.amount) }}</span>
-            <span :class="data.direction === 'out' ? 'text-negative' : 'text-positive'">{{ data.direction === 'out' ? 'Keluar' : 'Potong Saldo' }}</span>
+            <span :class="historyDirectionClass(data)">{{ historyDirectionLabel(data) }}</span>
           </div>
         </template>
       </Column>
@@ -849,7 +1001,8 @@ onMounted(async () => {
           <div class="text-xs text-secondary mt-1">{{ data.created_by_name || data.reviewed_by_name || '-' }}</div>
         </template>
       </Column>
-    </DataTable>
+        </DataTable>
+      </div>
 
     <div v-else-if="activeTab !== 'history'" class="mobile-card-list">
       <article v-for="booking in bookings" :key="booking.id" class="app-card operational-card">
@@ -883,6 +1036,10 @@ onMounted(async () => {
               <Tag v-if="hasPendingDriverReceipts(booking)" value="Request ACC" severity="warn" />
             </div>
           </div>
+          <div class="info-row">
+            <span>Pengembalian</span>
+            <strong>{{ formatCurrency(booking.summary.approved_return_total) }}</strong>
+          </div>
         </div>
         <div class="card-footer">
           <button class="btn-pill btn-primary btn-pill-compact" @click="openFundDialog(booking)">
@@ -902,15 +1059,24 @@ onMounted(async () => {
             <i :class="detailLoadingFundId === firstFund(booking).id ? 'pi pi-spin pi-spinner' : 'pi pi-eye'"></i>
             {{ detailLoadingFundId === firstFund(booking).id ? 'Memuat' : 'Detail' }}
           </button>
+          <button
+            v-if="activeTab === 'active'"
+            class="btn-pill btn-secondary btn-pill-compact"
+            :disabled="!canMarkOperationalComplete(booking) || actionLoading"
+            @click="openCompleteOperationalDialog(booking)"
+          >
+            <i class="pi pi-check"></i>
+            Tandai selesai
+          </button>
         </div>
       </article>
     </div>
 
-    <div v-else class="mobile-card-list">
+      <div v-else class="mobile-card-list">
       <article v-for="item in history" :key="item.id" class="app-card operational-card">
         <div class="card-header">
           <div>
-            <Tag :value="item.label" :severity="item.type === 'transfer' ? 'info' : 'success'" />
+            <Tag :value="item.label" :severity="historyKindSeverity(item)" />
             <p class="text-xs text-secondary mt-2">{{ item.booking_code || '-' }}</p>
           </div>
           <strong>{{ formatCurrency(item.amount) }}</strong>
@@ -918,9 +1084,11 @@ onMounted(async () => {
         <div class="card-body">
           <div class="info-row"><span>Driver</span><strong>{{ item.driver_name || '-' }}</strong></div>
           <div class="info-row"><span>Rekening</span><strong>{{ item.payment_account?.nama_bank || '-' }}</strong></div>
+          <div class="info-row"><span>Arus</span><strong :class="historyDirectionClass(item)">{{ historyDirectionLabel(item) }}</strong></div>
           <div class="info-row"><span>Tanggal</span><strong>{{ formatDateTime(item.happened_at) }}</strong></div>
         </div>
       </article>
+      </div>
     </div>
 
     <Dialog v-model:visible="showFundDialog" :header="fundDialogTitle" modal :style="{ width: 'min(1080px, 96vw)' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog deposit-dialog']">
@@ -1016,50 +1184,97 @@ onMounted(async () => {
       </template>
     </Dialog>
 
-    <Dialog v-model:visible="showDetailDialog" header="Detail Dana Reimburs" modal :style="{ width: 'min(1180px, 96vw)' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog detail-dialog']">
-      <div v-if="selectedFund" class="dialog-stack">
-        <div class="fund-summary-grid">
-          <div class="app-muted-panel"><span>Deposit OP</span><strong>{{ formatCurrency(selectedDepositTotal) }}</strong></div>
-          <div class="app-muted-panel"><span>Dana Reimburs</span><strong>{{ formatCurrency(selectedReimbursedTotal) }}</strong></div>
-          <div class="app-muted-panel"><span>Pengembalian</span><strong>{{ formatCurrency(selectedReturnTotal) }}</strong></div>
-          <div class="app-muted-panel"><span>Request ACC</span><strong>{{ selectedPendingReceiptCount }}</strong></div>
-        </div>
-        <div class="detail-tab-toggle">
-          <button class="toggle-item" :class="{ active: detailDialogTab === 'selected' }" @click="detailDialogTab = 'selected'">
-            Transaksi Terpilih
+    <Dialog v-model:visible="showDetailDialog" modal :show-header="false" :style="{ width: 'min(1180px, 96vw)' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog detail-dialog detail-review-dialog']">
+      <div v-if="selectedFund" class="detail-review-shell">
+        <header class="detail-review-header">
+          <div>
+            <h3>Detail Dana Reimburs</h3>
+            <p>Kelola rincian pengeluaran dan verifikasi bukti transaksi driver</p>
+          </div>
+          <button class="detail-close-button" type="button" aria-label="Tutup modal detail" @click="showDetailDialog = false">
+            <i class="pi pi-times"></i>
           </button>
-          <button class="toggle-item" :class="{ active: detailDialogTab === 'all' }" @click="detailDialogTab = 'all'">
-            Semua Initial / Extend / Rolling
-          </button>
-        </div>
-        <div v-if="!selectedFund.is_salary" class="table-actions">
-          <button class="btn-pill btn-secondary btn-pill-compact" :disabled="selectedFund.status !== 'accepted'" @click="openExpenseDialog(selectedFund, 'expense')">
-            <i class="pi pi-receipt"></i>
-            Input Bon Finance
-          </button>
-          <button class="btn-pill btn-secondary btn-pill-compact" :disabled="selectedFund.status !== 'accepted'" @click="openExpenseDialog(selectedFund, 'return')">
-            <i class="pi pi-undo"></i>
-            Input Pengembalian
-          </button>
-          <button class="btn-pill btn-primary btn-pill-compact" :disabled="selectedFund.status !== 'accepted' || actionLoading" @click="openCloseDialog">
-            <i class="pi pi-lock"></i>
-            Close Manual
-          </button>
-        </div>
-        <section class="transfer-history-section">
-          <div class="app-section-header compact-section-header">
-            <div>
-              <h3>Deposit & Realisasi</h3>
-              <p>{{ detailDialogTab === 'selected' ? 'Transaksi terpilih' : 'Semua sub transaksi booking' }}</p>
+        </header>
+
+        <div class="detail-review-content">
+          <div class="detail-metric-grid">
+            <div class="detail-metric-card">
+              <span>Total Anggaran</span>
+              <strong>{{ formatCurrency(selectedBudgetTotal) }}</strong>
+            </div>
+            <div class="detail-metric-card detail-metric-info">
+              <span>Deposit OP</span>
+              <strong>{{ formatCurrency(selectedDepositTotal) }}</strong>
+            </div>
+            <div class="detail-metric-card detail-metric-highlight">
+              <span>Dana Reimburs</span>
+              <strong>{{ formatCurrency(selectedReimbursedTotal) }}</strong>
+            </div>
+            <div class="detail-metric-card">
+              <span>Pengembalian</span>
+              <strong>{{ formatCurrency(selectedReturnTotal) }}</strong>
+            </div>
+            <div class="detail-metric-card detail-metric-danger">
+              <span>Request ACC</span>
+              <strong>{{ selectedPendingReceiptCount }}</strong>
             </div>
           </div>
+
+          <div class="detail-command-row">
+            <div class="detail-tab-toggle">
+              <button class="toggle-item" :class="{ active: detailDialogTab === 'selected' }" @click="detailDialogTab = 'selected'">
+                Transaksi Terpilih
+              </button>
+              <button class="toggle-item" :class="{ active: detailDialogTab === 'all' }" @click="detailDialogTab = 'all'">
+                Semua Initial / Extend / Rolling
+              </button>
+            </div>
+            <div v-if="!selectedFund.is_salary" class="detail-action-cluster">
+              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="selectedFund.status !== 'accepted'" @click="openExpenseDialog(selectedFund, 'expense')">
+                <i class="pi pi-credit-card"></i>
+                Input Bon Finance
+              </button>
+              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="selectedFund.status !== 'accepted'" @click="openExpenseDialog(selectedFund, 'return')">
+                <i class="pi pi-undo"></i>
+                Input Pengembalian
+              </button>
+              <button class="btn-pill btn-primary btn-pill-compact" :disabled="selectedFund.status !== 'accepted' || actionLoading" @click="openCloseDialog">
+                <i class="pi pi-lock"></i>
+                Close Manual
+              </button>
+            </div>
+          </div>
+
+          <section class="transfer-history-section detail-table-panel">
+            <div class="detail-table-header">
+              <div class="detail-table-title">
+                <i class="pi pi-wallet"></i>
+                <strong>Deposit & Realisasi</strong>
+              </div>
+              <span>Driver: <strong>{{ selectedDetailContext.driver }}</strong> ({{ selectedDetailContext.unit }}) : <strong>{{ selectedDetailContext.tanggal_sewa }} - {{ selectedDetailContext.tanggal_selesai }}</strong></span>
+              <small>{{ visibleDetailCount }} Sub Transaksi</small>
+            </div>
           <DataTable
-            :value="detailDialogTab === 'selected' ? selectedTransactionHistoryRows : allTransactionHistoryRows"
+            :value="visibleTransactionHistoryRows"
             dataKey="id"
             responsiveLayout="scroll"
-            class="mini-table transaction-history-table"
+            class="transaction-history-table detail-review-table"
             :rowClass="transactionRowClass"
           >
+            <Column header="Aksi">
+              <template #body="{ data }">
+                <div v-if="data.expense?.status === 'submitted'" class="table-actions">
+                  <button class="btn-pill btn-primary btn-pill-compact" @click="reviewApprove(data.expense)">ACC</button>
+                  <button class="btn-pill btn-secondary btn-pill-compact" @click="openRejectDialog(data.expense)">Tolak</button>
+                </div>
+              </template>
+            </Column>
+            <Column header="Bukti">
+              <template #body="{ data }">
+                <button v-if="data.expense?.photo_url" class="link-button" type="button" :disabled="actionLoading" @click="openExpensePhoto(data.expense)">Lihat foto</button>
+                <span v-else>-</span>
+              </template>
+            </Column>
             <Column header="Tanggal" style="min-width: 11rem">
               <template #body="{ data }">{{ formatDateTime(data.happened_at) }}</template>
             </Column>
@@ -1091,25 +1306,24 @@ onMounted(async () => {
                 <div v-if="data.expense?.rejection_reason" class="reject-note">{{ data.expense.rejection_reason }}</div>
               </template>
             </Column>
-            <Column header="Bukti">
-              <template #body="{ data }">
-                <button v-if="data.expense?.photo_url" class="link-button" type="button" :disabled="actionLoading" @click="openExpensePhoto(data.expense)">Lihat foto</button>
-                <span v-else>-</span>
-              </template>
-            </Column>
-            <Column header="Aksi">
-              <template #body="{ data }">
-                <div v-if="data.expense?.status === 'submitted'" class="table-actions">
-                  <button class="btn-pill btn-primary btn-pill-compact" @click="reviewApprove(data.expense)">ACC</button>
-                  <button class="btn-pill btn-secondary btn-pill-compact" @click="openRejectDialog(data.expense)">Tolak</button>
-                </div>
-              </template>
-            </Column>
+            
+          
             <template #empty>
               Belum ada histori deposit atau realisasi.
             </template>
           </DataTable>
         </section>
+
+          <div class="detail-total-panel">
+            <div class="summary-row"><span>Subtotal Transaksi</span><strong>{{ formatCurrency(visibleTransactionSubtotal) }}</strong></div>
+            <div class="summary-row"><span>Biaya Administrasi</span><strong>{{ formatCurrency(0) }}</strong></div>
+            <div class="summary-row detail-total-row"><span>Total Realisasi</span><strong>{{ formatCurrency(visibleRealizationTotal) }}</strong></div>
+          </div>
+        </div>
+
+        <footer class="detail-review-footer">
+          <button class="app-dialog-button app-dialog-button-secondary" @click="showDetailDialog = false">Kembali</button>
+        </footer>
       </div>
     </Dialog>
 
@@ -1127,6 +1341,24 @@ onMounted(async () => {
       <template #footer>
         <button class="app-dialog-button app-dialog-button-secondary" @click="showCloseDialog = false">Batal</button>
         <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading" @click="submitCloseFund">Close Transaksi</button>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showCompleteOperationalDialog" header="Tandai Operasional Selesai" modal :style="{ width: '460px' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog']">
+      <div class="dialog-stack">
+        <div class="app-muted-panel">
+          <div class="summary-row"><span>Booking</span><strong>{{ selectedBooking?.kode_booking || '-' }}</strong></div>
+          <div class="summary-row"><span>Transaksi aktif</span><strong>{{ bookingClosableFunds(selectedBooking).length }}</strong></div>
+        </div>
+        <fieldset class="form-fieldset">
+          <label>Catatan selesai</label>
+          <Textarea v-model="completeOperationalNote" rows="4" class="w-full" placeholder="Contoh: semua bon sudah lengkap dan operasional sudah diselesaikan." />
+        </fieldset>
+        <p class="field-hint">Semua dana operasional yang sudah diterima driver akan ditutup dan booking berpindah ke tab Selesai.</p>
+      </div>
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" @click="showCompleteOperationalDialog = false">Batal</button>
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !bookingClosableFunds(selectedBooking).length" @click="submitCompleteOperational">Tandai Selesai</button>
       </template>
     </Dialog>
 
@@ -1171,63 +1403,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.page-container {
-  padding: var(--space-2xl);
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-3xl);
-}
-
-.tab-toggle-container {
-  margin-bottom: var(--space-xl);
-}
-
-.pill-toggle {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--radius-full);
-  background: var(--card-bg);
-}
-
-.toggle-item {
-  min-height: 32px;
-  padding: 7px 16px;
-  border: none;
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.toggle-item.active {
-  background: var(--text-primary);
-  color: #fff;
-}
-
-.filter-bar {
-  padding: var(--space-md);
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: var(--space-lg);
-  gap: var(--space-lg);
-  flex-wrap: wrap;
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-default);
-  background: var(--surface-default);
-  box-shadow: var(--shadow-tile);
-}
-
-.filter-groups,
-.filter-actions,
 .table-actions {
   display: flex;
   gap: var(--space-sm);
@@ -1235,53 +1410,26 @@ onMounted(async () => {
   align-items: flex-end;
 }
 
-.filter-groups {
-  flex: 1 1 auto;
-  gap: var(--space-xl);
+.action-btn-primary {
+  background: var(--text-primary);
+  color: #fff;
 }
 
-.filter-group,
 .form-fieldset {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.filter-group label,
 .form-fieldset label {
   font-size: 11px;
   font-weight: 700;
   color: var(--text-secondary);
 }
 
-.filter-search {
-  position: relative;
-  display: block;
-}
-
-.filter-search > i {
-  position: absolute;
-  top: 50%;
-  left: 12px;
-  transform: translateY(-50%);
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
-.filter-search :deep(.p-inputtext) {
-  padding-left: 34px;
-}
-
-.filter-group-wide {
-  min-width: min(320px, 100%);
-}
-
-.drent-datatable {
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-default);
-  overflow: hidden;
-  background: var(--surface-default);
-  box-shadow: var(--shadow-tile);
+:deep(.drent-datatable .p-column-header-content) {
+  justify-content: center;
+  text-align: center;
 }
 
 .booking-code-badge {
@@ -1342,6 +1490,11 @@ onMounted(async () => {
   gap: 4px;
 }
 
+.booking-complete-button {
+  width: fit-content;
+  margin-top: 6px;
+}
+
 .rowspan-action-cell {
   align-items: flex-start;
 }
@@ -1350,6 +1503,34 @@ onMounted(async () => {
   vertical-align: top;
   background: var(--card-bg);
   border-right: 1px solid var(--surface-border);
+}
+
+:deep(.drent-datatable .p-datatable-tbody > tr.operational-row-summary > td) {
+  background: rgba(0, 112, 234, 0.06);
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+:deep(.drent-datatable .p-datatable-tbody > tr.operational-row-summary > td .amount-stack),
+:deep(.drent-datatable .p-datatable-tbody > tr.operational-row-summary > td .group-summary-label) {
+  font-weight: 900;
+}
+
+.group-summary-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.group-summary-balance span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.group-summary-balance strong {
+  color: #0059bb;
+  font-variant-numeric: tabular-nums;
 }
 
 .detail-title-row,
@@ -1447,7 +1628,7 @@ onMounted(async () => {
 }
 
 .fund-summary-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .fund-item-row {
@@ -1537,6 +1718,136 @@ onMounted(async () => {
   gap: var(--space-sm);
 }
 
+:deep(.detail-review-dialog .p-dialog-content) {
+  padding: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.detail-review-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, 921px);
+  background: var(--surface-default);
+}
+
+.detail-review-header,
+.detail-review-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 24px 32px;
+  background: var(--surface-default);
+}
+
+.detail-review-header {
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.detail-review-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.detail-review-header p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.detail-close-button:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--negative);
+}
+
+.detail-review-content {
+  flex: 1;
+  overflow: auto;
+  padding: 32px;
+}
+
+.detail-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.detail-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(199, 197, 205, 0.55);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+}
+
+.detail-metric-card span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.detail-metric-card strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-metric-info strong,
+.detail-metric-highlight strong {
+  color: #0059bb;
+}
+
+.detail-metric-highlight {
+  border-color: rgba(0, 112, 234, 0.2);
+  background: rgba(216, 226, 255, 0.42);
+}
+
+.detail-metric-danger {
+  border-color: rgba(239, 68, 68, 0.18);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.detail-metric-danger span,
+.detail-metric-danger strong {
+  color: var(--negative);
+}
+
+.detail-command-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  margin-bottom: 24px;
+}
+
 .detail-tab-toggle {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1546,6 +1857,128 @@ onMounted(async () => {
   padding: 4px;
   border-radius: var(--radius-full);
   background: var(--card-bg);
+}
+
+.detail-command-row .detail-tab-toggle {
+  border-radius: var(--radius-lg);
+}
+
+.detail-action-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.detail-table-panel {
+  gap: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-default);
+}
+
+.detail-table-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 12px var(--space-md);
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--card-bg);
+}
+
+.detail-table-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.detail-table-title i {
+  color: #0059bb;
+}
+
+.detail-table-header span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-table-header span strong {
+  color: var(--text-primary);
+}
+
+.detail-table-header small {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.detail-review-table {
+  border: none;
+  border-radius: 0;
+}
+
+:deep(.detail-review-table .p-datatable-thead > tr > th) {
+  padding: 14px 16px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+:deep(.detail-review-table .p-datatable-tbody > tr > td) {
+  padding: 16px;
+}
+
+.detail-total-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 360px);
+  margin: 28px 0 0 auto;
+  padding: 20px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-default);
+}
+
+.detail-total-panel .summary-row {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-total-panel .summary-row strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-total-row {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.detail-total-row span,
+.detail-total-row strong {
+  color: var(--text-primary) !important;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.detail-total-row strong {
+  color: #0059bb !important;
+}
+
+.detail-review-footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--surface-border);
 }
 
 :deep(.transaction-history-table .transaction-row-deposit > td) {
@@ -1792,36 +2225,42 @@ onMounted(async () => {
 }
 
 @media (max-width: 768px) {
-  .page-container {
-    padding: var(--space-lg);
-  }
-
-  .page-header {
-    margin-bottom: var(--space-xl);
-  }
-
-  .pill-toggle {
-    width: 100%;
-  }
-
-  .toggle-item {
-    flex: 1 1 auto;
-  }
-
-  .filter-bar,
-  .filter-groups,
-  .filter-actions {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-  }
-
   .form-grid,
   .fund-summary-grid,
+  .detail-metric-grid,
   .fund-item-row,
   .deposit-modal,
   .detail-layout {
     grid-template-columns: 1fr;
+  }
+
+  .detail-review-shell {
+    max-height: 88vh;
+  }
+
+  .detail-review-header,
+  .detail-review-content,
+  .detail-review-footer {
+    padding: var(--space-xl);
+  }
+
+  .detail-command-row,
+  .detail-action-cluster {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .detail-command-row .detail-tab-toggle,
+  .detail-action-cluster .btn-pill,
+  .detail-review-footer .app-dialog-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .detail-table-header {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
   }
 
   .deposit-modal {
@@ -1838,7 +2277,6 @@ onMounted(async () => {
     width: 100% !important;
   }
 
-  .filter-actions .btn-pill,
   .card-footer .btn-pill {
     width: 100%;
     justify-content: center;

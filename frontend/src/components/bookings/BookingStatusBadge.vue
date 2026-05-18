@@ -17,7 +17,7 @@ const statusMap = {
   'confirm':      { class: 'info', label: 'Confirm' },
   'waiting_list': { class: 'warning', label: 'Waiting List' },
   'rental_unit':  { class: 'success', label: 'Disewa' },
-  'selesai':      { class: 'success', label: 'Selesai' },
+  'selesai':      { class: 'completed', label: 'Selesai' },
   'batal':        { class: 'error', label: 'Batal' },
   'Rent to Rent': { class: 'info', label: 'Rent To Rent' },
   'Member':       { class: 'success', label: 'Member' },

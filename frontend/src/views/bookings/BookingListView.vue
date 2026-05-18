@@ -2,12 +2,11 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
-import { useUnit } from '../../composables/useUnit';
 import { useRentalOwner } from '../../composables/useRentalOwner';
 import { useCity } from '../../composables/useCity';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import BookingCalendar from '../../components/bookings/BookingCalendar.vue';
-import { format, addMonths, subMonths, startOfMonth } from 'date-fns';
+import { format, addDays, addMonths, subMonths, startOfMonth } from 'date-fns';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -25,44 +24,102 @@ const {
   fetchAll, fetchForCalendar, changeStatus, requestReturnToRentalUnit, statusLoading 
 } = useBooking();
 
-const { units, loading: unitsLoading, fetchAll: fetchUnits } = useUnit();
 const { rentalOwners, fetchAll: fetchRentalOwners } = useRentalOwner();
 const { cities, fetchAll: fetchCities } = useCity();
 
 const activeTab = ref(0);
 const calendarStart = ref(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
 const calendarBookings = ref([]);
+const calendarLoading = ref(false);
+const calendarVisibleLimit = ref(50);
 const showAdvancedFilters = ref(false);
 
 // Calendar filters
 const calendarOwnerFilter = ref(null);
-const calendarTransactionFilter = ref('all'); // 'all' | 'has_booking'
+const calendarVehicleSearch = ref('');
 
-const calendarTransactionOptions = [
-  { label: 'Semua Unit', value: 'all' },
-  { label: 'Hanya Ada Transaksi', value: 'has_booking' },
-];
-
-const filteredCalendarUnits = computed(() => {
-  let list = units.value;
-
-  // Filter by rental owner
-  if (calendarOwnerFilter.value) {
-    list = list.filter(u => u.rental_owner_id === calendarOwnerFilter.value);
-  }
-
-  // Filter by transaction presence in this date window
-  if (calendarTransactionFilter.value === 'has_booking') {
-    const unitIdsWithBookings = new Set(
-      calendarBookings.value.flatMap(b =>
-        b.booking_details.map(d => d.unit_id)
-      ).filter(Boolean)
-    );
-    list = list.filter(u => unitIdsWithBookings.has(u.id));
-  }
-
-  return list;
+const sortedRentalOwners = computed(() => {
+  return [...rentalOwners.value].sort((a, b) => (a?.nama || '').localeCompare(b?.nama || '', 'id', { sensitivity: 'base' }));
 });
+
+const calendarEnd = computed(() => format(addDays(new Date(calendarStart.value), 29), 'yyyy-MM-dd'));
+
+const normalizeDateKey = (value) => {
+  if (!value) return null;
+  return format(new Date(value), 'yyyy-MM-dd');
+};
+
+const isDetailInCalendarPeriod = (detail) => {
+  const detailStart = normalizeDateKey(detail?.tgl_sewa);
+  const detailEnd = normalizeDateKey(detail?.tgl_kembali);
+
+  return Boolean(detailStart && detailEnd && detailStart <= calendarEnd.value && detailEnd >= calendarStart.value);
+};
+
+const getUnitOwnerId = (unit) => unit?.rental_owner_id || unit?.rental_owner?.id || null;
+
+const baseCalendarUnits = computed(() => {
+  const unitMap = new Map();
+
+  calendarBookings.value.forEach((booking) => {
+    (booking.booking_details || []).forEach((detail) => {
+      if (!detail?.unit_id || !detail?.unit || !isDetailInCalendarPeriod(detail)) return;
+
+      const existing = unitMap.get(detail.unit_id);
+      if (existing) {
+        existing.transaction_count += 1;
+        return;
+      }
+
+      unitMap.set(detail.unit_id, {
+        ...detail.unit,
+        rental_owner_id: getUnitOwnerId(detail.unit),
+        transaction_count: 1,
+      });
+    });
+  });
+
+  return [...unitMap.values()];
+});
+
+const calendarOwnerOptions = computed(() => {
+  const ownerMap = new Map();
+
+  baseCalendarUnits.value.forEach((unit) => {
+    const owner = unit.rental_owner;
+    const ownerId = getUnitOwnerId(unit);
+    if (!ownerId || !owner?.nama) return;
+    ownerMap.set(ownerId, { ...owner, id: ownerId });
+  });
+
+  return [...ownerMap.values()].sort((a, b) => (a?.nama || '').localeCompare(b?.nama || '', 'id', { sensitivity: 'base' }));
+});
+
+const matchesCalendarVehicleSearch = (unit) => {
+  const keyword = calendarVehicleSearch.value.trim().toLowerCase();
+  if (!keyword) return true;
+
+  return [unit?.no_polisi, unit?.tipe, unit?.merk]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(keyword));
+};
+
+const calendarUnits = computed(() => {
+  return baseCalendarUnits.value
+    .filter((unit) => !calendarOwnerFilter.value || getUnitOwnerId(unit) === calendarOwnerFilter.value)
+    .filter(matchesCalendarVehicleSearch)
+    .sort((a, b) => {
+      if (b.transaction_count !== a.transaction_count) return b.transaction_count - a.transaction_count;
+
+      const ownerCompare = (a.rental_owner?.nama || '').localeCompare(b.rental_owner?.nama || '', 'id', { sensitivity: 'base' });
+      if (ownerCompare !== 0) return ownerCompare;
+
+      return (a.no_polisi || '').localeCompare(b.no_polisi || '', 'id', { sensitivity: 'base' });
+    });
+});
+
+const visibleCalendarUnits = computed(() => calendarUnits.value.slice(0, calendarVisibleLimit.value));
+const hasMoreCalendarUnits = computed(() => visibleCalendarUnits.value.length < calendarUnits.value.length);
 
 const showStatusDialog = ref(false);
 const showReturnRequestDialog = ref(false);
@@ -144,6 +201,16 @@ const loadFilterOptions = async () => {
   ]);
 };
 
+const loadCalendarData = async () => {
+  calendarLoading.value = true;
+  calendarVisibleLimit.value = 50;
+  try {
+    calendarBookings.value = await fetchForCalendar(calendarStart.value, calendarEnd.value);
+  } finally {
+    calendarLoading.value = false;
+  }
+};
+
 const loadData = async () => {
   if (activeTab.value === 0) {
     filters.value.status = getActiveTabStatusFilter();
@@ -152,9 +219,7 @@ const loadData = async () => {
     filters.value.status = getClosedTabStatusFilter();
     await fetchAll(pagination.value.current_page);
   } else {
-    await fetchUnits({ per_page: 100 }); // Get all units for calendar
-    const endDate = format(addMonths(new Date(calendarStart.value), 1), 'yyyy-MM-dd');
-    calendarBookings.value = await fetchForCalendar(calendarStart.value, endDate);
+    await loadCalendarData();
   }
 };
 
@@ -169,6 +234,16 @@ onUnmounted(() => {
 });
 
 watch(activeTab, loadData);
+watch(calendarOwnerFilter, () => {
+  calendarVisibleLimit.value = 50;
+});
+watch(calendarVehicleSearch, () => {
+  calendarVisibleLimit.value = 50;
+});
+
+const loadMoreCalendarUnits = () => {
+  calendarVisibleLimit.value += 50;
+};
 
 const onPage = (event) => {
   pagination.value.current_page = event.page + 1;
@@ -286,6 +361,28 @@ const onRowContextMenu = (event) => {
     },
   ];
   bookingContextMenu.value.show(event.originalEvent);
+};
+
+const openCalendarContextMenu = ({ originalEvent, unitId, date, bookingId }) => {
+  originalEvent?.preventDefault?.();
+  contextMenuSelection.value = { unitId, date, bookingId };
+  contextMenuItems.value = [
+    {
+      label: 'Tambah Booking',
+      icon: 'pi pi-plus',
+      disabled: !unitId || !date,
+      command: () => openCreateWithPreFill({ unitId, date }),
+    },
+    ...(bookingId ? [
+      {
+        label: 'Lihat Detail',
+        icon: 'pi pi-eye',
+        command: () => goToDetail(bookingId),
+      },
+    ] : []),
+  ];
+
+  bookingContextMenu.value.show(originalEvent);
 };
 
 const openCreateWithPreFill = ({ unitId, date }) => {
@@ -523,7 +620,7 @@ const getBookingCardClass = (booking) => {
     confirm: 'booking-card-info',
     waiting_list: 'booking-card-neutral',
     rental_unit: 'booking-card-success',
-    selesai: 'booking-card-success',
+    selesai: 'booking-card-completed',
     batal: 'booking-card-error',
   };
 
@@ -575,6 +672,8 @@ const getBookingCardClass = (booking) => {
       </div>
     </div>
 
+    <ContextMenu ref="bookingContextMenu" :model="contextMenuItems" />
+
     <div v-if="activeTab === 0 || activeTab === 1" class="tab-content list-tab-fill booking-list-tab">
       <!-- Filter Bar -->
       <div class="filter-bar surface-card">
@@ -613,7 +712,7 @@ const getBookingCardClass = (booking) => {
             </div>
             <div class="filter-group">
               <label>Pemilik</label>
-              <Dropdown v-model="filters.rental_owner_id" :options="rentalOwners" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" showClear filter class="w-full md:w-48" />
+              <Dropdown v-model="filters.rental_owner_id" :options="sortedRentalOwners" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" showClear filter class="w-full md:w-48" />
             </div>
             <div class="filter-group">
               <label>Kota</label>
@@ -633,18 +732,15 @@ const getBookingCardClass = (booking) => {
             @click="showAdvancedFilters = !showAdvancedFilters"
           >
             <i class="pi" :class="showAdvancedFilters ? 'pi-chevron-up' : 'pi-sliders-h'"></i>
-            Filter Lainnya
           </button>
           <button class="btn-pill btn-secondary btn-pill-compact" @click="resetFilters" :disabled="loading">
-            <i class="pi pi-refresh"></i> Reset
+            <i class="pi pi-refresh"></i>
           </button>
           <button class="btn-pill btn-primary btn-pill-compact" @click="applyFilters" :disabled="loading">
             <i class="pi pi-filter"></i> Filter
           </button>
         </div>
       </div>
-
-      <ContextMenu ref="bookingContextMenu" :model="contextMenuItems" />
 
       <ProgressBar v-if="loading" mode="indeterminate" style="height: 4px" class="mb-4" />
 
@@ -862,9 +958,17 @@ const getBookingCardClass = (booking) => {
 
         <!-- Filters -->
         <div class="calendar-filters-group">
+          <span class="calendar-search">
+            <i class="pi pi-search"></i>
+            <InputText
+              v-model="calendarVehicleSearch"
+              placeholder="Cari nopol / tipe"
+              class="w-full"
+            />
+          </span>
           <Dropdown
             v-model="calendarOwnerFilter"
-            :options="rentalOwners"
+            :options="calendarOwnerOptions"
             optionLabel="nama"
             optionValue="id"
             placeholder="Semua Pemilik"
@@ -872,40 +976,40 @@ const getBookingCardClass = (booking) => {
             filter
             class="calendar-filter-dropdown"
           />
-          <Dropdown
-            v-model="calendarTransactionFilter"
-            :options="calendarTransactionOptions"
-            optionLabel="label"
-            optionValue="value"
-            class="calendar-filter-dropdown"
-          />
           <!-- Refresh button -->
           <button
             class="btn-pill btn-secondary btn-pill-compact"
-            :disabled="unitsLoading"
+            :disabled="calendarLoading"
             @click="loadData"
           >
-            <i class="pi pi-refresh" :class="{ 'pi-spin': unitsLoading }"></i>
+            <i class="pi pi-refresh" :class="{ 'pi-spin': calendarLoading }"></i>
             Refresh
           </button>
         </div>
       </div>
 
-      <ProgressBar v-if="unitsLoading" mode="indeterminate" style="height: 4px" class="mb-4" />
+      <ProgressBar v-if="calendarLoading" mode="indeterminate" style="height: 4px" class="mb-4" />
 
-      <div v-if="!unitsLoading && units.length === 0" class="drent-empty-state">
+      <div v-if="!calendarLoading && calendarUnits.length === 0" class="drent-empty-state">
         <i class="pi pi-info-circle text-4xl text-tertiary mb-3"></i>
-        <p class="text-secondary">Tidak ada unit kendaraan yang tersedia.</p>
+        <p class="text-secondary">Tidak ada unit dengan transaksi pada periode ini.</p>
       </div>
 
       <BookingCalendar
-        v-else
+        v-else-if="!calendarLoading"
         :bookings="calendarBookings"
-        :units="filteredCalendarUnits"
+        :units="visibleCalendarUnits"
         :startDate="calendarStart"
-        @booking-click="goToDetail"
-        @cell-click="openCreateWithPreFill"
+        @calendar-context="openCalendarContextMenu"
       />
+
+      <div v-if="!calendarLoading && hasMoreCalendarUnits" class="calendar-load-more">
+        <button class="btn-pill btn-secondary btn-pill-compact" @click="loadMoreCalendarUnits">
+          <i class="pi pi-angle-down"></i>
+          Muat {{ Math.min(50, calendarUnits.length - visibleCalendarUnits.length) }} unit lagi
+        </button>
+        <span class="text-tertiary text-xs">{{ visibleCalendarUnits.length }} dari {{ calendarUnits.length }} unit</span>
+      </div>
     </div>
 
     <!-- Status Dialog -->
@@ -1264,6 +1368,10 @@ const getBookingCardClass = (booking) => {
     border-color: var(--positive);
   }
 
+  .booking-card-completed {
+    border-color: var(--text-secondary);
+  }
+
   .booking-card-error {
     border-color: var(--negative);
   }
@@ -1375,11 +1483,42 @@ const getBookingCardClass = (booking) => {
   min-width: 160px;
 }
 
+.calendar-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 220px;
+}
+
+.calendar-search .pi {
+  position: absolute;
+  left: 10px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  z-index: 1;
+}
+
+.calendar-search :deep(.p-inputtext) {
+  min-height: 34px;
+  padding-left: 30px;
+  border-radius: var(--radius-default);
+  border-color: var(--surface-border);
+  font-size: 12px;
+}
+
 .calendar-filter-dropdown :deep(.p-select),
 .calendar-filter-dropdown :deep(.p-dropdown) {
   min-height: 34px;
   border-radius: var(--radius-default);
   border-color: var(--surface-border);
   font-size: 12px;
+}
+
+.calendar-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
 }
 </style>

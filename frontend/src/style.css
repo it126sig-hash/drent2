@@ -105,6 +105,7 @@
 .status-badge.neutral { background: var(--secondary); color: var(--primary); }
 .status-badge.info { background: var(--info-cyan); color: var(--text-white); }
 .status-badge.success { background: var(--positive); color: var(--text-white); }
+.status-badge.completed { background: var(--text-secondary); color: var(--text-white); }
 .status-badge.error { background: var(--negative); color: var(--text-white); }
 .status-badge.warning { background: var(--warning); color: var(--text-white); }
 body {
@@ -148,6 +149,7 @@ body {
 
 .header-left {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
   gap: var(--space-md);
   min-width: 0;

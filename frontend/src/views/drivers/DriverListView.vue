@@ -15,13 +15,13 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import DriverFormDialog from '../../components/drivers/DriverFormDialog.vue'
 import BalanceDialog from '../../components/drivers/BalanceDialog.vue'
 
-const { 
-  drivers, 
-  loading, 
-  pagination, 
-  fetchAll, 
-  store, 
-  update, 
+const {
+  drivers,
+  loading,
+  pagination,
+  fetchAll,
+  store,
+  update,
   remove,
   changeBalance
 } = useDriver()
@@ -58,18 +58,18 @@ onMounted(() => {
 
 const fetchData = async () => {
   try {
-    await fetchAll({ 
+    await fetchAll({
       search: searchQuery.value,
       status: statusFilter.value,
       is_tetap: typeFilter.value,
       branch_id: authStore.user?.branch_id
     })
   } catch (err) {
-    toast.add({ 
-      severity: 'error', 
-      summary: 'Error', 
-      detail: 'Gagal memuat data driver', 
-      life: 3000 
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Gagal memuat data driver',
+      life: 3000
     })
   }
 }
@@ -153,150 +153,206 @@ const formatCurrency = (value) => {
 </script>
 
 <template>
-  <div class="view-container">
+  <div class="page-container table-page-active driver-list-page">
     <ConfirmDialog />
-    
-    <div class="header-section">
-      <div class="header-content">
-        <h1>Manajemen Driver</h1>
-        <p>Kelola data driver tetap dan non-tetap serta saldo operasional</p>
-      </div>
-      <Button 
-        v-if="canManage"
-        label="Tambah Driver" 
-        icon="pi pi-plus" 
-        class="p-button-tosca" 
-        @click="openNew" 
-      />
-    </div>
 
-    <div class="content-card">
-      <div class="table-toolbar">
-        <div class="filter-wrapper">
-          <span class="p-input-icon-left search-wrapper">
-            <i class="pi pi-search" />
-            <InputText 
-              v-model="searchQuery" 
-              placeholder="Cari nama atau kontak..." 
-              @input="onSearch"
-              class="w-full"
-            />
-          </span>
-          <Dropdown 
-            v-model="statusFilter" 
-            :options="statusOptions" 
-            optionLabel="label" 
-            optionValue="value" 
-            placeholder="Filter Status" 
-            @change="onSearch"
-            class="status-filter"
-          />
-          <Dropdown 
-            v-model="typeFilter" 
-            :options="typeOptions" 
-            optionLabel="label" 
-            optionValue="value" 
-            placeholder="Filter Tipe" 
-            @change="onSearch"
-            class="status-filter"
-          />
+    <div class="page-header">
+      <div class="header-left">
+        <div class="header-copy">
+          <h1 class="text-h1">Manajemen Driver</h1>
+          <p>Kelola data driver tetap dan non-tetap serta saldo operasional</p>
         </div>
       </div>
-
-      <DataTable 
-        :value="drivers" 
-        :loading="loading" 
-        responsiveLayout="scroll"
-        class="p-datatable-sm"
-        stripedRows
-      >
-        <template #empty>
-          <div class="empty-state">
-            <i class="pi pi-id-card"></i>
-            <p>Belum ada data driver.</p>
-          </div>
-        </template>
-
-        <Column field="nama" header="Driver" style="min-width: 200px">
-          <template #body="{ data }">
-            <div class="driver-info">
-              <span class="driver-name">{{ data.nama }}</span>
-              <Tag 
-                :value="data.is_tetap ? 'Tetap' : 'Non-Tetap'" 
-                :severity="data.is_tetap ? 'info' : 'warning'"
-                class="type-tag"
-              />
-            </div>
-          </template>
-        </Column>
-
-        <Column field="kontak_1" header="Kontak" style="min-width: 150px" />
-
-        <Column field="kota" header="Kota" style="min-width: 120px">
-          <template #body="{ data }">
-            {{ data.kota || '-' }}
-          </template>
-        </Column>
-
-        <Column field="saldo" header="Saldo Operasional" style="min-width: 180px">
-          <template #body="{ data }">
-            <span class="font-bold text-cyan-700">{{ formatCurrency(data.saldo) }}</span>
-          </template>
-        </Column>
-
-        <Column field="status" header="Status" style="min-width: 120px">
-          <template #body="{ data }">
-            <Tag 
-              :severity="getStatusSeverity(data.status)" 
-              :value="data.status"
-              class="status-tag"
-            />
-          </template>
-        </Column>
-
-        <Column header="Aksi" style="min-width: 180px; text-align: center">
-          <template #body="{ data }">
-            <div class="action-buttons">
-              <Button 
-                v-if="canEditBalance"
-                icon="pi pi-wallet" 
-                class="p-button-rounded p-button-text p-button-info" 
-                @click="openBalance(data)" 
-                v-tooltip.top="'Update Saldo'"
-              />
-              <Button 
-                icon="pi pi-pencil" 
-                class="p-button-rounded p-button-text p-button-secondary" 
-                @click="editDriver(data)" 
-                v-tooltip.top="'Edit'"
-              />
-              <Button 
-                v-if="canManage"
-                icon="pi pi-trash" 
-                class="p-button-rounded p-button-text p-button-danger" 
-                @click="confirmDelete(data)" 
-                v-tooltip.top="'Hapus'"
-              />
-            </div>
-          </template>
-        </Column>
-      </DataTable>
-
-      <div class="paginator-wrapper">
-        <Paginator 
-          :rows="pagination.per_page" 
-          :totalRecords="pagination.total" 
-          :first="(pagination.current_page - 1) * pagination.per_page"
-          @page="onPageChange"
-          template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport"
-          currentPageReportTemplate="Menampilkan {first} ke {last} dari {totalRecords} data"
+      <div class="header-actions">
+        <Button
+          v-if="canManage"
+          label="Tambah Driver"
+          icon="pi pi-plus"
+          class="btn-pill btn-primary"
+          @click="openNew"
         />
       </div>
     </div>
 
-    <DriverFormDialog 
-      v-model:visible="showDialog" 
-      :driver="selectedDriver" 
+    <div class="list-tab-fill">
+      <div class="filter-bar surface-card">
+        <div class="filter-groups">
+          <div class="filter-group filter-group-wide">
+            <label>Cari Driver</label>
+            <span class="filter-search">
+              <i class="pi pi-search" />
+              <InputText
+                v-model="searchQuery"
+                placeholder="Cari nama atau kontak..."
+                @input="onSearch"
+                class="w-full"
+              />
+            </span>
+          </div>
+          <div class="filter-group">
+            <label>Status</label>
+            <Dropdown
+              v-model="statusFilter"
+              :options="statusOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Filter Status"
+              @change="onSearch"
+              class="status-filter"
+            />
+          </div>
+          <div class="filter-group">
+            <label>Tipe</label>
+            <Dropdown
+              v-model="typeFilter"
+              :options="typeOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Filter Tipe"
+              @change="onSearch"
+              class="status-filter"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="table-shell driver-table-shell">
+        <DataTable
+          :value="drivers"
+          :loading="loading"
+          lazy
+          paginator
+          scrollable
+          scrollHeight="flex"
+          :rows="pagination.per_page"
+          :totalRecords="pagination.total"
+          :first="(pagination.current_page - 1) * pagination.per_page"
+          paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport"
+          currentPageReportTemplate="Menampilkan {first} ke {last} dari {totalRecords} data"
+          responsiveLayout="scroll"
+          class="drent-datatable driver-desktop-table"
+          stripedRows
+          @page="onPageChange"
+        >
+          <template #empty>
+            <div class="empty-state">
+              <i class="pi pi-id-card"></i>
+              <p>Belum ada data driver.</p>
+            </div>
+          </template>
+
+          <Column header="Aksi" style="width: 8rem; text-align: center">
+            <template #body="{ data }">
+              <div class="action-pill-group">
+                <button
+                  v-if="canEditBalance"
+                  type="button"
+                  class="action-btn"
+                  @click="openBalance(data)"
+                  v-tooltip.top="'Update Saldo'"
+                >
+                  <i class="pi pi-wallet"></i>
+                </button>
+                <button type="button" class="action-btn" @click="editDriver(data)" v-tooltip.top="'Edit'">
+                  <i class="pi pi-pencil"></i>
+                </button>
+                <button
+                  v-if="canManage"
+                  type="button"
+                  class="action-btn action-btn-danger"
+                  @click="confirmDelete(data)"
+                  v-tooltip.top="'Hapus'"
+                >
+                  <i class="pi pi-trash"></i>
+                </button>
+              </div>
+            </template>
+          </Column>
+
+          <Column field="nama" header="Driver" style="min-width: 200px">
+            <template #body="{ data }">
+              <div class="driver-info">
+                <span class="driver-name">{{ data.nama }}</span>
+                <Tag
+                  :value="data.is_tetap ? 'Tetap' : 'Non-Tetap'"
+                  :severity="data.is_tetap ? 'info' : 'warning'"
+                  class="type-tag"
+                />
+              </div>
+            </template>
+          </Column>
+
+          <Column field="kontak_1" header="Kontak" style="min-width: 150px" />
+
+          <Column field="kota" header="Kota" style="min-width: 120px">
+            <template #body="{ data }">
+              {{ data.kota || '-' }}
+            </template>
+          </Column>
+
+          <Column field="saldo" header="Saldo Operasional" style="min-width: 180px">
+            <template #body="{ data }">
+              <span class="amount-text">{{ formatCurrency(data.saldo) }}</span>
+            </template>
+          </Column>
+
+          <Column field="status" header="Status" style="min-width: 120px">
+            <template #body="{ data }">
+              <Tag
+                :severity="getStatusSeverity(data.status)"
+                :value="data.status"
+                class="status-tag"
+              />
+            </template>
+          </Column>
+        </DataTable>
+      </div>
+
+      <div class="mobile-card-list driver-mobile-list">
+        <div v-if="!loading && drivers.length === 0" class="empty-state app-card">
+            <i class="pi pi-search" />
+          <p>Belum ada data driver.</p>
+        </div>
+        <div v-for="driver in drivers" :key="driver.id" class="mobile-card app-card">
+          <div class="mobile-card-header">
+            <div>
+              <h3>{{ driver.nama }}</h3>
+              <p>{{ driver.kota || '-' }} · {{ driver.kontak_1 || '-' }}</p>
+            </div>
+            <Tag :severity="getStatusSeverity(driver.status)" :value="driver.status" class="status-tag" />
+          </div>
+          <div class="mobile-card-meta">
+            <div>
+              <span>Tipe</span>
+              <strong>{{ driver.is_tetap ? 'Tetap' : 'Non-Tetap' }}</strong>
+            </div>
+            <div>
+              <span>Saldo Operasional</span>
+              <strong class="amount-text">{{ formatCurrency(driver.saldo) }}</strong>
+            </div>
+          </div>
+          <div class="mobile-card-actions">
+            <Button v-if="canEditBalance" label="Saldo" icon="pi pi-wallet" class="btn-pill btn-secondary" @click="openBalance(driver)" />
+            <Button label="Edit" icon="pi pi-pencil" class="btn-pill btn-secondary" @click="editDriver(driver)" />
+            <Button v-if="canManage" label="Hapus" icon="pi pi-trash" class="btn-pill btn-secondary danger-action" @click="confirmDelete(driver)" />
+          </div>
+        </div>
+        <Paginator
+          v-if="!loading && pagination.total > pagination.per_page"
+          :rows="pagination.per_page"
+          :totalRecords="pagination.total"
+          :first="(pagination.current_page - 1) * pagination.per_page"
+          @page="onPageChange"
+          template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
+          currentPageReportTemplate="{first} - {last} dari {totalRecords}"
+          class="mobile-paginator"
+        />
+      </div>
+    </div>
+
+    <DriverFormDialog
+      v-model:visible="showDialog"
+      :driver="selectedDriver"
       :loading="loading"
       @save="saveDriver"
     />
@@ -311,57 +367,17 @@ const formatCurrency = (value) => {
 </template>
 
 <style scoped>
-.view-container {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
+.driver-list-page {
+  animation: fadeIn 0.25s ease-out;
 }
 
-.header-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-content h1 {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
-
-.header-content p {
-  color: #64748b;
-  margin-top: 5px;
-}
-
-.content-card {
-  background-color: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
-}
-
-.table-toolbar {
-  padding: 20px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.filter-wrapper {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.search-wrapper {
-  max-width: 350px;
-  flex: 1;
-  min-width: 250px;
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .status-filter {
-  width: 180px;
+  min-width: 180px;
 }
 
 .driver-info {
@@ -372,7 +388,7 @@ const formatCurrency = (value) => {
 
 .driver-name {
   font-weight: 700;
-  color: #1e293b;
+  color: var(--text-primary);
 }
 
 .type-tag {
@@ -387,10 +403,15 @@ const formatCurrency = (value) => {
   padding: 4px 10px;
 }
 
-.action-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 5px;
+.amount-text {
+  color: var(--info-cyan);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.action-btn-danger:hover:not(:disabled) {
+  color: var(--negative);
 }
 
 .empty-state {
@@ -399,7 +420,7 @@ const formatCurrency = (value) => {
   align-items: center;
   justify-content: center;
   padding: 50px 0;
-  color: #94a3b8;
+  color: var(--text-tertiary);
 }
 
 .empty-state i {
@@ -408,32 +429,97 @@ const formatCurrency = (value) => {
   opacity: 0.5;
 }
 
-.paginator-wrapper {
-  padding: 10px;
-  border-top: 1px solid #f1f5f9;
+.driver-mobile-list {
+  display: none;
 }
 
-.p-button-tosca {
-  background-color: #06b6d4 !important;
-  border-color: #06b6d4 !important;
+.mobile-card-list {
+  flex-direction: column;
+  gap: var(--space-md);
 }
 
-.p-button-tosca:hover {
-  background-color: #0891b2 !important;
-  border-color: #0891b2 !important;
+.mobile-card {
+  padding: var(--space-lg);
 }
 
-:deep(.p-datatable .p-datatable-thead > tr > th) {
-  background-color: #f8fafc;
-  color: #475569;
+.mobile-card-header,
+.mobile-card-meta,
+.mobile-card-actions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.mobile-card-header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.mobile-card-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mobile-card-header p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mobile-card-meta {
+  margin-top: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.mobile-card-meta > div {
+  flex: 1 1 130px;
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+  padding: var(--space-md);
+}
+
+.mobile-card-meta span {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.5px;
-  padding: 15px;
 }
 
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 15px;
+.mobile-card-meta strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.mobile-card-actions {
+  margin-top: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.danger-action {
+  color: var(--negative) !important;
+}
+
+.mobile-paginator {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+}
+
+@media (max-width: 768px) {
+  .driver-table-shell {
+    display: none;
+  }
+
+  .driver-mobile-list {
+    display: flex;
+  }
+
+  .status-filter {
+    width: 100%;
+  }
 }
 </style>

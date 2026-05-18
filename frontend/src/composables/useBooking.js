@@ -97,12 +97,26 @@ export function useBooking() {
 
   const fetchForCalendar = async (dateFrom, dateTo) => {
     try {
-      const response = await bookingApi.getBookings({
-        date_from: dateFrom,
-        date_to: dateTo,
-        per_page: 200 // Sufficient for month view
-      })
-      return response.data.data
+      const perPage = 200
+      const rows = []
+      let page = 1
+      let lastPage = 1
+
+      do {
+        const response = await bookingApi.getBookings({
+          date_from: dateFrom,
+          date_to: dateTo,
+          period_overlap: 1,
+          page,
+          per_page: perPage
+        })
+
+        rows.push(...(response.data.data || []))
+        lastPage = response.data.meta?.last_page || 1
+        page += 1
+      } while (page <= lastPage)
+
+      return rows
     } catch (err) {
       console.error('Failed to fetch bookings for calendar', err)
       return []

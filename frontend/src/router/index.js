@@ -98,6 +98,12 @@ const router = createRouter({
           meta: { roles: ["superadmin", "admin_branch", "cs"] },
         },
         {
+          path: "/master/cost-types",
+          name: "cost-types",
+          component: () => import("../views/master/CostTypeListView.vue"),
+          meta: { roles: ["superadmin", "admin_branch"] },
+        },
+        {
           path: "/master/pricing-packages",
           name: "pricing-packages",
           component: () => import("../views/master/PricingPackageListView.vue"),

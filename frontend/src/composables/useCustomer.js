@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { 
   fetchCustomers, 
+  fetchCustomer,
   createCustomer, 
   updateCustomer, 
   deleteCustomer
@@ -35,6 +36,20 @@ export function useCustomer() {
       }
     } catch (err) {
       error.value = err.response?.data?.message || 'Gagal mengambil data pelanggan'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const fetchOne = async (id) => {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await fetchCustomer(id)
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengambil detail pelanggan'
       throw err
     } finally {
       loading.value = false
@@ -89,6 +104,7 @@ export function useCustomer() {
     error,
     pagination,
     fetchAll,
+    fetchOne,
     store,
     update,
     remove

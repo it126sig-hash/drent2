@@ -170,7 +170,7 @@ onMounted(fetchData)
       <section class="app-card dashboard-panel main-panel">
         <div class="panel-header">
           <div>
-            <h2>Booking Hari Ini</h2>
+            <h2>Booking Bulan Ini</h2>
             <span>{{ dashboard?.period?.label || 'Bulan berjalan' }}</span>
           </div>
           <router-link to="/bookings" class="panel-link">Lihat Semua</router-link>

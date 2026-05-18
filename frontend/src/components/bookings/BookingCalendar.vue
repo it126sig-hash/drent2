@@ -17,7 +17,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['booking-click', 'cell-click']);
+const emit = defineEmits(['calendar-context']);
 
 const DAYS_COUNT = 30;
 const todayStr = new Date().toISOString().slice(0, 10);
@@ -45,6 +45,7 @@ const bookingBars = computed(() => {
   const result = [];
   const start = startOfDay(parseISO(props.startDate));
   const end = addDays(start, DAYS_COUNT);
+  const visibleUnitIds = new Set(props.units.map(unit => unit.id));
 
   props.bookings.forEach(booking => {
     const totalTagihan = booking.total_tagihan ?? 0;
@@ -54,6 +55,7 @@ const bookingBars = computed(() => {
 
     booking.booking_details.forEach(detail => {
       if (!detail.unit_id) return;
+      if (!visibleUnitIds.has(detail.unit_id)) return;
 
       const dStart = startOfDay(parseISO(detail.tgl_sewa));
       const dEnd = startOfDay(parseISO(detail.tgl_kembali));
@@ -85,6 +87,7 @@ const bookingBars = computed(() => {
             totalTagihan,
             totalBayar,
             detailType,
+            startDate: format(overlapStart, 'yyyy-MM-dd'),
             unitNoPolisi: detail.unit?.no_polisi,
           });
         }
@@ -100,7 +103,7 @@ const getStatusConfig = (status) => {
     'confirm':      { bg: 'rgba(11, 122, 138, 0.15)',  border: '#0B7A8A', color: '#0B7A8A', label: 'Confirm' },
     'waiting_list': { bg: 'rgba(212, 160, 23, 0.15)',  border: '#D4A017', color: '#8C660A', label: 'Waiting List' },
     'rental_unit':  { bg: 'rgba(39, 168, 88, 0.18)',   border: '#27A858', color: '#147239', label: 'Rental Unit' },
-    'selesai':      { bg: 'rgba(39, 168, 88, 0.10)',   border: '#27A858', color: '#1A6A38', label: 'Selesai' },
+    'selesai':      { bg: 'rgba(90, 96, 112, 0.14)',   border: '#5A6070', color: '#3F4654', label: 'Selesai' },
     'batal':        { bg: 'rgba(229, 83, 75, 0.12)',   border: '#E5534B', color: '#B02A24', label: 'Batal' },
   };
   return map[status] || { bg: '#eee', border: '#ccc', color: '#333', label: status };
@@ -118,12 +121,26 @@ const buildTooltip = (bar) => {
   return lines.join('\n');
 };
 
-const handleCellClick = (unitId, date) => {
-  emit('cell-click', { unitId, date });
+const handleCellClick = (event, unitId, date) => {
+  emit('calendar-context', { originalEvent: event, unitId, date });
 };
 
-const handleBookingClick = (bookingId) => {
-  emit('booking-click', bookingId);
+const getBarClickedDate = (event, bar) => {
+  const rect = event.currentTarget?.getBoundingClientRect();
+  const width = rect?.width || 0;
+  const offset = rect ? Math.max(0, event.clientX - rect.left) : 0;
+  const dayOffset = width > 0 ? Math.min(bar.span - 1, Math.floor(offset / (width / bar.span))) : 0;
+
+  return format(addDays(parseISO(bar.startDate), dayOffset), 'yyyy-MM-dd');
+};
+
+const handleBookingClick = (event, bar) => {
+  emit('calendar-context', {
+    originalEvent: event,
+    bookingId: bar.bookingId,
+    unitId: bar.unitId,
+    date: getBarClickedDate(event, bar),
+  });
 };
 </script>
 
@@ -184,7 +201,7 @@ const handleBookingClick = (bookingId) => {
             class="grid-cell"
             :class="{ 'is-today': day.isToday, 'is-weekend': day.isWeekend, 'is-sunday': day.isSunday }"
             :style="{ gridColumn: dayIndex + 2, gridRow: unitIndex + 2 }"
-            @click="handleCellClick(unit.id, day.date)"
+            @click="handleCellClick($event, unit.id, day.date)"
           ></div>
         </template>
 
@@ -202,7 +219,7 @@ const handleBookingClick = (bookingId) => {
             borderLeft: `3px solid ${getStatusConfig(bar.status).border}`
           }"
           :title="buildTooltip(bar)"
-          @click.stop="handleBookingClick(bar.bookingId)"
+          @click.stop="handleBookingClick($event, bar)"
         >
           <div class="bar-content">
             <div class="bar-top-row">

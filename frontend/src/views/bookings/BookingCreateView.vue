@@ -11,6 +11,7 @@ import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCity } from '../../composables/useCity';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
+import { getUnits } from '../../api/unit';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Dialog from 'primevue/dialog';
@@ -29,21 +30,30 @@ const toast = useToast();
 const { store, fetchOne, updateBooking, handle, loading: bookingLoading } = useBooking();
 const { customers, fetchAll: fetchCustomers, loading: customersLoading } = useCustomer();
 const { rentalOwners, fetchAll: fetchRentalOwners, loading: rentalOwnersLoading } = useRentalOwner();
-const { units, fetchAll: fetchUnits, loading: unitsLoading } = useUnit();
+const { units, loading: unitsLoading } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { cities, fetchAll: fetchCities, loading: citiesLoading } = useCity();
 const { costTypes: costTypesMaster, fetchAll: fetchCostTypes } = useCostType();
-const { packages: pricingPackages, fetchAll: fetchPricingPackages } = usePricingPackage();
+const { packages: pricingPackages, fetchAll: fetchPricingPackages, loading: pricingPackagesLoading } = usePricingPackage();
 
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
 const isEditMode = computed(() => route.name === 'BookingEdit');
 const editingBooking = ref(null);
+const selectedCustomerCache = ref(null);
+const selectedUnitCache = ref(null);
+const selectedPricingPackageCache = ref(null);
 const suppressDurationSync = ref(false);
 const showCreateModeDialog = ref(false);
 const submitMode = ref('booking');
 const formErrors = ref({});
 const waitingListErrors = ref({});
 const isSubmitting = ref(false);
+const unitSearchLoading = ref(false);
+const unitServerSearchTerm = ref('');
+let customerSearchTimer = null;
+let unitSearchTimer = null;
+let pricingPackageSearchTimer = null;
+let unitSearchRequestId = 0;
 
 const paketOptions = [
   { label: 'Harian', value: 'harian' },
@@ -152,13 +162,18 @@ const costTypeOptions = computed(() =>
 );
 
 const packageOptions = computed(() =>
-  pricingPackages.value
-    .filter(p => p.is_active)
-    .map(p => ({ id: p.id, label: `${p.nama_paket} - ${formatCurrency(p.harga)}` }))
+  mergeSelectedOption(
+    pricingPackages.value
+      .filter(p => p.is_active)
+      .map(mapPricingPackageOption),
+    selectedPricingPackageCache.value,
+    'id'
+  )
 );
 
 const findPricingPackage = (packageId) =>
-  pricingPackages.value.find(pkg => pkg.id === packageId);
+  pricingPackages.value.find(pkg => pkg.id === packageId)
+  || (selectedPricingPackageCache.value?.id === packageId ? selectedPricingPackageCache.value : null);
 
 const packageCostItems = (pkg) =>
   (pkg?.items || []).map(item => ({
@@ -214,14 +229,13 @@ const waitingTagihanKonsumen = computed(() => {
 });
 
 onMounted(() => {
-  fetchCustomers({ per_page: 200 });
-  fetchRentalOwners({ per_page: 200 });
-  fetchUnits({ per_page: 200 });
+  searchCustomers();
+  searchUnits();
   fetchAccounts({ per_page: 100 });
   fetchCities({ per_page: 200, is_active: true });
   fetchDrivers({ per_page: 200 });
   fetchCostTypes({ per_page: 200 });
-  fetchPricingPackages({ per_page: 200 });
+  searchPricingPackages();
 
   if (isEditMode.value) {
     loadBookingForEdit();
@@ -285,6 +299,12 @@ const loadBookingForEdit = async () => {
     const latestReturnDate = getPeriodEndDate(booking);
 
     editingBooking.value = booking;
+    if (booking.customer?.id) {
+      selectedCustomerCache.value = mapCustomerOption(booking.customer);
+    }
+    if (detail?.unit) {
+      selectedUnitCache.value = mapUnitOption(detail.unit);
+    }
     suppressDurationSync.value = true;
     form.value = {
       customer_mode: 'existing',
@@ -321,6 +341,65 @@ const loadBookingForEdit = async () => {
     toast.add({ severity: 'error', summary: 'Gagal', detail: 'Gagal mengambil data booking', life: 5000 });
     router.push({ name: 'BookingList' });
   }
+};
+
+const debounceSearch = (timerName, callback, delay = 350) => {
+  if (timerName === 'customer' && customerSearchTimer) clearTimeout(customerSearchTimer);
+  if (timerName === 'unit' && unitSearchTimer) clearTimeout(unitSearchTimer);
+  if (timerName === 'pricingPackage' && pricingPackageSearchTimer) clearTimeout(pricingPackageSearchTimer);
+
+  const timer = setTimeout(callback, delay);
+  if (timerName === 'customer') customerSearchTimer = timer;
+  if (timerName === 'unit') unitSearchTimer = timer;
+  if (timerName === 'pricingPackage') pricingPackageSearchTimer = timer;
+};
+
+const searchCustomers = async (search = '') => {
+  const params = { per_page: 25 };
+  if (search) params.search = search;
+  await Promise.all([
+    fetchCustomers(params),
+    fetchRentalOwners(params),
+  ]);
+};
+
+const onCustomerFilter = (event) => {
+  debounceSearch('customer', () => searchCustomers(String(event?.value || '').trim()));
+};
+
+const searchUnits = async (search = '') => {
+  const requestId = ++unitSearchRequestId;
+  const params = { per_page: 25 };
+  if (search) params.search = search;
+  unitSearchLoading.value = true;
+
+  try {
+    const response = await getUnits(params);
+    if (requestId !== unitSearchRequestId) return;
+
+    unitServerSearchTerm.value = search;
+    units.value = response.data.data;
+  } catch (err) {
+    // Biarkan opsi terakhir tetap tampil saat request pencarian unit gagal sesaat.
+  } finally {
+    if (requestId === unitSearchRequestId) {
+      unitSearchLoading.value = false;
+    }
+  }
+};
+
+const onUnitFilter = (event) => {
+  debounceSearch('unit', () => searchUnits(String(event?.value || '').trim()));
+};
+
+const searchPricingPackages = async (search = '') => {
+  const params = { per_page: 25, is_active: true };
+  if (search) params.search = search;
+  await fetchPricingPackages(params);
+};
+
+const onPricingPackageFilter = (event) => {
+  debounceSearch('pricingPackage', () => searchPricingPackages(String(event?.value || '').trim()));
 };
 
 const handleSubmit = async () => {
@@ -706,6 +785,28 @@ watch(
   }
 );
 
+watch(selectedCustomer, (customer) => {
+  if (customer && selectedCustomerCache.value?.value !== customer.value) {
+    selectedCustomerCache.value = customer;
+  }
+});
+
+watch(selectedUnit, (unit) => {
+  if (unit && selectedUnitCache.value?.id !== unit.id) {
+    selectedUnitCache.value = unit;
+  }
+});
+
+watch(
+  () => waitingListForm.value.pricing_package_id,
+  (packageId) => {
+    const selectedPackage = findPricingPackage(packageId);
+    if (selectedPackage && selectedPricingPackageCache.value?.id !== selectedPackage.id) {
+      selectedPricingPackageCache.value = mapPricingPackageOption(selectedPackage);
+    }
+  }
+);
+
 watch(
   () => [
     waitingListForm.value.pricing_mode,
@@ -788,8 +889,14 @@ const unitStatusMeta = (status) => {
   return map[status] || { label: status || '-', severity: 'info' };
 };
 
-const unitOptions = computed(() => {
-    return units.value.map(u => ({
+const mergeSelectedOption = (options, selected, key = 'id') => {
+  if (!selected) return options;
+  return options.some(option => option[key] === selected[key])
+    ? options
+    : [selected, ...options];
+};
+
+const mapUnitOption = (u) => ({
         ...u,
         label: `${u.merk} ${u.tipe}`,
         sublabel: `${u.no_polisi} - ${u.rental_owner?.nama || 'N/A'}`,
@@ -811,9 +918,13 @@ const unitOptions = computed(() => {
           u.rental_owner?.nama,
           u.no_polisi,
           unitStatusMeta(u.status).label,
-        ].filter(Boolean).join(' '))
-    }));
+        ].filter(Boolean).join(' ')),
+        serverSearchLabel: unitServerSearchTerm.value,
 });
+
+const unitOptions = computed(() =>
+  mergeSelectedOption(units.value.map(mapUnitOption), selectedUnitCache.value, 'id')
+);
 
 const cityOptions = computed(() =>
   cities.value
@@ -825,8 +936,7 @@ const cityOptions = computed(() =>
     }))
 );
 
-const customerOptions = computed(() => {
-    const customerItems = customers.value.map(c => ({
+const mapCustomerOption = (c) => ({
         id: c.id,
         value: `customer:${c.id}`,
         source: 'customer',
@@ -849,9 +959,9 @@ const customerOptions = computed(() => {
           c.member_expired_at,
           'pelanggan',
         ].filter(Boolean).join(' ')
-    }));
+});
 
-    const rentalOwnerItems = rentalOwners.value.map(owner => ({
+const mapRentalOwnerOption = (owner) => ({
         id: `owner-${owner.id}`,
         value: `rental-owner:${owner.id}`,
         source: 'rental_owner',
@@ -873,9 +983,19 @@ const customerOptions = computed(() => {
           'Rent to Rent',
           'pemilik rental',
         ].filter(Boolean).join(' ')
-    }));
+});
 
-    return [...customerItems, ...rentalOwnerItems];
+const customerOptions = computed(() => {
+    const customerItems = customers.value.map(mapCustomerOption);
+    const rentalOwnerItems = rentalOwners.value.map(mapRentalOwnerOption);
+
+    return mergeSelectedOption([...customerItems, ...rentalOwnerItems], selectedCustomerCache.value, 'value');
+});
+
+const mapPricingPackageOption = (pkg) => ({
+  ...pkg,
+  id: pkg.id,
+  label: `${pkg.nama_paket} - ${formatCurrency(pkg.harga)}`,
 });
 
 const selectedDurationLabel = computed(() => {
@@ -983,6 +1103,7 @@ const formatDate = (value) => {
                   :loading="customersLoading || rentalOwnersLoading"
                   :disabled="isEditMode"
                   class="w-full premium-input"
+                  @filter="onCustomerFilter"
                 >
                   <template #value="slotProps">
                     <div v-if="slotProps.value" class="selected-inline">
@@ -1127,9 +1248,10 @@ const formatDate = (value) => {
                   optionDisabled="disabled"
                   placeholder="Cari mobil, nopol, pemilik, atau status..."
                   filter
-                  :filterFields="['searchableLabel', 'normalizedSearchableLabel']"
-                  :loading="unitsLoading"
+                  :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
+                  :loading="unitsLoading || unitSearchLoading"
                   class="w-full premium-input"
+                  @filter="onUnitFilter"
                 >
                   <template #value="slotProps">
                     <div v-if="slotProps.value" class="selected-inline">
@@ -1504,7 +1626,11 @@ const formatDate = (value) => {
                     optionValue="id"
                     placeholder="Pilih paket atau isi manual"
                     showClear
+                    filter
+                    :filterFields="['label', 'nama_paket', 'keterangan']"
+                    :loading="pricingPackagesLoading"
                     class="w-full premium-input"
+                    @filter="onPricingPackageFilter"
                     @change="applyWaitingPackage"
                   />
                   <div v-if="!waitingListForm.pricing_package_id" class="form-field-vertical">

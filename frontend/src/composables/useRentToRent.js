@@ -7,7 +7,22 @@ export function useRentToRent() {
   const debts = ref([])
   const bills = ref([])
   const paymentHistory = ref({ latest: [], groups: [] })
+  const paymentHistoryPagination = ref({
+    latest: {
+      total: 0,
+      per_page: 15,
+      current_page: 1,
+      last_page: 1,
+    },
+    groups: {
+      total: 0,
+      per_page: 10,
+      current_page: 1,
+      last_page: 1,
+    },
+  })
   const selectedDebt = ref(null)
+  const availableOwners = ref([])
   const summary = ref({
     total_amount: 0,
     paid_amount: 0,
@@ -55,6 +70,7 @@ export function useRentToRent() {
         per_page: pagination.value.per_page,
       })
       debts.value = response.data.data
+      availableOwners.value = response.data.owner_options || []
       summary.value = response.data.summary || summary.value
       syncPagination(response.data.meta)
     } catch (err) {
@@ -167,6 +183,40 @@ export function useRentToRent() {
     }
   }
 
+  const markDebtPaid = async (debtId) => {
+    actionLoading.value = true
+    try {
+      const response = await rentToRentApi.markRentToRentDebtPaid(debtId)
+      selectedDebt.value = response.data.data
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Rent-to-rent ditandai sudah dibayar', life: 3000 })
+      await fetchDebts(pagination.value.current_page)
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menandai rent-to-rent paid'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const markBillPaid = async (billId) => {
+    actionLoading.value = true
+    try {
+      const response = await rentToRentApi.markRentToRentBillPaid(billId)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Dokumen ditandai sudah dibayar', life: 3000 })
+      await fetchBills(pagination.value.current_page)
+      await fetchDebts(1)
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menandai dokumen paid'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   const addPayment = async (billId, payload) => {
     actionLoading.value = true
     try {
@@ -178,6 +228,42 @@ export function useRentToRent() {
       return response.data.data
     } catch (err) {
       error.value = err.response?.data?.message || 'Gagal mencatat pembayaran rent-to-rent'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const addDebtPayment = async (debtId, payload) => {
+    actionLoading.value = true
+    try {
+      const response = await rentToRentApi.addRentToRentDebtPayment(debtId, payload)
+      selectedDebt.value = response.data.data
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Pembayaran rent-to-rent berhasil dicatat', life: 3000 })
+      await fetchDebts(pagination.value.current_page)
+      await fetchPaymentHistory()
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mencatat pembayaran rent-to-rent'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const voidPayment = async (paymentId, payload) => {
+    actionLoading.value = true
+    try {
+      const response = await rentToRentApi.voidRentToRentPayment(paymentId, payload)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request void pembayaran dikirim ke supervisor', life: 3000 })
+      await fetchBills(pagination.value.current_page)
+      await fetchDebts(pagination.value.current_page)
+      await fetchPaymentHistory()
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal void pembayaran rent-to-rent'
       toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
       throw err
     } finally {
@@ -233,16 +319,32 @@ export function useRentToRent() {
     }
   }
 
-  const fetchPaymentHistory = async () => {
+  const fetchPaymentHistory = async (options = {}) => {
     historyLoading.value = true
     try {
+      const view = options.view || 'all'
+      const latestPage = options.latestPage
+        || (view === 'latest' ? options.page : paymentHistoryPagination.value.latest.current_page)
+        || 1
+      const groupPage = options.groupPage
+        || (view === 'group' ? options.page : paymentHistoryPagination.value.groups.current_page)
+        || 1
       const response = await rentToRentApi.getRentToRentPaymentHistory({
-        latest_limit: 20,
-        group_limit: 30,
+        view,
+        latest_page: latestPage,
+        latest_per_page: paymentHistoryPagination.value.latest.per_page,
+        group_page: groupPage,
+        group_per_page: paymentHistoryPagination.value.groups.per_page,
       })
+      const payload = response.data.data || {}
+
       paymentHistory.value = {
-        latest: response.data.data?.latest || [],
-        groups: response.data.data?.groups || [],
+        latest: view === 'group' ? paymentHistory.value.latest : (payload.latest || []),
+        groups: view === 'latest' ? paymentHistory.value.groups : (payload.groups || []),
+      }
+      paymentHistoryPagination.value = {
+        latest: payload.meta?.latest || paymentHistoryPagination.value.latest,
+        groups: payload.meta?.groups || paymentHistoryPagination.value.groups,
       }
     } catch (err) {
       error.value = err.response?.data?.message || 'Gagal mengambil riwayat pembayaran rent-to-rent'
@@ -257,7 +359,9 @@ export function useRentToRent() {
     debts,
     bills,
     paymentHistory,
+    paymentHistoryPagination,
     selectedDebt,
+    availableOwners,
     summary,
     loading,
     historyLoading,
@@ -273,7 +377,11 @@ export function useRentToRent() {
     fetchBill,
     generateBill,
     markSent,
+    markDebtPaid,
+    markBillPaid,
     addPayment,
+    addDebtPayment,
+    voidPayment,
     requestVoid,
     approveVoid,
     rejectVoid,
