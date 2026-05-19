@@ -1864,9 +1864,7 @@ const auditUserName = (user) => user?.name || '-';
                 <!-- Unit Header -->
                 <div class="p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-slate-50/40">
                   <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-                    <div class="w-14 h-14 bg-white rounded-xl border border-slate-100 flex items-center justify-center shadow-sm flex-shrink-0">
-                      <i class="pi pi-car text-2xl text-slate-300"></i>
-                    </div>
+                    
                     <div>
                       <div class="flex items-center gap-2">
                         <h3 class="text-lg font-bold text-slate-800">

@@ -676,7 +676,7 @@ const getBookingCardClass = (booking) => {
 
     <div v-if="activeTab === 0 || activeTab === 1" class="tab-content list-tab-fill booking-list-tab">
       <!-- Filter Bar -->
-      <div class="filter-bar surface-card">
+      <div class="filter-bar surface-card booking-filter-bar">
         <div class="filter-groups">
           <div class="filter-group filter-group-wide">
             <label>Pencarian</label>
@@ -724,7 +724,7 @@ const getBookingCardClass = (booking) => {
             </div>
           </div>
         </div>
-        <div class="filter-actions">
+        <div class="filter-actions booking-filter-actions">
           <button
             class="btn-pill btn-secondary btn-pill-compact"
             type="button"
@@ -885,45 +885,76 @@ const getBookingCardClass = (booking) => {
             :class="getBookingCardClass(booking)"
             @click="goToDetail(booking.id)"
           >
-            <div class="card-header">
+            <div class="booking-card-topline">
                <BookingStatusBadge :status="booking.status" />
-               <span class="font-bold text-sm">{{ getVehicleInfo(booking).title }}</span>
-               <span class="text-xs text-semibold text-tertiary">{{ booking.kode_booking }}</span>
+               <span class="booking-card-code">{{ booking.kode_booking }}</span>
             </div>
-            <div class="card-body">
-               <div class="info-row">
-                  <div class="info-col">
-                     <span class="label">Pelanggan</span>
-                     <span class="value">{{ booking.customer?.nama || '-' }}</span>
+
+            <div class="booking-card-title-row">
+               <span class="booking-card-icon"><i class="pi pi-car"></i></span>
+               <div class="booking-card-title-block">
+                  <span class="booking-card-title">{{ getVehicleInfo(booking).title }}</span>
+                  <span class="booking-card-subtitle">{{ getVehicleInfo(booking).subtitle || 'Nopol belum ada' }}</span>
+               </div>
+            </div>
+
+            <div class="booking-card-body">
+               <div class="booking-info-grid">
+                  <div class="booking-info-item">
+                     <i class="pi pi-user"></i>
+                     <div>
+                        <span class="booking-info-label">Pelanggan</span>
+                        <span class="booking-info-value">{{ booking.customer?.nama || '-' }}</span>
+                     </div>
                   </div>
-                  <div class="info-col items-end">
-                     <span class="label">Unit</span>
-                     <span class="value">{{ getVehicleInfo(booking).title }}</span>
+                  <div class="booking-info-item">
+                     <i class="pi pi-car"></i>
+                     <div>
+                        <span class="booking-info-label">Unit</span>
+                        <span class="booking-info-value">{{ getVehicleInfo(booking).title }}</span>
+                     </div>
+                  </div>
+                  <div class="booking-info-item">
+                     <i class="pi pi-id-card"></i>
+                     <div>
+                        <span class="booking-info-label">Supir</span>
+                        <span class="booking-info-value" :class="{ 'booking-info-value-success': !getDriverInfo(booking).hasDriver }">{{ getDriverInfo(booking).name }}</span>
+                     </div>
+                  </div>
+                  <div class="booking-info-item">
+                     <i class="pi pi-hashtag"></i>
+                     <div>
+                        <span class="booking-info-label">Nomor Polisi</span>
+                        <span class="booking-info-value font-mono-numeric">{{ getVehicleInfo(booking).subtitle || '-' }}</span>
+                     </div>
                   </div>
                </div>
-               <div class="info-row mt-3">
-                  <div class="info-col">
-                     <span class="label">Periode</span>
-                     <span class="value text-xs">{{ formatDateTime(getPeriodStartDate(booking)) }}</span>
-                     <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(booking)) }}</span>
+
+               <div class="booking-period-row">
+                  <div class="booking-info-item booking-period-item">
+                     <i class="pi pi-calendar"></i>
+                     <div>
+                        <span class="booking-info-label">Periode</span>
+                        <span class="booking-info-value booking-period-text">{{ formatDateTime(getPeriodStartDate(booking)) }} -> {{ formatDateTime(getPeriodEndDate(booking)) }}</span>
+                     </div>
                   </div>
-                  <div class="info-col items-end">
-                     <span class="label">Durasi</span>
-                     <span class="value">{{ getRentalDuration(booking) }}</span>
-                  </div>
+                  <span class="booking-duration-pill"><i class="pi pi-clock"></i>{{ getRentalDuration(booking) }}</span>
                </div>
+
                <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
                   <i class="pi pi-clock"></i> {{ getLateInfo(booking).note }}
                </div>
             </div>
-            <div class="card-footer">
+            <div class="booking-card-footer">
                <div class="amount-group">
-                  <span class="text-tertiary text-[10px]">Total Sewa</span>
-                  <span class="font-mono-numeric font-bold text-sm">{{ formatCurrency(getTotalSewa(booking)) }}</span>
+                  <span class="booking-info-label">Total Sewa</span>
+                  <span class="booking-total-amount font-mono-numeric">{{ formatCurrency(getTotalSewa(booking)) }}</span>
                </div>
                <div class="amount-group items-end">
-                  <span class="text-tertiary text-[10px]">Sudah Bayar</span>
-                  <span class="font-mono-numeric font-bold text-sm text-positive">{{ formatCurrency(getPaidAmount(booking)) }}</span>
+                  <span class="booking-info-label">Sudah Bayar</span>
+                  <span class="booking-paid-amount font-mono-numeric">{{ formatCurrency(getPaidAmount(booking)) }}</span>
+                  <span v-if="getTotalSewa(booking) - getPaidAmount(booking) > 0" class="booking-remaining-amount font-mono-numeric">Sisa {{ formatCurrency(getTotalSewa(booking) - getPaidAmount(booking)) }}</span>
+                  <BookingStatusBadge v-else status="lunas" />
                </div>
             </div>
             <button
@@ -1199,6 +1230,179 @@ const getBookingCardClass = (booking) => {
   flex-direction: column;
 }
 
+.booking-card-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.booking-card-code {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.booking-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.booking-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-default);
+  background: var(--primary);
+  color: var(--text-white);
+}
+
+.booking-card-title-block,
+.booking-info-item > div {
+  min-width: 0;
+}
+
+.booking-card-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.booking-card-title {
+  color: var(--text-primary);
+  font-family: var(--font-headline);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.booking-card-subtitle {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.booking-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.booking-info-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-md) var(--space-lg);
+}
+
+.booking-info-item {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 7px;
+}
+
+.booking-info-item > i {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.booking-info-label {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.booking-info-value {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.booking-info-value-success {
+  color: var(--positive);
+}
+
+.booking-period-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.booking-period-item {
+  flex: 1 1 auto;
+}
+
+.booking-period-text {
+  font-size: 11px;
+}
+
+.booking-duration-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: var(--text-white);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.booking-duration-pill i {
+  font-size: 10px;
+}
+
+.booking-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin: var(--space-md) calc(var(--space-lg) * -1) calc(var(--space-lg) * -1);
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--surface-border);
+  background: var(--card-bg);
+}
+
+.booking-total-amount {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.booking-paid-amount {
+  color: var(--positive);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.booking-remaining-amount {
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
 .mobile-paginator {
   display: flex;
   align-items: center;
@@ -1278,35 +1482,81 @@ const getBookingCardClass = (booking) => {
   .filter-bar {
      align-items: flex-start;
      flex-direction: column;
-     gap: var(--space-md);
-     padding: var(--space-lg);
+     flex-wrap: nowrap;
+     gap: 8px;
+     padding: 10px;
      margin-bottom: var(--space-md);
      border-radius: var(--radius-default);
      height: auto !important;
-     max-height: none !important;
+     max-height: min(52dvh, 360px) !important;
+     overflow-y: auto;
+     overscroll-behavior: contain;
   }
 
   .filter-groups {
      width: 100%;
      flex-direction: column;
-     gap: var(--space-md);
+     flex-wrap: nowrap;
+     gap: 8px;
   }
 
   .filter-group {
      width: 100%;
      max-width: none;
-     gap: 6px;
+     flex: 0 0 auto;
+     gap: 4px;
   }
 
   .filter-group-wide,
   .filter-group-status {
      min-width: 0;
      width: 100%;
+     flex: 0 0 auto;
   }
 
   .filter-group label {
      margin-left: 4px;
      font-size: 10px;
+  }
+
+  .booking-filter-bar .filter-search :deep(.p-inputtext) {
+     min-height: 36px !important;
+  }
+
+  .booking-filter-bar .advanced-filter-groups {
+     gap: 8px;
+     padding-top: 0;
+  }
+
+  .booking-filter-bar .advanced-filter-groups .filter-group {
+     gap: 4px;
+  }
+
+  .booking-filter-bar .advanced-filter-groups :deep(.p-dropdown),
+  .booking-filter-bar .advanced-filter-groups :deep(.p-datepicker),
+  .booking-filter-bar .advanced-filter-groups :deep(.p-inputtext) {
+     min-height: 36px !important;
+  }
+
+  .booking-filter-bar .status-filter-buttons {
+     width: 100%;
+     flex-wrap: nowrap;
+     gap: 6px;
+     overflow-x: auto;
+     padding: 0 2px 2px;
+     scrollbar-width: none;
+     -webkit-overflow-scrolling: touch;
+  }
+
+  .booking-filter-bar .status-filter-buttons::-webkit-scrollbar {
+     display: none;
+  }
+
+  .booking-filter-bar .status-filter-button {
+     flex: 0 0 auto;
+     min-height: 30px;
+     padding: 6px 10px;
+     white-space: nowrap;
   }
 
   .filter-group :deep(.p-dropdown),
@@ -1317,13 +1567,17 @@ const getBookingCardClass = (booking) => {
 
   .filter-actions {
      width: 100%;
-     justify-content: flex-start;
+     justify-content: flex-end;
      flex-wrap: wrap;
    }
 
   .filter-bar .btn-pill {
      min-height: 30px;
      padding: 6px 12px;
+  }
+
+  .booking-filter-actions .btn-pill-compact {
+     min-width: 36px;
   }
 
   .create-booking-button {
@@ -1354,6 +1608,7 @@ const getBookingCardClass = (booking) => {
     border-style: solid;
     border-radius: var(--radius-default);
     box-shadow: var(--shadow-tile);
+    overflow: hidden;
   }
 
   .booking-card-neutral {
@@ -1425,7 +1680,21 @@ const getBookingCardClass = (booking) => {
   .booking-card {
      display: flex;
      flex-direction: column;
-     gap: 8px;
+     gap: 10px;
+  }
+
+  .booking-card-topline :deep(.status-badge) {
+    padding: 5px 10px;
+    font-size: 10px;
+  }
+
+  .booking-card-title {
+    font-size: 15px;
+  }
+
+  .booking-card-footer {
+    margin: var(--space-md) calc(var(--space-md) * -1) calc(var(--space-md) * -1);
+    padding: var(--space-md);
   }
 
   .card-footer {

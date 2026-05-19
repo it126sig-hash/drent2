@@ -217,7 +217,7 @@ body {
 /* === Tab Toggle === */
 .tab-toggle-container {
    margin-bottom: var(--space-2xl);
-   width: 100%;
+   /* width: 100%; */
    overflow-x: auto;
    -webkit-overflow-scrolling: touch;
    scrollbar-width: none; /* Firefox */
@@ -804,6 +804,9 @@ button[aria-disabled="true"],
   .detail-page-header .header-left p {
     display: none;
   }
+  .tab-toggle-container {
+   width: 100% !important;
+ }
 
   .header-actions {
     width: 100%;
