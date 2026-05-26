@@ -37,27 +37,35 @@ class DriverOperationalFundPolicy
             && $fund->driver?->user_id === $user->id;
     }
 
-    public function manageExpense(User $user, DriverOperationalFund $fund): bool
+    public function manageExpense(User $user, ?DriverOperationalFund $fund = null): bool
     {
         if ($user->role === 'superadmin') {
             return true;
         }
 
-        if ($user->role === 'driver_tetap') {
-            return $fund->driver?->user_id === $user->id;
+        if ($fund) {
+            if ($user->role === 'driver_tetap') {
+                return $fund->driver?->user_id === $user->id;
+            }
+
+            return in_array($user->role, ['admin_branch', 'finance'], true)
+                && $user->branch_id === $fund->branch_id;
         }
 
-        return in_array($user->role, ['admin_branch', 'finance'], true)
-            && $user->branch_id === $fund->branch_id;
+        return in_array($user->role, ['admin_branch', 'finance'], true);
     }
 
-    public function review(User $user, DriverOperationalFund $fund): bool
+    public function review(User $user, ?DriverOperationalFund $fund = null): bool
     {
         if ($user->role === 'superadmin') {
             return true;
         }
 
-        return in_array($user->role, ['admin_branch', 'finance'], true)
-            && $user->branch_id === $fund->branch_id;
+        if ($fund) {
+            return in_array($user->role, ['admin_branch', 'finance'], true)
+                && $user->branch_id === $fund->branch_id;
+        }
+
+        return in_array($user->role, ['admin_branch', 'finance'], true);
     }
 }

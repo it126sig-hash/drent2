@@ -184,6 +184,7 @@ class BookingService
                     'label' => $costData['label'],
                     'amount' => $costData['amount'],
                     'keterangan' => $costData['keterangan'] ?? null,
+                    'is_additional' => (bool) ($costData['is_additional'] ?? false),
                 ]);
             }
 
@@ -225,8 +226,8 @@ class BookingService
                 'tujuan'             => $data['tujuan'] ?? $booking->tujuan,
                 'kota'               => $data['kota'] ?? $booking->kota,
                 'status'             => 'waiting_list',
-                'handled_by'         => auth()->id(),
-                'handled_at'         => now(),
+                'handled_by'         => $booking->handled_by ?? auth()->id(),
+                'handled_at'         => $booking->handled_at ?? now(),
             ]);
 
             // 2. Update the initial booking_detail (draft) with full handle data
@@ -266,6 +267,7 @@ class BookingService
                     'label'        => $costData['label'],
                     'amount'       => $costData['amount'],
                     'keterangan'   => $costData['keterangan'] ?? null,
+                    'is_additional' => (bool) ($costData['is_additional'] ?? false),
                 ]);
             }
 
@@ -372,6 +374,10 @@ class BookingService
 
                 app(RentToRentService::class)->syncDetail($activeDetail->fresh(['booking', 'unit.rentalOwner']));
             }
+
+            // Sync cached_sisa_tagihan agar booking langsung muncul di daftar piutang
+            $booking->unsetRelation('bookingDetails')->unsetRelation('payments');
+            app(BookingBillingService::class)->updateCachedSisaTagihan($booking->fresh());
 
             return $booking->fresh();
         });
@@ -523,6 +529,12 @@ class BookingService
                 ->with(['booking', 'unit.rentalOwner'])
                 ->get()
                 ->each(fn(BookingDetail $detail) => app(RentToRentService::class)->syncDetail($detail));
+        }
+
+        // Sync cache setelah selesai agar piutang langsung muncul
+        if ($data['status'] === 'selesai') {
+            $booking->unsetRelation('bookingDetails')->unsetRelation('payments');
+            app(BookingBillingService::class)->updateCachedSisaTagihan($booking->fresh());
         }
 
         return $booking->fresh();

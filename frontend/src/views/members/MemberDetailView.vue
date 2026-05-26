@@ -12,12 +12,19 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import Divider from 'primevue/divider'
 import axios from '../../api/axios'
 
-const { fetchDetail, activate, member, loading } = useMember()
+const { fetchDetail, activate, updateStatus, extendMember, fetchExtensions, member, extensions, loading } = useMember()
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
+
+import MemberStatusDialog from '../../components/members/MemberStatusDialog.vue'
+import MemberExtendDialog from '../../components/members/MemberExtendDialog.vue'
+
+const showStatusDialog = ref(false)
+const showExtendDialog = ref(false)
+const saving = ref(false)
 
 const documentUrls = ref({
   foto_wajah: null,
@@ -27,6 +34,7 @@ const documentUrls = ref({
 
 onMounted(async () => {
   await loadMember()
+  await loadExtensions()
 })
 
 const loadMember = async () => {
@@ -38,6 +46,14 @@ const loadMember = async () => {
   } catch (err) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Gagal memuat detail member', life: 3000 })
     router.push('/mdm/members')
+  }
+}
+
+const loadExtensions = async () => {
+  try {
+    await fetchExtensions(route.params.id)
+  } catch (err) {
+    console.error('Failed to load extension logs', err)
   }
 }
 
@@ -66,6 +82,10 @@ const canActivate = computed(() => {
   return ['superadmin', 'admin_branch'].includes(authStore.user?.role) && member.value?.status_member === 'Pending'
 })
 
+const canManage = computed(() => {
+  return ['superadmin', 'admin_branch', 'cs'].includes(authStore.user?.role)
+})
+
 const onActivate = () => {
   confirm.require({
     message: 'Apakah Anda yakin ingin mengaktifkan member ini? ID Member akan digenerate otomatis dan berlaku selama 1 tahun.',
@@ -82,6 +102,35 @@ const onActivate = () => {
       }
     }
   })
+}
+
+const handleStatusUpdate = async (newStatus) => {
+  saving.value = true
+  try {
+    await updateStatus(route.params.id, newStatus)
+    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Status member berhasil diubah', life: 3000 })
+    showStatusDialog.value = false
+    await loadMember()
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Gagal', detail: 'Gagal mengubah status member', life: 3000 })
+  } finally {
+    saving.value = false
+  }
+}
+
+const handleExtend = async (data) => {
+  saving.value = true
+  try {
+    await extendMember(route.params.id, data)
+    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Member berhasil diperpanjang', life: 3000 })
+    showExtendDialog.value = false
+    await loadMember()
+    await loadExtensions()
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Gagal', detail: 'Gagal memperpanjang member', life: 3000 })
+  } finally {
+    saving.value = false
+  }
 }
 
 const getStatusSeverity = (status) => {
@@ -103,11 +152,25 @@ const getStatusSeverity = (status) => {
           <h1>Profil Member</h1>
         </div>
       </div>
-      <div class="header-actions">
+      <div class="header-actions flex gap-2">
+        <Button 
+          v-if="canManage"
+          label="Ubah Status" 
+          icon="pi pi-shield" 
+          class="p-button-outlined p-button-warning btn-pill" 
+          @click="showStatusDialog = true" 
+        />
+        <Button 
+          v-if="canManage && member.status_member === 'Aktif'"
+          label="Perpanjang Member" 
+          icon="pi pi-calendar-plus" 
+          class="p-button-outlined p-button-info btn-pill" 
+          @click="showExtendDialog = true" 
+        />
         <Button 
           label="Edit Data" 
           icon="pi pi-pencil" 
-          class="p-button-outlined p-button-secondary" 
+          class="p-button-outlined p-button-secondary btn-pill" 
           @click="router.push(`/mdm/members/${member.id}/edit`)" 
         />
       </div>
@@ -129,6 +192,7 @@ const getStatusSeverity = (status) => {
           label="Tolak" 
           icon="pi pi-times" 
           class="p-button-text p-button-danger mr-2" 
+          @click="handleStatusUpdate('Ditolak')"
         />
         <Button 
           label="Setujui & Aktifkan Member" 
@@ -195,7 +259,7 @@ const getStatusSeverity = (status) => {
 
       <!-- Main Content -->
       <div class="detail-main">
-        <div class="main-card">
+        <div class="main-card flex flex-col gap-6">
           <div class="section">
             <div class="section-header">
               <i class="pi pi-briefcase text-cyan-600"></i>
@@ -229,7 +293,7 @@ const getStatusSeverity = (status) => {
             </div>
           </div>
 
-          <Divider class="my-4" />
+          <Divider />
 
           <div class="section">
             <div class="section-header">
@@ -286,7 +350,7 @@ const getStatusSeverity = (status) => {
             </div>
           </div>
 
-          <Divider class="my-4" />
+          <Divider />
 
           <div class="section">
             <div class="section-header">
@@ -297,9 +361,56 @@ const getStatusSeverity = (status) => {
               {{ member.catatan || 'Tidak ada catatan survey.' }}
             </div>
           </div>
+
+          <Divider v-if="extensions.length > 0" />
+
+          <!-- History Perpanjangan Member -->
+          <div v-if="extensions.length > 0" class="section">
+            <div class="section-header">
+              <i class="pi pi-history text-cyan-600"></i>
+              <h3>History Perpanjangan Member</h3>
+            </div>
+            <div class="border border-[var(--surface-border)] rounded-lg overflow-hidden">
+              <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr class="bg-[var(--card-bg)] border-b border-[var(--surface-border)]">
+                    <th class="p-3 font-semibold text-[var(--text-secondary)]">Tanggal Perpanjang</th>
+                    <th class="p-3 font-semibold text-[var(--text-secondary)]">Exp Lama</th>
+                    <th class="p-3 font-semibold text-[var(--text-secondary)]">Exp Baru</th>
+                    <th class="p-3 font-semibold text-[var(--text-secondary)]">Catatan</th>
+                    <th class="p-3 font-semibold text-[var(--text-secondary)]">Oleh</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="ext in extensions" :key="ext.id" class="border-b border-[var(--surface-border)] hover:bg-[var(--card-bg-hover)]">
+                    <td class="p-3 font-mono text-xs">{{ ext.created_at }}</td>
+                    <td class="p-3 font-mono text-xs">{{ ext.old_exp_date || '-' }}</td>
+                    <td class="p-3 font-mono text-xs font-semibold text-[var(--positive)]">{{ ext.new_exp_date }}</td>
+                    <td class="p-3 text-[var(--text-secondary)]">{{ ext.catatan }}</td>
+                    <td class="p-3 text-xs">{{ ext.creator?.name || 'Staff' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Dialogs -->
+    <MemberStatusDialog
+      v-model:visible="showStatusDialog"
+      :currentStatus="member.status_member"
+      :loading="saving"
+      @update-status="handleStatusUpdate"
+    />
+
+    <MemberExtendDialog
+      v-model:visible="showExtendDialog"
+      :currentExpDate="member.tanggal_exp"
+      :loading="saving"
+      @extend="handleExtend"
+    />
   </div>
 </template>
 

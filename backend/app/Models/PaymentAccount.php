@@ -15,10 +15,12 @@ class PaymentAccount extends Model
         'nama_bank',
         'nomor_rekening',
         'atas_nama',
+        'current_balance',
         'is_active',
     ];
 
     protected $casts = [
+        'current_balance' => 'integer',
         'is_active' => 'boolean',
     ];
 
@@ -35,5 +37,10 @@ class PaymentAccount extends Model
     public function rentToRentPayments()
     {
         return $this->hasMany(RentToRentPayment::class);
+    }
+
+    public function transactions()
+    {
+        return $this->hasMany(PaymentAccountTransaction::class);
     }
 }

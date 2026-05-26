@@ -87,7 +87,7 @@ class DriverOperationalFund extends Model
             : $this->expenses()->get();
 
         return (int) $expenses
-            ->where('status', 'approved')
+            ->whereIn('status', ['approved', 'void_requested'])
             ->where('type', 'expense')
             ->sum('amount');
     }
@@ -99,7 +99,7 @@ class DriverOperationalFund extends Model
             : $this->expenses()->get();
 
         return (int) $expenses
-            ->where('status', 'approved')
+            ->whereIn('status', ['approved', 'void_requested'])
             ->where('type', 'return')
             ->sum('amount');
     }

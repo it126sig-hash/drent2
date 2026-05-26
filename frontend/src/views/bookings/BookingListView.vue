@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
-import { useRentalOwner } from '../../composables/useRentalOwner';
+import { getRentalOwners } from '../../api/rentalOwner';
 import { useCity } from '../../composables/useCity';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import BookingCalendar from '../../components/bookings/BookingCalendar.vue';
@@ -17,14 +17,39 @@ import Dialog from 'primevue/dialog';
 import Textarea from 'primevue/textarea';
 import ProgressBar from 'primevue/progressbar';
 import ContextMenu from 'primevue/contextmenu';
+import AutoComplete from 'primevue/autocomplete';
 
 const router = useRouter();
-const { 
-  bookings, loading, pagination, filters, 
-  fetchAll, fetchForCalendar, changeStatus, requestReturnToRentalUnit, statusLoading 
+const {
+  bookings, loading, pagination, filters,
+  fetchAll, fetchForCalendar, changeStatus, requestReturnToRentalUnit, statusLoading
 } = useBooking();
 
-const { rentalOwners, fetchAll: fetchRentalOwners } = useRentalOwner();
+const selectedOwnerFilter = ref(null);
+const ownersSuggestions = ref([]);
+const searchingOwners = ref(false);
+
+const searchOwners = async (event) => {
+  searchingOwners.value = true;
+  try {
+    const response = await getRentalOwners({ search: event.query || '', per_page: 20 });
+    ownersSuggestions.value = response.data.data;
+  } catch (err) {
+    console.error('Gagal mencari pemilik rental', err);
+  } finally {
+    searchingOwners.value = false;
+  }
+};
+
+watch(selectedOwnerFilter, (newVal) => {
+  if (!newVal || (typeof newVal === 'string' && newVal.trim() === '')) {
+    filters.value.rental_owner_id = null;
+  } else {
+    filters.value.rental_owner_id = newVal?.id || null;
+  }
+  applyFilters();
+});
+
 const { cities, fetchAll: fetchCities } = useCity();
 
 const activeTab = ref(0);
@@ -37,10 +62,6 @@ const showAdvancedFilters = ref(false);
 // Calendar filters
 const calendarOwnerFilter = ref(null);
 const calendarVehicleSearch = ref('');
-
-const sortedRentalOwners = computed(() => {
-  return [...rentalOwners.value].sort((a, b) => (a?.nama || '').localeCompare(b?.nama || '', 'id', { sensitivity: 'base' }));
-});
 
 const calendarEnd = computed(() => format(addDays(new Date(calendarStart.value), 29), 'yyyy-MM-dd'));
 
@@ -63,7 +84,26 @@ const baseCalendarUnits = computed(() => {
 
   calendarBookings.value.forEach((booking) => {
     (booking.booking_details || []).forEach((detail) => {
-      if (!detail?.unit_id || !detail?.unit || !isDetailInCalendarPeriod(detail)) return;
+      if (!isDetailInCalendarPeriod(detail)) return;
+
+      if (!detail?.unit_id || !detail?.unit) {
+        const pseudoId = `placeholder-${booking.id}-${detail.id || Math.random()}`;
+        const rawPlaceholder = detail.unit_placeholder || 'Belum ditentukan';
+        const isDashesOnly = !rawPlaceholder.replace(/[- ]/g, '');
+        const cleanPlaceholder = isDashesOnly ? 'Belum ditentukan' : rawPlaceholder;
+
+        unitMap.set(pseudoId, {
+          id: pseudoId,
+          merk: cleanPlaceholder,
+          tipe: '',
+          no_polisi: 'Unit belum ditentukan',
+          isPlaceholder: true,
+          rental_owner: null,
+          rental_owner_id: null,
+          transaction_count: 1,
+        });
+        return;
+      }
 
       const existing = unitMap.get(detail.unit_id);
       if (existing) {
@@ -186,18 +226,44 @@ const toggleStatusFilter = (status) => {
     selectedClosedStatusFilters.value = isStatusSelected(status)
       ? selectedClosedStatusFilters.value.filter(selectedStatus => selectedStatus !== status)
       : [...selectedClosedStatusFilters.value, status];
-    return;
+  } else {
+    selectedStatusFilters.value = isStatusSelected(status)
+      ? selectedStatusFilters.value.filter(selectedStatus => selectedStatus !== status)
+      : [...selectedStatusFilters.value, status];
   }
+  applyFilters();
+};
 
-  selectedStatusFilters.value = isStatusSelected(status)
-    ? selectedStatusFilters.value.filter(selectedStatus => selectedStatus !== status)
-    : [...selectedStatusFilters.value, status];
+let citySearchTimer = null;
+const loadingCities = ref(false);
+
+const searchCities = async (search = '') => {
+  loadingCities.value = true;
+  try {
+    const params = { per_page: 30, is_active: true };
+    if (search) params.search = search;
+    await fetchCities(params);
+  } catch (err) {
+    console.error('Gagal memuat kota', err);
+  } finally {
+    loadingCities.value = false;
+  }
+};
+
+const onCityFilter = (event) => {
+  if (citySearchTimer) clearTimeout(citySearchTimer);
+  citySearchTimer = setTimeout(() => {
+    searchCities(String(event?.value || '').trim());
+  }, 350);
+};
+
+const onCityDropdownShow = async () => {
+  await searchCities('');
 };
 
 const loadFilterOptions = async () => {
   await Promise.allSettled([
-    fetchRentalOwners({ per_page: 100 }),
-    fetchCities({ per_page: 100, is_active: true }),
+    searchCities(''),
   ]);
 };
 
@@ -271,6 +337,7 @@ const resetFilters = () => {
   filters.value.date_to = null;
   filters.value.search = '';
   filters.value.rental_owner_id = null;
+  selectedOwnerFilter.value = null;
   filters.value.kota = null;
   selectedSort.value = 'created_at:desc';
   applyFilters();
@@ -294,10 +361,10 @@ const canRequestReturnToRentalUnit = (booking) => {
 
 const getAllowedNextStatuses = (currentStatus) => {
   const map = {
-    'follow_up':    ['confirm', 'batal'],
-    'confirm':      ['waiting_list', 'batal'],
+    'follow_up': ['confirm', 'batal'],
+    'confirm': ['waiting_list', 'batal'],
     'waiting_list': ['rental_unit', 'batal'],
-    'rental_unit':  ['selesai', 'batal'],
+    'rental_unit': ['selesai', 'batal'],
   };
   const allowed = map[currentStatus] || [];
   return statusOptions.filter(opt => allowed.includes(opt.value));
@@ -640,25 +707,13 @@ const getBookingCardClass = (booking) => {
         <!-- Tab Toggle -->
         <div class="tab-toggle-container">
           <div class="pill-toggle">
-            <button
-              class="toggle-item"
-              :class="{ active: activeTab === 0 }"
-              @click="activeTab = 0"
-            >
+            <button class="toggle-item" :class="{ active: activeTab === 0 }" @click="activeTab = 0">
               Daftar Booking
             </button>
-            <button
-              class="toggle-item"
-              :class="{ active: activeTab === 1 }"
-              @click="activeTab = 1"
-            >
+            <button class="toggle-item" :class="{ active: activeTab === 1 }" @click="activeTab = 1">
               Booking Selesai
             </button>
-            <button
-              class="toggle-item"
-              :class="{ active: activeTab === 2 }"
-              @click="activeTab = 2"
-            >
+            <button class="toggle-item" :class="{ active: activeTab === 2 }" @click="activeTab = 2">
               Kalender Unit
             </button>
           </div>
@@ -688,18 +743,14 @@ const getBookingCardClass = (booking) => {
           <div class="filter-group filter-group-status">
             <label>Status Rental</label>
             <div class="status-filter-buttons" role="group" aria-label="Filter status booking">
-              <button
-                v-for="option in currentStatusOptions"
-                :key="option.value"
-                type="button"
-                class="status-filter-button"
-                :class="{ active: isStatusSelected(option.value) }"
-                :aria-pressed="isStatusSelected(option.value)"
-                @click="toggleStatusFilter(option.value)"
-              >
+              <button v-for="option in currentStatusOptions" :key="option.value" type="button" class="status-filter-button" :class="{ active: isStatusSelected(option.value) }" :aria-pressed="isStatusSelected(option.value)" @click="toggleStatusFilter(option.value)">
                 {{ option.label }}
               </button>
             </div>
+          </div>
+          <div class="filter-group filter-group-city">
+            <label>Kota</label>
+            <Dropdown v-model="filters.kota" :options="cities" optionLabel="nama" optionValue="nama" placeholder="Semua Kota" showClear filter :loading="loadingCities" @filter="onCityFilter" @show="onCityDropdownShow" @change="applyFilters" class="w-full md:w-40" />
           </div>
           <div v-if="showAdvancedFilters" class="advanced-filter-groups">
             <div class="filter-group">
@@ -712,11 +763,15 @@ const getBookingCardClass = (booking) => {
             </div>
             <div class="filter-group">
               <label>Pemilik</label>
-              <Dropdown v-model="filters.rental_owner_id" :options="sortedRentalOwners" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" showClear filter class="w-full md:w-48" />
-            </div>
-            <div class="filter-group">
-              <label>Kota</label>
-              <Dropdown v-model="filters.kota" :options="cities" optionLabel="nama" optionValue="nama" placeholder="Semua Kota" showClear filter class="w-full md:w-40" />
+              <AutoComplete v-model="selectedOwnerFilter" :suggestions="ownersSuggestions" @complete="searchOwners" optionLabel="nama" placeholder="Cari Pemilik" dropdown forceSelection :loading="searchingOwners" class="w-full md:w-48" inputClass="w-full">
+                <template #item="slotProps">
+                  <div>
+                    <div class="font-bold text-xs">{{ slotProps.item.nama }}</div>
+                    <small class="text-secondary text-[10px]">{{ slotProps.item.kontak_1 }} - {{ slotProps.item.kota
+                    }}</small>
+                  </div>
+                </template>
+              </AutoComplete>
             </div>
             <div class="filter-group">
               <label>Sort</label>
@@ -725,12 +780,7 @@ const getBookingCardClass = (booking) => {
           </div>
         </div>
         <div class="filter-actions booking-filter-actions">
-          <button
-            class="btn-pill btn-secondary btn-pill-compact"
-            type="button"
-            :aria-expanded="showAdvancedFilters"
-            @click="showAdvancedFilters = !showAdvancedFilters"
-          >
+          <button class="btn-pill btn-secondary btn-pill-compact" type="button" :aria-expanded="showAdvancedFilters" @click="showAdvancedFilters = !showAdvancedFilters">
             <i class="pi" :class="showAdvancedFilters ? 'pi-chevron-up' : 'pi-sliders-h'"></i>
           </button>
           <button class="btn-pill btn-secondary btn-pill-compact" @click="resetFilters" :disabled="loading">
@@ -746,39 +796,16 @@ const getBookingCardClass = (booking) => {
 
       <!-- Desktop DataTable -->
       <div v-if="!isMobile" class="table-shell booking-table-shell">
-        <DataTable
-          :value="bookings"
-          lazy
-          paginator
-          scrollable
-          scrollHeight="flex"
-          :rows="pagination.per_page"
-          :totalRecords="pagination.total"
-          @page="onPage"
-          :loading="loading"
-          class="drent-datatable"
-          responsiveLayout="scroll"
-          :rowClass="rowClass"
-          v-model:contextMenuSelection="contextMenuSelection"
-          contextMenu
-          @row-dblclick="onRowDoubleClick"
-          @row-contextmenu="onRowContextMenu"
-        >
-         <Column header="Aksi" class="text-center">
+        <DataTable :value="bookings" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" @page="onPage" :loading="loading" class="drent-datatable" responsiveLayout="scroll" :rowClass="rowClass" v-model:contextMenuSelection="contextMenuSelection" contextMenu @row-dblclick="onRowDoubleClick" @row-contextmenu="onRowContextMenu">
+          <Column header="Aksi" class="text-center">
             <template #body="{ data }">
-               <div class="action-pill-group">
-                  <button class="action-btn" @click.stop="goToDetail(data.id)"><i class="pi pi-eye"></i></button>
-                  <button
-                    v-if="data.status === 'selesai'"
-                    class="action-btn"
-                    :disabled="!canRequestReturnToRentalUnit(data)"
-                    @click.stop="openReturnRequestDialog(data)"
-                    v-tooltip.top="'Request kembali ke Rental Unit'"
-                  >
-                    <i class="pi pi-undo"></i>
-                  </button>
-                  <!-- <button class="action-btn" @click.stop="openStatusDialog(data)" :disabled="!canUpdateStatus(data)"><i class="pi pi-sync"></i></button> -->
-               </div>
+              <div class="action-pill-group">
+                <button class="action-btn" @click.stop="goToDetail(data.id)"><i class="pi pi-eye"></i></button>
+                <button v-if="data.status === 'selesai'" class="action-btn" :disabled="!canRequestReturnToRentalUnit(data)" @click.stop="openReturnRequestDialog(data)" v-tooltip.top="'Request kembali ke Rental Unit'">
+                  <i class="pi pi-undo"></i>
+                </button>
+                <!-- <button class="action-btn" @click.stop="openStatusDialog(data)" :disabled="!canUpdateStatus(data)"><i class="pi pi-sync"></i></button> -->
+              </div>
             </template>
           </Column>
           <Column header="Kode" style="min-width: 9rem">
@@ -798,7 +825,7 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-            <Column header="Unit" style="min-width: 12rem">
+          <Column header="Unit" style="min-width: 10rem">
             <template #body="{ data }">
               <div class="flex flex-col gap-0.5">
                 <span class="font-semibold text-xs">{{ getVehicleInfo(data).title }}</span>
@@ -809,7 +836,7 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-           <Column header="Periode" style="min-width: 13rem">
+          <Column header="Periode" style="min-width: 13rem">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
                 <span class="font-medium text-xs">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
@@ -827,25 +854,23 @@ const getBookingCardClass = (booking) => {
               <div class="flex flex-col items-end">
                 <span class="font-mono-numeric text-primary text-sm">{{ formatCurrency(getTotalSewa(data)) }}</span>
                 <span class="font-mono-numeric text-positive text-sm">{{ formatCurrency(getPaidAmount(data)) }}</span>
-                <div v-if="getTotalSewa(data)-getPaidAmount(data) > 0">
-                  <span class="font-mono-numeric text-info text-sm italic">(sisa){{ formatCurrency(getTotalSewa(data)-getPaidAmount(data)) }}</span>
+                <div v-if="getTotalSewa(data) - getPaidAmount(data) > 0">
+                  <span class="font-mono-numeric text-info text-sm italic">(sisa){{
+                    formatCurrency(getTotalSewa(data) - getPaidAmount(data)) }}</span>
                 </div>
                 <div v-else>
-                 <BookingStatusBadge status="lunas"/>
+                  <BookingStatusBadge status="lunas" />
                 </div>
               </div>
             </template>
           </Column>
           <Column header="Tujuan" style="min-width: 11rem">
             <template #body="{ data }">
+              <span class="table-text-clamp font-bold">{{ data.kota || '-' }}</span>
               <span class="table-text-clamp font-medium">{{ data.tujuan || '-' }}</span>
             </template>
           </Column>
-          <Column header="Kota" style="min-width: 9rem">
-            <template #body="{ data }">
-              <span class="table-text-clamp font-medium">{{ data.kota || '-' }}</span>
-            </template>
-          </Column>
+
           <Column header="Alamat & Catatan" style="min-width: 17rem">
             <template #body="{ data }">
               <div v-if="hasPickupNotes(data)" class="table-note-stack">
@@ -859,121 +884,115 @@ const getBookingCardClass = (booking) => {
               <span v-else class="text-secondary">-</span>
             </template>
           </Column>
-        
+
           <Column header="Driver" style="min-width: 10rem">
             <template #body="{ data }">
               <div class="driver-cell" :class="{ 'driver-cell-empty': !getDriverInfo(data).hasDriver }">
                 <span class="driver-name">{{ getDriverInfo(data).name }}</span>
-                <span class="status-badge" :class="getDriverInfo(data).hasDriver ? 'info' : 'success'">{{ getDriverInfo(data).hasDriver ? 'Dengan driver' : 'Tanpa driver' }}</span>
+                <span class="status-badge" :class="getDriverInfo(data).hasDriver ? 'info' : 'success'">{{
+                  getDriverInfo(data).hasDriver ? 'Dengan driver' : 'Tanpa driver' }}</span>
               </div>
             </template>
           </Column>
-         
+
         </DataTable>
       </div>
 
       <!-- Mobile Card List -->
       <div v-else class="mobile-card-list">
-         <div v-if="!loading && bookings.length === 0" class="p-8 text-center text-secondary">
-            Tidak ada booking ditemukan.
-         </div>
-         <template v-else-if="!loading">
-         <div
-            v-for="booking in bookings"
-            :key="booking.id"
-            class="booking-card surface-card"
-            :class="getBookingCardClass(booking)"
-            @click="goToDetail(booking.id)"
-          >
+        <div v-if="!loading && bookings.length === 0" class="p-8 text-center text-secondary">
+          Tidak ada booking ditemukan.
+        </div>
+        <template v-else-if="!loading">
+          <div v-for="booking in bookings" :key="booking.id" class="booking-card surface-card" :class="getBookingCardClass(booking)" @click="goToDetail(booking.id)">
             <div class="booking-card-topline">
-               <BookingStatusBadge :status="booking.status" />
-               <span class="booking-card-code">{{ booking.kode_booking }}</span>
+              <BookingStatusBadge :status="booking.status" />
+              <span class="booking-card-code">{{ booking.kode_booking }}</span>
             </div>
 
             <div class="booking-card-title-row">
-               <span class="booking-card-icon"><i class="pi pi-car"></i></span>
-               <div class="booking-card-title-block">
-                  <span class="booking-card-title">{{ getVehicleInfo(booking).title }}</span>
-                  <span class="booking-card-subtitle">{{ getVehicleInfo(booking).subtitle || 'Nopol belum ada' }}</span>
-               </div>
+              <span class="booking-card-icon"><i class="pi pi-car"></i></span>
+              <div class="booking-card-title-block">
+                <span class="booking-card-title">{{ getVehicleInfo(booking).title }}</span>
+                <span class="booking-card-subtitle">{{ getVehicleInfo(booking).subtitle || 'Nopol belum ada' }}</span>
+              </div>
             </div>
 
             <div class="booking-card-body">
-               <div class="booking-info-grid">
-                  <div class="booking-info-item">
-                     <i class="pi pi-user"></i>
-                     <div>
-                        <span class="booking-info-label">Pelanggan</span>
-                        <span class="booking-info-value">{{ booking.customer?.nama || '-' }}</span>
-                     </div>
+              <div class="booking-info-grid">
+                <div class="booking-info-item">
+                  <i class="pi pi-user"></i>
+                  <div>
+                    <span class="booking-info-label">Pelanggan</span>
+                    <span class="booking-info-value">{{ booking.customer?.nama || '-' }}</span>
                   </div>
-                  <div class="booking-info-item">
-                     <i class="pi pi-car"></i>
-                     <div>
-                        <span class="booking-info-label">Unit</span>
-                        <span class="booking-info-value">{{ getVehicleInfo(booking).title }}</span>
-                     </div>
+                </div>
+                <div class="booking-info-item">
+                  <i class="pi pi-car"></i>
+                  <div>
+                    <span class="booking-info-label">Unit</span>
+                    <span class="booking-info-value">{{ getVehicleInfo(booking).title }}</span>
                   </div>
-                  <div class="booking-info-item">
-                     <i class="pi pi-id-card"></i>
-                     <div>
-                        <span class="booking-info-label">Supir</span>
-                        <span class="booking-info-value" :class="{ 'booking-info-value-success': !getDriverInfo(booking).hasDriver }">{{ getDriverInfo(booking).name }}</span>
-                     </div>
+                </div>
+                <div class="booking-info-item">
+                  <i class="pi pi-id-card"></i>
+                  <div>
+                    <span class="booking-info-label">Supir</span>
+                    <span class="booking-info-value" :class="{ 'booking-info-value-success': !getDriverInfo(booking).hasDriver }">{{
+                      getDriverInfo(booking).name }}</span>
                   </div>
-                  <div class="booking-info-item">
-                     <i class="pi pi-hashtag"></i>
-                     <div>
-                        <span class="booking-info-label">Nomor Polisi</span>
-                        <span class="booking-info-value font-mono-numeric">{{ getVehicleInfo(booking).subtitle || '-' }}</span>
-                     </div>
+                </div>
+                <div class="booking-info-item">
+                  <i class="pi pi-hashtag"></i>
+                  <div>
+                    <span class="booking-info-label">Nomor Polisi</span>
+                    <span class="booking-info-value font-mono-numeric">{{ getVehicleInfo(booking).subtitle || '-'
+                    }}</span>
                   </div>
-               </div>
+                </div>
+              </div>
 
-               <div class="booking-period-row">
-                  <div class="booking-info-item booking-period-item">
-                     <i class="pi pi-calendar"></i>
-                     <div>
-                        <span class="booking-info-label">Periode</span>
-                        <span class="booking-info-value booking-period-text">{{ formatDateTime(getPeriodStartDate(booking)) }} -> {{ formatDateTime(getPeriodEndDate(booking)) }}</span>
-                     </div>
+              <div class="booking-period-row">
+                <div class="booking-info-item booking-period-item">
+                  <i class="pi pi-calendar"></i>
+                  <div>
+                    <span class="booking-info-label">Periode</span>
+                    <span class="booking-info-value booking-period-text">{{ formatDateTime(getPeriodStartDate(booking))
+                    }} -> {{ formatDateTime(getPeriodEndDate(booking)) }}</span>
                   </div>
-                  <span class="booking-duration-pill"><i class="pi pi-clock"></i>{{ getRentalDuration(booking) }}</span>
-               </div>
+                </div>
+                <span class="booking-duration-pill"><i class="pi pi-clock"></i>{{ getRentalDuration(booking) }}</span>
+              </div>
 
-               <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
-                  <i class="pi pi-clock"></i> {{ getLateInfo(booking).note }}
-               </div>
+              <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
+                <i class="pi pi-clock"></i> {{ getLateInfo(booking).note }}
+              </div>
             </div>
             <div class="booking-card-footer">
-               <div class="amount-group">
-                  <span class="booking-info-label">Total Sewa</span>
-                  <span class="booking-total-amount font-mono-numeric">{{ formatCurrency(getTotalSewa(booking)) }}</span>
-               </div>
-               <div class="amount-group items-end">
-                  <span class="booking-info-label">Sudah Bayar</span>
-                  <span class="booking-paid-amount font-mono-numeric">{{ formatCurrency(getPaidAmount(booking)) }}</span>
-                  <span v-if="getTotalSewa(booking) - getPaidAmount(booking) > 0" class="booking-remaining-amount font-mono-numeric">Sisa {{ formatCurrency(getTotalSewa(booking) - getPaidAmount(booking)) }}</span>
-                  <BookingStatusBadge v-else status="lunas" />
-               </div>
+              <div class="amount-group">
+                <span class="booking-info-label">Total Sewa</span>
+                <span class="booking-total-amount font-mono-numeric">{{ formatCurrency(getTotalSewa(booking)) }}</span>
+              </div>
+              <div class="amount-group items-end">
+                <span class="booking-info-label">Sudah Bayar</span>
+                <span class="booking-paid-amount font-mono-numeric">{{ formatCurrency(getPaidAmount(booking)) }}</span>
+                <span v-if="getTotalSewa(booking) - getPaidAmount(booking) > 0" class="booking-remaining-amount font-mono-numeric">Sisa {{ formatCurrency(getTotalSewa(booking) -
+                  getPaidAmount(booking)) }}</span>
+                <BookingStatusBadge v-else status="lunas" />
+              </div>
             </div>
-            <button
-              v-if="booking.status === 'selesai'"
-              class="btn-pill btn-secondary btn-pill-compact mt-3"
-              :disabled="!canRequestReturnToRentalUnit(booking)"
-              @click.stop="openReturnRequestDialog(booking)"
-            >
+            <button v-if="booking.status === 'selesai'" class="btn-pill btn-secondary btn-pill-compact mt-3" :disabled="!canRequestReturnToRentalUnit(booking)" @click.stop="openReturnRequestDialog(booking)">
               <i class="pi pi-undo"></i>
               {{ booking.rental_unit_return_request?.status === 'pending' ? 'Menunggu Supervisor' : 'Request Rental Unit' }}
             </button>
-         </div>
-         </template>
-         <!-- Mobile Paginator -->
-         <div v-if="!loading" class="mobile-paginator mt-4">
-            <Button icon="pi pi-chevron-left" :disabled="pagination.current_page === 1" @click="onPage({page: pagination.current_page - 2})" text />
-            <span class="text-sm">Hal {{ pagination.current_page }} dari {{ pagination.last_page }}</span>
-            <Button icon="pi pi-chevron-right" :disabled="pagination.current_page === pagination.last_page" @click="onPage({page: pagination.current_page})" text />
-         </div>
+          </div>
+        </template>
+        <!-- Mobile Paginator -->
+        <div v-if="!loading" class="mobile-paginator mt-4">
+          <Button icon="pi pi-chevron-left" :disabled="pagination.current_page === 1" @click="onPage({ page: pagination.current_page - 2 })" text />
+          <span class="text-sm">Hal {{ pagination.current_page }} dari {{ pagination.last_page }}</span>
+          <Button icon="pi pi-chevron-right" :disabled="pagination.current_page === pagination.last_page" @click="onPage({ page: pagination.current_page })" text />
+        </div>
       </div>
     </div>
 
@@ -991,28 +1010,11 @@ const getBookingCardClass = (booking) => {
         <div class="calendar-filters-group">
           <span class="calendar-search">
             <i class="pi pi-search"></i>
-            <InputText
-              v-model="calendarVehicleSearch"
-              placeholder="Cari nopol / tipe"
-              class="w-full"
-            />
+            <InputText v-model="calendarVehicleSearch" placeholder="Cari nopol / tipe" class="w-full" />
           </span>
-          <Dropdown
-            v-model="calendarOwnerFilter"
-            :options="calendarOwnerOptions"
-            optionLabel="nama"
-            optionValue="id"
-            placeholder="Semua Pemilik"
-            showClear
-            filter
-            class="calendar-filter-dropdown"
-          />
+          <Dropdown v-model="calendarOwnerFilter" :options="calendarOwnerOptions" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" showClear filter class="calendar-filter-dropdown" />
           <!-- Refresh button -->
-          <button
-            class="btn-pill btn-secondary btn-pill-compact"
-            :disabled="calendarLoading"
-            @click="loadData"
-          >
+          <button class="btn-pill btn-secondary btn-pill-compact" :disabled="calendarLoading" @click="loadData">
             <i class="pi pi-refresh" :class="{ 'pi-spin': calendarLoading }"></i>
             Refresh
           </button>
@@ -1026,25 +1028,20 @@ const getBookingCardClass = (booking) => {
         <p class="text-secondary">Tidak ada unit dengan transaksi pada periode ini.</p>
       </div>
 
-      <BookingCalendar
-        v-else-if="!calendarLoading"
-        :bookings="calendarBookings"
-        :units="visibleCalendarUnits"
-        :startDate="calendarStart"
-        @calendar-context="openCalendarContextMenu"
-      />
+      <BookingCalendar v-else-if="!calendarLoading" :bookings="calendarBookings" :units="visibleCalendarUnits" :startDate="calendarStart" @calendar-context="openCalendarContextMenu" />
 
       <div v-if="!calendarLoading && hasMoreCalendarUnits" class="calendar-load-more">
         <button class="btn-pill btn-secondary btn-pill-compact" @click="loadMoreCalendarUnits">
           <i class="pi pi-angle-down"></i>
           Muat {{ Math.min(50, calendarUnits.length - visibleCalendarUnits.length) }} unit lagi
         </button>
-        <span class="text-tertiary text-xs">{{ visibleCalendarUnits.length }} dari {{ calendarUnits.length }} unit</span>
+        <span class="text-tertiary text-xs">{{ visibleCalendarUnits.length }} dari {{ calendarUnits.length }}
+          unit</span>
       </div>
     </div>
 
     <!-- Status Dialog -->
-    <Dialog v-model:visible="showStatusDialog" header="Perbarui Status Booking" :style="{ width: '450px' }" modal :position="isMobile ? 'bottom' : 'center'" :class="{'mobile-bottom-sheet': isMobile}">
+    <Dialog v-model:visible="showStatusDialog" header="Perbarui Status Booking" :style="{ width: '450px' }" modal :position="isMobile ? 'bottom' : 'center'" :class="{ 'mobile-bottom-sheet': isMobile }">
       <div class="flex flex-col gap-4">
         <div v-if="selectedBooking" class="status-summary-card">
           <div class="flex justify-between">
@@ -1059,14 +1056,7 @@ const getBookingCardClass = (booking) => {
 
         <div class="flex flex-col gap-1.5">
           <label class="font-semibold text-xs text-secondary">Pilih Status Baru</label>
-          <Dropdown 
-            v-model="newStatus" 
-            :options="getAllowedNextStatuses(selectedBooking?.status)" 
-            optionLabel="label" 
-            optionValue="value" 
-            placeholder="Pilih status..." 
-            class="w-full"
-          />
+          <Dropdown v-model="newStatus" :options="getAllowedNextStatuses(selectedBooking?.status)" optionLabel="label" optionValue="value" placeholder="Pilih status..." class="w-full" />
         </div>
 
         <div class="flex flex-col gap-1.5">
@@ -1077,13 +1067,13 @@ const getBookingCardClass = (booking) => {
 
       <template #footer>
         <div class="flex gap-2 w-full">
-           <Button label="Batal" icon="pi pi-times" text class="flex-1" @click="showStatusDialog = false" />
-           <Button label="Simpan" icon="pi pi-check" class="flex-1" @click="saveStatus" :loading="statusLoading" :disabled="!newStatus" />
+          <Button label="Batal" icon="pi pi-times" text class="flex-1" @click="showStatusDialog = false" />
+          <Button label="Simpan" icon="pi pi-check" class="flex-1" @click="saveStatus" :loading="statusLoading" :disabled="!newStatus" />
         </div>
       </template>
     </Dialog>
 
-    <Dialog v-model:visible="showReturnRequestDialog" header="Request Kembali ke Rental Unit" :style="{ width: '450px' }" modal :position="isMobile ? 'bottom' : 'center'" :class="{'mobile-bottom-sheet': isMobile}">
+    <Dialog v-model:visible="showReturnRequestDialog" header="Request Kembali ke Rental Unit" :style="{ width: '450px' }" modal :position="isMobile ? 'bottom' : 'center'" :class="{ 'mobile-bottom-sheet': isMobile }">
       <div class="flex flex-col gap-4">
         <div v-if="selectedBooking" class="status-summary-card">
           <div class="flex justify-between">
@@ -1104,8 +1094,8 @@ const getBookingCardClass = (booking) => {
 
       <template #footer>
         <div class="flex gap-2 w-full">
-           <Button label="Batal" icon="pi pi-times" text class="flex-1" @click="showReturnRequestDialog = false" />
-           <Button label="Kirim Request" icon="pi pi-send" class="flex-1" @click="submitReturnRequest" :loading="loading" :disabled="returnRequestReason.trim().length < 5" />
+          <Button label="Batal" icon="pi pi-times" text class="flex-1" @click="showReturnRequestDialog = false" />
+          <Button label="Kirim Request" icon="pi pi-send" class="flex-1" @click="submitReturnRequest" :loading="loading" :disabled="returnRequestReason.trim().length < 5" />
         </div>
       </template>
     </Dialog>
@@ -1265,7 +1255,7 @@ const getBookingCardClass = (booking) => {
 }
 
 .booking-card-title-block,
-.booking-info-item > div {
+.booking-info-item>div {
   min-width: 0;
 }
 
@@ -1309,7 +1299,7 @@ const getBookingCardClass = (booking) => {
   gap: 7px;
 }
 
-.booking-info-item > i {
+.booking-info-item>i {
   flex: 0 0 auto;
   margin-top: 1px;
   color: var(--text-tertiary);
@@ -1447,137 +1437,137 @@ const getBookingCardClass = (booking) => {
 
 @media (max-width: 768px) {
   .page-container {
-     padding: var(--space-lg);
+    padding: var(--space-lg);
   }
 
   .page-header {
-     margin-bottom: var(--space-xl);
+    margin-bottom: var(--space-xl);
   }
 
   .page-header .header-left p {
-     display: none;
+    display: none;
   }
 
   .page-header .text-h1 {
-     font-size: 20px;
-     line-height: 1.2;
+    font-size: 20px;
+    line-height: 1.2;
   }
 
   .tab-toggle-container {
-     margin-bottom: var(--space-xl);
+    margin-bottom: var(--space-xl);
   }
 
   .pill-toggle {
-     width: fit-content;
-     max-width: 100%;
-     padding: 4px;
+    width: fit-content;
+    max-width: 100%;
+    padding: 4px;
   }
 
   .toggle-item {
-     min-height: 32px;
-     padding: 7px 16px;
-     font-size: 12px;
+    min-height: 32px;
+    padding: 7px 16px;
+    font-size: 12px;
   }
 
   .filter-bar {
-     align-items: flex-start;
-     flex-direction: column;
-     flex-wrap: nowrap;
-     gap: 8px;
-     padding: 10px;
-     margin-bottom: var(--space-md);
-     border-radius: var(--radius-default);
-     height: auto !important;
-     max-height: min(52dvh, 360px) !important;
-     overflow-y: auto;
-     overscroll-behavior: contain;
+    align-items: flex-start;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 10px;
+    margin-bottom: var(--space-md);
+    border-radius: var(--radius-default);
+    height: auto !important;
+    max-height: min(52dvh, 360px) !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .filter-groups {
-     width: 100%;
-     flex-direction: column;
-     flex-wrap: nowrap;
-     gap: 8px;
+    width: 100%;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 8px;
   }
 
   .filter-group {
-     width: 100%;
-     max-width: none;
-     flex: 0 0 auto;
-     gap: 4px;
+    width: 100%;
+    max-width: none;
+    flex: 0 0 auto;
+    gap: 4px;
   }
 
   .filter-group-wide,
   .filter-group-status {
-     min-width: 0;
-     width: 100%;
-     flex: 0 0 auto;
+    min-width: 0;
+    width: 100%;
+    flex: 0 0 auto;
   }
 
   .filter-group label {
-     margin-left: 4px;
-     font-size: 10px;
+    margin-left: 4px;
+    font-size: 10px;
   }
 
   .booking-filter-bar .filter-search :deep(.p-inputtext) {
-     min-height: 36px !important;
+    min-height: 36px !important;
   }
 
   .booking-filter-bar .advanced-filter-groups {
-     gap: 8px;
-     padding-top: 0;
+    gap: 8px;
+    padding-top: 0;
   }
 
   .booking-filter-bar .advanced-filter-groups .filter-group {
-     gap: 4px;
+    gap: 4px;
   }
 
   .booking-filter-bar .advanced-filter-groups :deep(.p-dropdown),
   .booking-filter-bar .advanced-filter-groups :deep(.p-datepicker),
   .booking-filter-bar .advanced-filter-groups :deep(.p-inputtext) {
-     min-height: 36px !important;
+    min-height: 36px !important;
   }
 
   .booking-filter-bar .status-filter-buttons {
-     width: 100%;
-     flex-wrap: nowrap;
-     gap: 6px;
-     overflow-x: auto;
-     padding: 0 2px 2px;
-     scrollbar-width: none;
-     -webkit-overflow-scrolling: touch;
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 0 2px 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
 
   .booking-filter-bar .status-filter-buttons::-webkit-scrollbar {
-     display: none;
+    display: none;
   }
 
   .booking-filter-bar .status-filter-button {
-     flex: 0 0 auto;
-     min-height: 30px;
-     padding: 6px 10px;
-     white-space: nowrap;
+    flex: 0 0 auto;
+    min-height: 30px;
+    padding: 6px 10px;
+    white-space: nowrap;
   }
 
   .filter-group :deep(.p-dropdown),
   .filter-group :deep(.p-datepicker),
   .filter-group :deep(.p-inputtext) {
-     width: 100%;
+    width: 100%;
   }
 
   .filter-actions {
-     width: 100%;
-     justify-content: flex-end;
-     flex-wrap: wrap;
-   }
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
 
   .filter-bar .btn-pill {
-     min-height: 30px;
-     padding: 6px 12px;
+    min-height: 30px;
+    padding: 6px 12px;
   }
 
   .booking-filter-actions .btn-pill-compact {
-     min-width: 36px;
+    min-width: 36px;
   }
 
   .create-booking-button {
@@ -1668,19 +1658,19 @@ const getBookingCardClass = (booking) => {
   }
 
   .card-body .info-row {
-     display: flex;
-     flex-wrap: wrap;
-     gap: var(--space-sm);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
   }
 
   .card-body .info-col {
-     min-width: 48%;
+    min-width: 48%;
   }
 
   .booking-card {
-     display: flex;
-     flex-direction: column;
-     gap: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .booking-card-topline :deep(.status-badge) {
@@ -1789,5 +1779,17 @@ const getBookingCardClass = (booking) => {
   justify-content: center;
   gap: var(--space-sm);
   margin-top: var(--space-md);
+}
+
+/* Ensure HD desktop filter row alignment */
+@media (min-width: 1024px) {
+  .booking-filter-bar .filter-group-status {
+    flex: 0 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  .booking-filter-bar .filter-group-city {
+    flex: 0 0 160px !important;
+  }
 }
 </style>

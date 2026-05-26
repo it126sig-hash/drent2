@@ -25,6 +25,11 @@ export const createOperationalExpense = (fundId, data) =>
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 
+export const createBookingExpense = (bookingId, data) =>
+  api.post(`${prefix}/bookings/${bookingId}/expenses`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+
 export const approveOperationalExpense = (expenseId) =>
   api.post(`${prefix}/operational-expenses/${expenseId}/approve`)
 
@@ -42,6 +47,24 @@ export const getDriverOperationalFunds = (params) =>
 export const getDriverSchedules = (params) =>
   api.get(`${prefix}/driver/schedules`, { params })
 
+export const markOperationalComplete = (bookingId) =>
+  api.post(`${prefix}/bookings/${bookingId}/operational-complete`)
+
+export const revertOperationalActive = (bookingId, data) =>
+  api.post(`${prefix}/bookings/${bookingId}/operational-revert`, data)
+
+export const voidOperationalFund = (fundId, data) =>
+  api.post(`${prefix}/operational-funds/${fundId}/void`, data)
+
+export const voidOperationalExpense = (expenseId, data) =>
+  api.post(`${prefix}/operational-expenses/${expenseId}/void`, data)
+
+export const approveVoidOperationalExpense = (expenseId) =>
+  api.post(`${prefix}/operational-expenses/${expenseId}/approve-void`)
+
+export const rejectVoidOperationalExpense = (expenseId, data) =>
+  api.post(`${prefix}/operational-expenses/${expenseId}/reject-void`, data)
+
 export default {
   getOperationalBookings,
   getOperationalFund,
@@ -50,9 +73,16 @@ export default {
   closeOperationalFund,
   acceptOperationalFund,
   createOperationalExpense,
+  createBookingExpense,
   approveOperationalExpense,
   rejectOperationalExpense,
   getOperationalExpensePhoto,
   getDriverOperationalFunds,
   getDriverSchedules,
+  markOperationalComplete,
+  revertOperationalActive,
+  voidOperationalFund,
+  voidOperationalExpense,
+  approveVoidOperationalExpense,
+  rejectVoidOperationalExpense,
 }

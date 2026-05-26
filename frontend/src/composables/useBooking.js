@@ -452,6 +452,36 @@ export function useBooking() {
     }
   }
 
+  const approveRevertOperational = async (id) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.approveRevertOperational(id)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request aktifkan kembali operasional disetujui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menyetujui request aktifkan kembali operasional'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const rejectRevertOperational = async (id, data = {}) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.rejectRevertOperational(id, data)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request aktifkan kembali operasional ditolak', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menolak request aktifkan kembali operasional'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     bookings,
     loading,
@@ -471,6 +501,8 @@ export function useBooking() {
     requestReturnToRentalUnit,
     approveReturnToRentalUnit,
     rejectReturnToRentalUnit,
+    approveRevertOperational,
+    rejectRevertOperational,
     addPayment,
     requestVoidPayment,
     approveVoidPayment,

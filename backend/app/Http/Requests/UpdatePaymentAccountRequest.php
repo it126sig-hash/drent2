@@ -23,6 +23,7 @@ class UpdatePaymentAccountRequest extends FormRequest
             'nama_bank'       => 'sometimes|required|string|max:100',
             'nomor_rekening'  => 'sometimes|required|string|max:50',
             'atas_nama'       => 'sometimes|required|string|max:150',
+            'current_balance' => 'sometimes|integer',
             'is_active'       => 'sometimes|boolean',
             'branch_id'       => 'sometimes|required|exists:branches,id',
         ];

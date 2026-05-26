@@ -15,6 +15,7 @@ class DriverOperationalExpense extends Model
         'booking_detail_id',
         'driver_id',
         'cost_type_id',
+        'payment_account_id',
         'type',
         'amount',
         'description',
@@ -25,16 +26,32 @@ class DriverOperationalExpense extends Model
         'reviewed_by',
         'reviewed_at',
         'rejection_reason',
+        'void_reason',
+        'void_requested_by',
+        'void_requested_at',
+        'void_approved_by',
+        'void_approved_at',
+        'void_rejected_by',
+        'void_rejected_at',
+        'void_rejection_note',
     ];
 
     protected $casts = [
         'amount' => 'integer',
         'reviewed_at' => 'datetime',
+        'void_requested_at' => 'datetime',
+        'void_approved_at' => 'datetime',
+        'void_rejected_at' => 'datetime',
     ];
 
     public function fund()
     {
         return $this->belongsTo(DriverOperationalFund::class, 'driver_operational_fund_id');
+    }
+
+    public function paymentAccount()
+    {
+        return $this->belongsTo(PaymentAccount::class);
     }
 
     public function booking()
@@ -65,6 +82,21 @@ class DriverOperationalExpense extends Model
     public function reviewer()
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function voidRequester()
+    {
+        return $this->belongsTo(User::class, 'void_requested_by');
+    }
+
+    public function voidApprover()
+    {
+        return $this->belongsTo(User::class, 'void_approved_by');
+    }
+
+    public function voidRejecter()
+    {
+        return $this->belongsTo(User::class, 'void_rejected_by');
     }
 
     public function getPhotoUrlAttribute(): ?string

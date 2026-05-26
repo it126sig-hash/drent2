@@ -42,26 +42,31 @@ const router = createRouter({
           name: "rental-owners",
           component: () =>
             import("../views/rental-owners/RentalOwnerListView.vue"),
+          meta: { keepAlive: true },
         },
         {
           path: "/units",
           name: "units",
           component: () => import("../views/units/UnitListView.vue"),
+          meta: { keepAlive: true },
         },
         {
           path: "/drivers",
           name: "drivers",
           component: () => import("../views/drivers/DriverListView.vue"),
+          meta: { keepAlive: true },
         },
         {
           path: "/customers",
           name: "customers",
           component: () => import("../views/customers/CustomerListView.vue"),
+          meta: { keepAlive: true },
         },
         {
           path: "/mdm/members",
           name: "members",
           component: () => import("../views/members/MemberListView.vue"),
+          meta: { keepAlive: true },
         },
         {
           path: "/mdm/members/create",
@@ -82,44 +87,45 @@ const router = createRouter({
           path: "/users",
           name: "users",
           component: () => import("../views/users/UserListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch"] },
+          meta: { permission: "master.user" },
         },
         {
           path: "/master/payment-accounts",
           name: "payment-accounts",
           component: () => import("../views/master/PaymentAccountListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch"] },
+          meta: { permission: "master.payment_account" },
         },
 
         {
           path: "/master/cities",
           name: "cities",
           component: () => import("../views/master/CityListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch", "cs"] },
+          meta: { permission: "master.city" },
         },
         {
           path: "/master/cost-types",
           name: "cost-types",
           component: () => import("../views/master/CostTypeListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch"] },
+          meta: { permission: "master.cost_type" },
         },
         {
           path: "/master/pricing-packages",
           name: "pricing-packages",
           component: () => import("../views/master/PricingPackageListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch"] },
+          meta: { permission: "master.pricing_package" },
         },
         {
           path: "/bookings",
           name: "BookingList",
           component: () => import("../views/bookings/BookingListView.vue"),
+          meta: { keepAlive: true },
         },
         {
           path: "/supervisor/requests",
           name: "SupervisorRequests",
           component: () =>
             import("../views/supervisor/SupervisorRequestListView.vue"),
-          meta: { roles: ["superadmin", "supervisor"] },
+          meta: { permission: "booking.supervisor_request", keepAlive: true },
         },
         {
           path: "/bookings/create",
@@ -141,42 +147,61 @@ const router = createRouter({
           name: "PhysicalCheckList",
           component: () =>
             import("../views/physical-checks/PhysicalCheckListView.vue"),
+          meta: { keepAlive: true },
         },
         {
           path: "/finance/receivables",
           name: "ReceivableList",
           component: () => import("../views/finance/ReceivableListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch", "finance"] },
+          meta: { permission: "finance.receivable", keepAlive: true },
         },
         {
           path: "/finance/operational-costs",
           name: "OperationalCostList",
           component: () => import("../views/finance/OperationalCostListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch", "finance"] },
+          meta: { permission: "finance.operational_cost", keepAlive: true },
         },
         {
           path: "/finance/rent-to-rent",
           name: "RentToRentList",
           component: () => import("../views/finance/RentToRentListView.vue"),
-          meta: { roles: ["superadmin", "admin_branch", "finance"] },
+          meta: { permission: "finance.rent_to_rent", keepAlive: true },
+        },
+        {
+          path: "/finance/transactions",
+          name: "TransactionList",
+          component: () => import("../views/finance/TransactionListView.vue"),
+          meta: { permission: "finance.transaction", keepAlive: true },
+        },
+        {
+          path: "/finance/account-mutations",
+          name: "PaymentAccountMutations",
+          component: () => import("../views/finance/PaymentAccountMutationView.vue"),
+          meta: { permission: "finance.account_mutation", keepAlive: true },
         },
         {
           path: "/reports/transactions",
           name: "TransactionReport",
           component: () => import("../views/reports/TransactionReportView.vue"),
-          meta: { roles: ["superadmin", "admin_branch", "finance"] },
+          meta: { permission: "finance.monthly_report" },
         },
         {
           path: "/driver/operational",
           name: "DriverOperational",
           component: () => import("../views/driver/DriverOperationalView.vue"),
-          meta: { roles: ["driver_tetap"] },
+          meta: { permission: "driver.operational" },
         },
         {
           path: "/physical-checks/:bookingId/:type",
           name: "PhysicalCheckForm",
           component: () =>
             import("../views/physical-checks/PhysicalCheckFormView.vue"),
+        },
+        {
+          path: "/settings/role-permissions",
+          name: "RolePermissions",
+          component: () => import("../views/settings/RolePermissionView.vue"),
+          meta: { permission: "master.role_management" },
         },
       ],
     },
@@ -190,7 +215,7 @@ router.beforeEach((to, from) => {
     return { name: "login" };
   } else if (to.meta.guest && auth.isAuthenticated) {
     return { name: "dashboard" };
-  } else if (to.meta.roles && !to.meta.roles.includes(auth.user?.role)) {
+  } else if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
     return { name: "dashboard" };
   } else {
     return true;

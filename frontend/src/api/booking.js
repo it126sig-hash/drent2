@@ -102,6 +102,14 @@ export const updateBookingCost = (costId, data) => {
   return api.patch(`/v1/booking-costs/${costId}`, data);
 };
 
+export const approveRevertOperational = (id) => {
+  return api.post(`${prefix}/${id}/operational-revert/approve`);
+};
+
+export const rejectRevertOperational = (id, data = {}) => {
+  return api.post(`${prefix}/${id}/operational-revert/reject`, data);
+};
+
 export default {
   createBooking,
   getBookings,
@@ -115,6 +123,8 @@ export default {
   requestRentalUnitReturn,
   approveRentalUnitReturn,
   rejectRentalUnitReturn,
+  approveRevertOperational,
+  rejectRevertOperational,
   getBookingPayments,
   addBookingPayment,
   requestVoidBookingPayment,

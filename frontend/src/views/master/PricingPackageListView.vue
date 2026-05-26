@@ -147,19 +147,42 @@ const formatCurrency = (v) =>
 </script>
 
 <template>
-  <div class="view-container">
+  <div class="page-container pricing-package-page table-page-active">
     <ConfirmDialog />
 
-    <div class="header-section">
-      <div class="header-content">
-        <h1>Paket Harga All In</h1>
-        <p>Kelola paket harga all-in untuk ditawarkan ke konsumen</p>
+    <div class="page-header">
+      <div class="header-left">
+        <div>
+          <h1>Paket Harga All In</h1>
+          <p class="text-secondary text-xs">Kelola paket harga all-in untuk ditawarkan ke konsumen.</p>
+        </div>
       </div>
-      <Button v-if="canManage" label="Tambah Paket" icon="pi pi-plus" class="p-button-tosca" @click="openNew" />
+      <div class="header-actions">
+        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+          <i class="pi pi-plus"></i>
+          <span>Tambah Paket</span>
+        </button>
+      </div>
     </div>
 
-    <div class="content-card">
-      <DataTable :value="packages" :loading="loading" responsiveLayout="scroll" class="p-datatable-sm" stripedRows>
+    <div class="filter-bar surface-card">
+      <div class="filter-groups">
+        <div class="summary-tile-compact">
+          <i class="pi pi-tag text-info"></i>
+          <span>Total Paket</span>
+          <strong class="font-mono-numeric">{{ pagination.total || packages.length }}</strong>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-pill btn-secondary btn-pill-compact" type="button" :disabled="loading" @click="fetchAll">
+          <i class="pi pi-refresh"></i>
+          <span>Refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="table-shell list-tab-fill">
+      <DataTable :value="packages" :loading="loading" scrollable scrollHeight="flex" responsiveLayout="scroll" class="drent-datatable" stripedRows>
         <template #empty>
           <div class="empty-state">
             <i class="pi pi-tag"></i>
@@ -172,35 +195,41 @@ const formatCurrency = (v) =>
         <Column header="Item Biaya" style="min-width:260px">
           <template #body="{ data }">
             <div class="item-summary">
-              <span class="text-slate-600 text-sm">{{ formatItemsSummary(data.items) }}</span>
-              <small v-if="data.items?.length">{{ data.items.length }} item | {{ formatCurrency(packageItemsTotal(data.items)) }}</small>
+              <span class="text-secondary text-sm">{{ formatItemsSummary(data.items) }}</span>
+              <small v-if="data.items?.length" class="font-mono-numeric text-xs text-tertiary">
+                {{ data.items.length }} item | {{ formatCurrency(packageItemsTotal(data.items)) }}
+              </small>
             </div>
           </template>
         </Column>
 
         <Column field="harga" header="Harga All In" style="min-width:160px">
           <template #body="{ data }">
-            <span class="price-text">{{ formatCurrency(data.harga) }}</span>
+            <span class="amount-text font-mono-numeric">{{ formatCurrency(data.harga) }}</span>
           </template>
         </Column>
 
         <Column field="keterangan" header="Keterangan" style="min-width:250px">
           <template #body="{ data }">
-            <span class="text-slate-600 text-sm">{{ data.keterangan || '-' }}</span>
+            <span class="text-secondary text-sm text-clamp">{{ data.keterangan || '-' }}</span>
           </template>
         </Column>
 
         <Column field="is_active" header="Status" style="min-width:100px">
           <template #body="{ data }">
-            <Tag :severity="data.is_active ? 'success' : 'secondary'" :value="data.is_active ? 'Aktif' : 'Nonaktif'" />
+            <span class="drent-badge" :class="data.is_active ? 'success' : 'neutral'">{{ data.is_active ? 'Aktif' : 'Nonaktif' }}</span>
           </template>
         </Column>
 
         <Column header="Aksi" style="min-width:110px;text-align:center">
           <template #body="{ data }">
-            <div class="action-buttons">
-              <Button icon="pi pi-pencil" class="p-button-rounded p-button-text p-button-secondary" @click="openEdit(data)" v-tooltip.top="'Edit'" />
-              <Button v-if="canManage" icon="pi pi-trash" class="p-button-rounded p-button-text p-button-danger" @click="confirmDelete(data)" v-tooltip.top="'Hapus'" />
+            <div class="action-pill-group">
+              <button class="action-btn" type="button" title="Edit" @click="openEdit(data)">
+                <i class="pi pi-pencil"></i>
+              </button>
+              <button v-if="canManage" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+                <i class="pi pi-trash"></i>
+              </button>
             </div>
           </template>
         </Column>
@@ -214,7 +243,7 @@ const formatCurrency = (v) =>
     </div>
 
     <!-- Dialog Form -->
-    <Dialog v-model:visible="showDialog" :header="form.id ? 'Edit Paket Harga' : 'Tambah Paket Harga'" modal :style="{ width: '760px' }" :breakpoints="{ '820px': '95vw' }">
+    <Dialog v-model:visible="showDialog" :header="form.id ? 'Edit Paket Harga' : 'Tambah Paket Harga'" modal class="custom-dialog" :style="{ width: '760px' }" :breakpoints="{ '820px': '95vw' }">
       <div class="form-grid">
         <div class="field">
           <label>Nama Paket <span class="req">*</span></label>
@@ -229,15 +258,17 @@ const formatCurrency = (v) =>
         <div class="field">
           <div class="section-label">
             <label>Detail Biaya Operasional</label>
-            <span>{{ form.items.length }} item</span>
+            <span class="drent-badge neutral">{{ form.items.length }} item</span>
           </div>
           <div v-if="!form.items.length" class="empty-items">
             Belum ada item biaya.
           </div>
-          <div v-for="(item, idx) in form.items" :key="idx" class="item-row">
+          <div v-for="(item, idx) in form.items" :key="idx" class="item-row app-card">
             <div class="item-header">
               <span>Item {{ idx + 1 }}</span>
-              <Button icon="pi pi-times" text rounded severity="danger" size="small" class="item-remove" @click="removeItem(idx)" />
+              <button class="action-btn action-btn-danger" type="button" @click="removeItem(idx)">
+                <i class="pi pi-times"></i>
+              </button>
             </div>
             <div class="item-grid">
               <div class="field">
@@ -266,9 +297,12 @@ const formatCurrency = (v) =>
               </div>
             </div>
           </div>
-          <div class="items-footer">
-            <Button label="Tambah Item" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold" @click="addItem" />
-            <span>Total biaya item: {{ formatCurrency(packageItemsTotal(form.items)) }}</span>
+          <div class="items-footer mt-2">
+            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="addItem">
+              <i class="pi pi-plus"></i>
+              <span>Tambah Item</span>
+            </button>
+            <span class="font-mono-numeric">Total Biaya Item: {{ formatCurrency(packageItemsTotal(form.items)) }}</span>
           </div>
         </div>
         <div class="field">
@@ -277,48 +311,106 @@ const formatCurrency = (v) =>
         </div>
         <div class="field">
           <label>Status</label>
-          <ToggleButton v-model="form.is_active" onLabel="Aktif" offLabel="Nonaktif" onIcon="pi pi-check" offIcon="pi pi-times" />
+          <ToggleButton v-model="form.is_active" onLabel="Aktif" offLabel="Nonaktif" onIcon="pi pi-check" offIcon="pi pi-times" class="w-full" />
         </div>
       </div>
       <template #footer>
-        <Button label="Batal" icon="pi pi-times" class="p-button-text" @click="showDialog = false" :disabled="saving" />
-        <Button label="Simpan" icon="pi pi-check" class="p-button-tosca" @click="save" :loading="saving" />
+        <button class="app-dialog-button app-dialog-button-secondary" type="button" :disabled="saving" @click="showDialog = false">
+          <i class="pi pi-times"></i>
+          Batal
+        </button>
+        <button class="app-dialog-button app-dialog-button-primary" type="button" :disabled="saving" @click="save">
+          <i :class="saving ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
+          Simpan
+        </button>
       </template>
     </Dialog>
   </div>
 </template>
 
 <style scoped>
-.view-container { display: flex; flex-direction: column; gap: 25px; }
-.header-section { display: flex; justify-content: space-between; align-items: center; }
-.header-content h1 { font-size: 1.8rem; font-weight: 700; color: #1e293b; margin: 0; }
-.header-content p { color: #64748b; margin-top: 5px; }
-.content-card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,.05); overflow: hidden; }
-.paginator-wrapper { padding: 10px; border-top: 1px solid #f1f5f9; }
-.action-buttons { display: flex; justify-content: center; gap: 5px; }
+.pricing-package-page { background: var(--page-bg); }
+
+.summary-tile-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-tile);
+}
+
+.summary-tile-compact span {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.summary-tile-compact strong {
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 0; color: #94a3b8; }
 .empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: .5; }
-.price-text { font-weight: 700; color: #0891b2; }
+.amount-text { font-family: var(--font-mono); font-weight: 700; color: var(--info-cyan); font-variant-numeric: tabular-nums; }
 .item-summary { display: flex; flex-direction: column; gap: 2px; }
-.item-summary small { color: #94a3b8; font-size: .75rem; }
 .form-grid { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field label { font-weight: 600; font-size: .875rem; color: #374151; }
+.field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
 .section-label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.section-label span { color: #64748b; font-size: .8rem; font-weight: 600; }
-.empty-items { border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; color: #94a3b8; padding: 18px; text-align: center; font-size: .875rem; }
-.item-row { border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; padding: 12px; }
-.item-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: #64748b; font-size: .8rem; font-weight: 700; }
-.item-remove { width: 28px; height: 28px; padding: 0; }
-.item-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(120px, .8fr) minmax(140px, 1fr); gap: 12px; }
+.empty-items { border: 1px dashed var(--surface-border); border-radius: var(--radius-default); background: var(--card-bg); color: var(--text-tertiary); padding: 18px; text-align: center; font-size: 12px; }
+.item-row { border: 1px solid var(--surface-border); border-radius: var(--radius-default); background: var(--surface-default); padding: 12px; margin-bottom: var(--space-md); }
+.item-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.item-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(120px, 0.8fr) minmax(140px, 1fr); gap: 12px; }
 .item-label-field, .item-note-field { grid-column: span 3; }
-.items-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: #64748b; font-size: .85rem; font-weight: 600; }
-.req { color: #ef4444; }
+.items-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.req { color: var(--negative); }
 .w-full { width: 100%; }
-.p-button-tosca { background-color: #06b6d4 !important; border-color: #06b6d4 !important; }
-.p-button-tosca:hover { background-color: #0891b2 !important; border-color: #0891b2 !important; }
-:deep(.p-datatable .p-datatable-thead > tr > th) { background-color: #f8fafc; color: #475569; font-weight: 700; text-transform: uppercase; font-size: .75rem; letter-spacing: .5px; padding: 15px; }
-:deep(.p-datatable .p-datatable-tbody > tr > td) { padding: 15px; }
+.action-btn-danger { color: var(--negative) !important; }
+.text-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+/* Premium Drent Badge styling matching design.md rules */
+.drent-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.drent-badge.success {
+  background-color: #E6F6EC;
+  color: #147239;
+}
+
+.drent-badge.neutral {
+  background-color: #E4E8F3;
+  color: #4A5060;
+}
+
+.text-info {
+  color: var(--info-cyan);
+}
+.mt-2 { margin-top: 8px; }
+
 @media (max-width: 640px) {
   .item-grid { grid-template-columns: 1fr; }
   .item-label-field, .item-note-field { grid-column: auto; }

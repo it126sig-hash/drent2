@@ -91,6 +91,37 @@ class SupervisorRequestController extends Controller
                 ] : null,
             ]);
 
+        $revertRequests = Booking::query()
+            ->with(['customer', 'operationalRevertRequester', 'operationalRevertApprover'])
+            ->whereIn('operational_revert_status', ['pending', 'approved'])
+            ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
+            ->latest('updated_at')
+            ->get()
+            ->map(fn($booking) => [
+                'id' => 'operational_revert_'.$booking->id,
+                'type' => 'operational_revert',
+                'type_label' => 'Revert Operasional Aktif',
+                'status' => $booking->operational_revert_status === 'approved' ? 'approved' : 'pending',
+                'status_label' => $booking->operational_revert_status === 'approved' ? 'Disetujui' : 'Menunggu ACC',
+                'requested_at' => $booking->operational_revert_requested_at?->toISOString(),
+                'approved_at' => $booking->operational_revert_approved_at?->toISOString(),
+                'reason' => $booking->operational_revert_reason,
+                'booking' => [
+                    'id' => $booking->id,
+                    'kode_booking' => $booking->kode_booking,
+                    'customer_name' => $booking->customer?->nama,
+                ],
+                'payment' => null,
+                'requester' => $booking->operationalRevertRequester ? [
+                    'id' => $booking->operationalRevertRequester->id,
+                    'name' => $booking->operationalRevertRequester->name,
+                ] : null,
+                'approver' => $booking->operationalRevertApprover ? [
+                    'id' => $booking->operationalRevertApprover->id,
+                    'name' => $booking->operationalRevertApprover->name,
+                ] : null,
+            ]);
+
         $rentToRentVoidBills = RentToRentBill::query()
             ->with(['rentalOwner', 'items.debt.booking.customer', 'voidRequester', 'voidApprover'])
             ->whereIn('status', ['void_requested', 'void'])
@@ -195,10 +226,106 @@ class SupervisorRequestController extends Controller
                 ];
             });
 
+        $voidExpenses = \App\Models\DriverOperationalExpense::query()
+            ->with(['booking.customer', 'driver', 'submitter', 'reviewer', 'voidRequester', 'voidApprover'])
+            ->where(function ($query) {
+                $query->where('status', 'void_requested')
+                    ->orWhere(function ($q) {
+                        $q->where('status', 'rejected')
+                          ->where('rejection_reason', 'like', '[VOID]%');
+                    });
+            })
+            ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
+            ->latest('updated_at')
+            ->get()
+            ->map(fn($expense) => [
+                'id' => 'void_expense_'.$expense->id,
+                'type' => 'void_operational_expense',
+                'type_label' => 'Void Bon / Realisasi',
+                'status' => $expense->status === 'void_requested' ? 'pending' : 'approved',
+                'status_label' => $expense->status === 'void_requested' ? 'Menunggu ACC' : 'Disetujui',
+                'requested_at' => $expense->void_requested_at?->toISOString(),
+                'approved_at' => $expense->void_approved_at?->toISOString(),
+                'reason' => $expense->void_reason,
+                'booking' => [
+                    'id' => $expense->booking?->id,
+                    'kode_booking' => $expense->booking?->kode_booking,
+                    'customer_name' => $expense->booking?->customer?->nama,
+                ],
+                'payment' => [
+                    'id' => $expense->id,
+                    'amount' => (int) $expense->amount,
+                    'payment_type' => $expense->type === 'return' ? 'Kembalikan Sisa Dana' : 'Pembayaran Bon',
+                    'paid_at' => $expense->created_at?->toISOString(),
+                    'payment_account' => null,
+                ],
+                'requester' => $expense->voidRequester ? [
+                    'id' => $expense->voidRequester->id,
+                    'name' => $expense->voidRequester->name,
+                ] : null,
+                'approver' => $expense->voidApprover ? [
+                    'id' => $expense->voidApprover->id,
+                    'name' => $expense->voidApprover->name,
+                ] : null,
+            ]);
+
+        $rentToRentAmountChanges = \App\Models\RentToRentAmountChangeRequest::query()
+            ->with(['debt.booking.customer', 'debt.rentalOwner', 'debt.bookingDetail.unit', 'requestedBy', 'approvedBy', 'rejectedBy'])
+            ->whereIn('status', ['pending', 'approved', 'rejected'])
+            ->when($user->role !== 'superadmin', fn($q) => $q->whereHas(
+                'debt',
+                fn($debt) => $debt->where('branch_id', $user->branch_id)
+            ))
+            ->latest('updated_at')
+            ->get()
+            ->map(fn($req) => [
+                'id' => 'r2r_amount_change_'.$req->id,
+                'type' => 'rent_to_rent_amount_change',
+                'type_label' => 'Ubah Nominal Rent to Rent',
+                'status' => $req->status,
+                'status_label' => match($req->status) {
+                    'approved' => 'Disetujui',
+                    'rejected' => 'Ditolak',
+                    default => 'Menunggu ACC',
+                },
+                'requested_at' => $req->requested_at?->toISOString(),
+                'approved_at' => $req->reviewed_at?->toISOString(),
+                'reason' => $req->reason,
+                'booking' => [
+                    'id' => $req->debt?->booking?->id,
+                    'kode_booking' => $req->debt?->booking?->kode_booking,
+                    'customer_name' => $req->debt?->rentalOwner?->nama,
+                ],
+                'payment' => null,
+                'amount_change' => [
+                    'id' => $req->id,
+                ],
+                'debt' => [
+                    'id' => $req->debt?->id,
+                    'kode_booking' => $req->debt?->booking?->kode_booking,
+                    'current_amount' => $req->debt ? app(\App\Services\RentToRentService::class)->currentAmount($req->debt) : 0,
+                    'requested_amount' => $req->requested_amount_override,
+                ],
+                'requester' => $req->requestedBy ? [
+                    'id' => $req->requestedBy->id,
+                    'name' => $req->requestedBy->name,
+                ] : null,
+                'approver' => $req->status === 'approved' && $req->approvedBy ? [
+                    'id' => $req->approvedBy->id,
+                    'name' => $req->approvedBy->name,
+                ] : ($req->status === 'rejected' && $req->rejectedBy ? [
+                    'id' => $req->rejectedBy->id,
+                    'name' => $req->rejectedBy->name,
+                ] : null),
+            ]);
+
         $requests = $voidPayments
             ->concat($returnRequests)
+            ->concat($revertRequests)
             ->concat($rentToRentVoidBills)
             ->concat($rentToRentVoidPayments)
+            ->concat($voidExpenses)
+            ->concat($rentToRentAmountChanges)
             ->sortByDesc(fn($item) => $item['approved_at'] ?? $item['requested_at'] ?? '')
             ->values();
 

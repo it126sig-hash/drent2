@@ -28,11 +28,12 @@ class ReceivableService
                 'payments',
                 'invoices' => fn($query) => $query
                     ->where('status', '!=', 'void')
-                    ->with(['payments.paymentAccount', 'payments.bookingPayments'])
+                    ->with(['payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy'])
                     ->latest('generated_at'),
             ])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($filters['kota'] ?? null, fn($query, $kota) => $query->where('kota', $kota))
             ->when($filters['search'] ?? null, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('kode_booking', 'like', "%{$search}%")
@@ -119,9 +120,10 @@ class ReceivableService
         $perPage = (int) ($filters['per_page'] ?? 15);
 
         return Invoice::query()
-            ->with(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments'])
+            ->with(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy'])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($filters['kota'] ?? null, fn($query, $kota) => $query->whereHas('bookings', fn($q) => $q->where('kota', $kota)))
             ->when($filters['status'] ?? null, fn($query, $status) => $query->where('status', $status))
             ->when($filters['search'] ?? null, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
@@ -425,9 +427,10 @@ class ReceivableService
         $invoice->update([
             'public_token' => $invoice->public_token ?: $this->newPublicToken(),
             'sent_at' => now(),
+            'sent_by' => auth()->id(),
         ]);
 
-        return $invoice->fresh(['bookings.customer', 'payments.paymentAccount']);
+        return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'creator', 'sentBy']);
     }
 
     public function storePayment(Invoice $invoice, array $data): Invoice

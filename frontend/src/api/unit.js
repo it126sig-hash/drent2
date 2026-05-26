@@ -34,6 +34,14 @@ export const deleteUnitPhoto = (unitId, photoId) => {
   return axios.delete(`${prefix}/${unitId}/photos/${photoId}`)
 }
 
+export const batchUpdateUnitCity = (data) => {
+  return axios.post(`${prefix}/batch-update-city`, data)
+}
+
+export const checkUnitSchedule = (id, params) => {
+  return axios.get(`${prefix}/${id}/schedule-check`, { params })
+}
+
 export default {
   getUnits,
   getUnit,
@@ -41,5 +49,7 @@ export default {
   updateUnit,
   deleteUnit,
   uploadUnitPhoto,
-  deleteUnitPhoto
+  deleteUnitPhoto,
+  batchUpdateUnitCity,
+  checkUnitSchedule
 }

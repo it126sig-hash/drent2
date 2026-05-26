@@ -5,11 +5,13 @@ import { format } from 'date-fns'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
+import Dropdown from 'primevue/dropdown'
 import ProgressBar from 'primevue/progressbar'
 import Textarea from 'primevue/textarea'
 import rentToRentApi from '../../api/rentToRent'
 import { getSupervisorRequests } from '../../api/supervisorRequest'
 import { useBooking } from '../../composables/useBooking'
+import { useOperationalFund } from '../../composables/useOperationalFund'
 
 const router = useRouter()
 const {
@@ -18,7 +20,14 @@ const {
   rejectVoidPayment,
   approveReturnToRentalUnit,
   rejectReturnToRentalUnit,
+  approveRevertOperational,
+  rejectRevertOperational,
 } = useBooking()
+
+const {
+  approveVoidExpense,
+  rejectVoidExpense,
+} = useOperationalFund()
 
 const requests = ref([])
 const loading = ref(false)
@@ -34,7 +43,10 @@ const requestTabs = [
   { label: 'Void Pembayaran', value: 'void_payment' },
   { label: 'Void Rent to Rent', value: 'rent_to_rent_void_bill' },
   { label: 'Void Bayar R2R', value: 'rent_to_rent_void_payment' },
+  { label: 'Void Bon / Expense', value: 'void_operational_expense' },
   { label: 'Kembali Rental Unit', value: 'return_rental_unit' },
+  { label: 'Revert Operasional', value: 'operational_revert' },
+  { label: 'Ubah Nominal R2R', value: 'rent_to_rent_amount_change' },
 ]
 
 const statusTabs = [
@@ -82,7 +94,7 @@ const formatDateTime = (value) => {
 
 const statusTone = (status) => status === 'approved' ? 'success' : 'warning'
 
-const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment'].includes(type) ? 'warning' : 'info'
+const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment', 'void_operational_expense', 'rent_to_rent_amount_change'].includes(type) ? 'warning' : 'info'
 
 const bookingCode = (request) => request.bill?.bill_number || request.booking?.kode_booking || '-'
 
@@ -99,6 +111,18 @@ const requestDetailLabel = (request) => {
 
   if (request.type === 'rent_to_rent_void_payment') {
     return `${formatCurrency(request.payment?.amount)} - pembayaran rent-to-rent`
+  }
+
+  if (request.type === 'void_operational_expense') {
+    return `Void Bon: ${formatCurrency(request.payment?.amount)} - ${request.payment?.payment_type || '-'}`
+  }
+
+  if (request.type === 'operational_revert') {
+    return 'Aktifkan kembali operasional (kembali ke operasional aktif)'
+  }
+
+  if (request.type === 'rent_to_rent_amount_change') {
+    return `Ubah Nominal: ${formatCurrency(request.debt?.current_amount)} -> ${request.debt?.requested_amount !== null ? formatCurrency(request.debt?.requested_amount) : 'Reset Live (Default)'}`
   }
 
   return 'Ubah status booking dari selesai ke rental_unit'
@@ -119,6 +143,14 @@ const requestSecondaryDetail = (request) => {
     return `${account?.nama_bank || '-'} ${account?.nomor_rekening || ''}`.trim()
   }
 
+  if (request.type === 'void_operational_expense') {
+    return request.booking?.kode_booking || '-'
+  }
+
+  if (request.type === 'rent_to_rent_amount_change') {
+    return `Hutang R2R: ${request.debt?.kode_booking || '-'}`
+  }
+
   return request.booking?.kode_booking || '-'
 }
 
@@ -129,6 +161,12 @@ const approveRequest = async (request) => {
     await rentToRentApi.approveVoidRentToRentBill(request.bill.id)
   } else if (request.type === 'rent_to_rent_void_payment') {
     await rentToRentApi.approveVoidRentToRentPayment(request.payment.id)
+  } else if (request.type === 'void_operational_expense') {
+    await approveVoidExpense(request.payment.id)
+  } else if (request.type === 'operational_revert') {
+    await approveRevertOperational(request.booking.id)
+  } else if (request.type === 'rent_to_rent_amount_change') {
+    await rentToRentApi.approveRentToRentAmountChange(request.amount_change.id)
   } else {
     await approveReturnToRentalUnit(request.booking.id)
   }
@@ -157,6 +195,14 @@ const submitReject = async () => {
     await rentToRentApi.rejectVoidRentToRentPayment(selectedRequest.value.payment.id, {
       void_rejection_note: rejectionNote.value,
     })
+  } else if (selectedRequest.value.type === 'void_operational_expense') {
+    await rejectVoidExpense(selectedRequest.value.payment.id, rejectionNote.value)
+  } else if (selectedRequest.value.type === 'operational_revert') {
+    await rejectRevertOperational(selectedRequest.value.booking.id, {
+      rejection_note: rejectionNote.value,
+    })
+  } else if (selectedRequest.value.type === 'rent_to_rent_amount_change') {
+    await rentToRentApi.rejectRentToRentAmountChange(selectedRequest.value.amount_change.id, rejectionNote.value)
   } else {
     await rejectReturnToRentalUnit(selectedRequest.value.booking.id, {
       rejection_note: rejectionNote.value,
@@ -183,22 +229,21 @@ onUnmounted(() => {
     <div class="page-header">
       <div class="header-left">
         <h1 class="text-h1">Request Supervisor</h1>
-        <p class="text-secondary text-xs">Approval untuk void pembayaran dan pengembalian booking selesai ke Rental Unit.</p>
+        <p class="text-secondary text-xs">Approval untuk void pembayaran dan pengembalian booking selesai ke Rental
+          Unit.</p>
       </div>
       <div class="header-actions">
+
+
         <div class="tab-toggle-container">
-          <div class="pill-toggle">
-            <button
-              v-for="tab in requestTabs"
-              :key="tab.value"
-              class="toggle-item"
-              :class="{ active: activeTab === tab.value }"
-              @click="activeTab = tab.value"
-            >
+          <div class="pill-toggle status-toggle">
+            <button v-for="tab in statusTabs" :key="tab.value" class="toggle-item"
+              :class="{ active: activeStatus === tab.value }" @click="activeStatus = tab.value">
               {{ tab.label }}
             </button>
           </div>
         </div>
+
         <button class="btn-pill btn-secondary" :disabled="loading" @click="fetchRequests">
           <i class="pi pi-refresh"></i>
           Refresh
@@ -206,24 +251,13 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="filter-bar surface-card">
-      <div class="filter-groups">
-        <div class="filter-group">
-          <span class="filter-label">Status Approval</span>
-          <div class="pill-toggle status-toggle">
-            <button
-              v-for="tab in statusTabs"
-              :key="tab.value"
-              class="toggle-item"
-              :class="{ active: activeStatus === tab.value }"
-              @click="activeStatus = tab.value"
-            >
-              {{ tab.label }}
-            </button>
-          </div>
-        </div>
+    <div class="filter-bar surface-card flex flex-col md:flex-row md:items-center justify-between gap-4 p-3 border border-[var(--surface-border)] rounded-[10px] shadow-[var(--shadow-tile)]">
+      <div class="w-full md:w-auto">
+        <Dropdown v-model="activeTab" :options="requestTabs" optionLabel="label" optionValue="value"
+          placeholder="Tipe Request" class="w-full md:w-56" />
       </div>
-      <div class="filter-actions summary-actions">
+
+      <div class="filter-actions summary-actions flex items-center gap-2 flex-wrap w-full md:w-auto justify-between md:justify-end">
         <span class="summary-chip warning">{{ pendingCount }} menunggu</span>
         <span class="summary-chip success">{{ approvedCount }} sudah ACC</span>
         <span class="summary-chip neutral">{{ resultSummary }}</span>
@@ -233,23 +267,17 @@ onUnmounted(() => {
     <ProgressBar v-if="loading" mode="indeterminate" style="height: 4px" class="mb-4" />
 
     <div v-if="!isMobile" class="table-shell supervisor-table-shell">
-      <DataTable
-        :value="filteredRequests"
-        dataKey="id"
-        :loading="loading"
-        scrollable
-        scrollHeight="flex"
-        responsiveLayout="scroll"
-        class="drent-datatable"
-        emptyMessage="Tidak ada request."
-      >
+      <DataTable :value="filteredRequests" dataKey="id" :loading="loading" scrollable scrollHeight="flex"
+        responsiveLayout="scroll" class="drent-datatable" emptyMessage="Tidak ada request.">
         <Column header="Aksi" frozen style="min-width: 13rem">
           <template #body="{ data }">
             <div v-if="data.status === 'pending'" class="action-pill-group">
-              <button class="action-btn action-btn-primary" :disabled="actionLoading" title="Setujui request" @click="approveRequest(data)">
+              <button class="action-btn action-btn-primary" :disabled="actionLoading" title="Setujui request"
+                @click="approveRequest(data)">
                 <i class="pi pi-check"></i>
               </button>
-              <button class="action-btn" :disabled="actionLoading" title="Tolak request" @click="openRejectDialog(data)">
+              <button class="action-btn" :disabled="actionLoading" title="Tolak request"
+                @click="openRejectDialog(data)">
                 <i class="pi pi-times"></i>
               </button>
             </div>
@@ -271,7 +299,8 @@ onUnmounted(() => {
         </Column>
         <Column header="Booking" style="min-width: 13rem">
           <template #body="{ data }">
-            <button v-if="data.booking?.id" class="link-button" @click="router.push(`/bookings/${data.booking.id}`)">{{ data.booking.kode_booking }}</button>
+            <button v-if="data.booking?.id" class="link-button" @click="router.push(`/bookings/${data.booking.id}`)">{{
+              data.booking.kode_booking }}</button>
             <strong v-else>{{ bookingCode(data) }}</strong>
             <div class="text-xs text-secondary mt-1">{{ customerName(data) }}</div>
           </template>
@@ -307,7 +336,8 @@ onUnmounted(() => {
         <article v-for="request in filteredRequests" :key="request.id" class="request-card">
           <div class="card-header">
             <div class="card-title-stack">
-              <button v-if="request.booking?.id" class="booking-code" @click="router.push(`/bookings/${request.booking.id}`)">
+              <button v-if="request.booking?.id" class="booking-code"
+                @click="router.push(`/bookings/${request.booking.id}`)">
                 {{ request.booking.kode_booking }}
               </button>
               <strong v-else class="booking-code static-code">{{ bookingCode(request) }}</strong>
@@ -355,7 +385,8 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <Dialog v-model:visible="showRejectDialog" header="Tolak Request" modal class="custom-dialog" :style="{ width: '450px' }">
+    <Dialog v-model:visible="showRejectDialog" header="Tolak Request" modal class="custom-dialog"
+      :style="{ width: '450px' }">
       <div class="dialog-stack">
         <div class="app-muted-panel">
           <span class="text-xs text-tertiary">Request</span>

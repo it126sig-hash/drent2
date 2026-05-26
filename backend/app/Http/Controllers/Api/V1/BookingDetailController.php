@@ -69,6 +69,7 @@ class BookingDetailController extends Controller
                 'label' => $costData['label'],
                 'amount' => $costData['amount'],
                 'keterangan' => $costData['keterangan'] ?? null,
+                'is_additional' => (bool) ($costData['is_additional'] ?? false),
             ]);
         }
 

@@ -45,6 +45,16 @@ class Booking extends Model
         'rental_unit_return_rejection_note',
         'due_date',
         'cached_sisa_tagihan',
+        'is_operational_completed',
+        'operational_revert_status',
+        'operational_revert_reason',
+        'operational_revert_requested_by',
+        'operational_revert_requested_at',
+        'operational_revert_approved_by',
+        'operational_revert_approved_at',
+        'operational_revert_rejected_by',
+        'operational_revert_rejected_at',
+        'operational_revert_rejection_note',
     ];
 
     protected $casts = [
@@ -58,6 +68,10 @@ class Booking extends Model
         'rental_unit_return_approved_at' => 'datetime',
         'rental_unit_return_rejected_at' => 'datetime',
         'due_date' => 'datetime',
+        'is_operational_completed' => 'boolean',
+        'operational_revert_requested_at' => 'datetime',
+        'operational_revert_approved_at' => 'datetime',
+        'operational_revert_rejected_at' => 'datetime',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
@@ -101,6 +115,21 @@ class Booking extends Model
     public function rentalUnitReturnApprover()
     {
         return $this->belongsTo(User::class, 'rental_unit_return_approved_by');
+    }
+
+    public function operationalRevertRequester()
+    {
+        return $this->belongsTo(User::class, 'operational_revert_requested_by');
+    }
+
+    public function operationalRevertApprover()
+    {
+        return $this->belongsTo(User::class, 'operational_revert_approved_by');
+    }
+
+    public function operationalRevertRejecter()
+    {
+        return $this->belongsTo(User::class, 'operational_revert_rejected_by');
     }
 
     public function rentalUnitReturnRejecter()

@@ -29,6 +29,8 @@ class RentToRentDebtResource extends JsonResource
             'raw_status' => $this->status,
             'amount_override' => $this->amount_override,
             'default_amount' => $service->currentAmount($this->resource),
+            'selling_price' => $service->sellingPrice($this->resource),
+            'pricing_mode' => $detail?->pricing_mode,
             'total_amount' => $totalAmount,
             'paid_amount' => $paidAmount,
             'remaining_amount' => max(0, $totalAmount - $paidAmount),
@@ -57,6 +59,15 @@ class RentToRentDebtResource extends JsonResource
                 'modal_1_hari' => $unit?->modal_1_hari,
                 'modal_1_minggu' => $unit?->modal_1_minggu,
                 'modal_1_bulan' => $unit?->modal_1_bulan,
+                'modal_all_in' => $unit?->modal_all_in,
+                'modal_all_in_1_minggu' => $unit?->modal_all_in_1_minggu,
+                'modal_all_in_1_bulan' => $unit?->modal_all_in_1_bulan,
+                'harga_1_hari' => $unit?->harga_1_hari,
+                'harga_1_minggu' => $unit?->harga_1_minggu,
+                'harga_1_bulan' => $unit?->harga_1_bulan,
+                'harga_all_in' => $unit?->harga_all_in,
+                'harga_all_in_1_minggu' => $unit?->harga_all_in_1_minggu,
+                'harga_all_in_1_bulan' => $unit?->harga_all_in_1_bulan,
                 'tgl_sewa' => $detail?->tgl_sewa,
                 'tgl_kembali' => $detail?->tgl_kembali,
                 'detail_type' => $detail?->detail_type,
@@ -89,6 +100,18 @@ class RentToRentDebtResource extends JsonResource
                     ])
                     ->values()
                 : [],
+            'pending_amount_request' => $this->pendingAmountRequest ? [
+                'id' => $this->pendingAmountRequest->id,
+                'requested_amount_override' => $this->pendingAmountRequest->requested_amount_override,
+                'reason' => $this->pendingAmountRequest->reason,
+                'status' => $this->pendingAmountRequest->status,
+                'requested_at' => $this->pendingAmountRequest->requested_at?->toISOString(),
+                'requested_by' => $this->pendingAmountRequest->requestedBy ? [
+                    'id' => $this->pendingAmountRequest->requestedBy->id,
+                    'name' => $this->pendingAmountRequest->requestedBy->name,
+                ] : null,
+            ] : null,
+            'can_request_amount_change' => ! $this->pendingAmountRequest && ! $activeItem && $this->status !== 'cancelled' && ! in_array($this->cached_payment_status ?: $this->status, ['paid', 'paid_manual'], true),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

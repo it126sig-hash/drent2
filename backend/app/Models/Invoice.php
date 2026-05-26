@@ -22,6 +22,7 @@ class Invoice extends Model
         'sent_at',
         'voided_at',
         'created_by',
+        'sent_by',
     ];
 
     protected $casts = [
@@ -55,5 +56,10 @@ class Invoice extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function sentBy()
+    {
+        return $this->belongsTo(User::class, 'sent_by');
     }
 }

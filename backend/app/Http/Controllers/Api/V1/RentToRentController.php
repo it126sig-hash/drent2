@@ -7,10 +7,12 @@ use App\Http\Requests\GenerateRentToRentBillRequest;
 use App\Http\Requests\RejectVoidRentToRentBillRequest;
 use App\Http\Requests\RequestVoidRentToRentBillRequest;
 use App\Http\Requests\StoreRentToRentPaymentRequest;
+use App\Http\Requests\StoreRentToRentAmountChangeRequest;
 use App\Http\Requests\UpdateRentToRentDebtAmountRequest;
 use App\Http\Resources\PublicRentToRentBillResource;
 use App\Http\Resources\RentToRentBillResource;
 use App\Http\Resources\RentToRentDebtResource;
+use App\Models\RentToRentAmountChangeRequest;
 use App\Models\RentToRentBill;
 use App\Models\RentToRentDebt;
 use App\Models\RentToRentPayment;
@@ -384,4 +386,114 @@ class RentToRentController extends Controller
 
         abort_if($user->branch_id !== $branchId, 403);
     }
+
+    public function requestAmountChange(StoreRentToRentAmountChangeRequest $request, RentToRentDebt $debt)
+    {
+        $this->authorize('viewAny', RentToRentBill::class);
+        $this->assertDebtScope($debt);
+
+        try {
+            $amountChangeRequest = $this->service->requestAmountChange(
+                $debt,
+                $request->validated('amount_override'),
+                $request->validated('reason'),
+                auth()->id()
+            );
+
+            $amountChangeRequest->load(['debt', 'requestedBy']);
+
+            return response()->json([
+                'message' => 'Permintaan perubahan nominal berhasil diajukan.',
+                'data' => $amountChangeRequest,
+            ], 201);
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['amount_override' => [$exception->getMessage()]],
+            ], 422));
+        }
+    }
+
+    public function approveAmountChange(Request $request, RentToRentAmountChangeRequest $req)
+    {
+        $req->loadMissing('debt');
+        $this->assertRequestSupervisorScope($req);
+
+        try {
+            $approved = $this->service->approveAmountChange($req, auth()->id());
+            return response()->json([
+                'message' => 'Permintaan perubahan nominal disetujui.',
+                'data' => $approved,
+            ]);
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+            ], 422));
+        }
+    }
+
+    public function rejectAmountChange(Request $request, RentToRentAmountChangeRequest $req)
+    {
+        $req->loadMissing('debt');
+        $this->assertRequestSupervisorScope($req);
+
+        $request->validate([
+            'rejection_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $rejected = $this->service->rejectAmountChange($req, $request->input('rejection_note'), auth()->id());
+            return response()->json([
+                'message' => 'Permintaan perubahan nominal ditolak.',
+                'data' => $rejected,
+            ]);
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+            ], 422));
+        }
+    }
+
+    public function cancelAmountChange(Request $request, RentToRentAmountChangeRequest $req)
+    {
+        $req->loadMissing('debt');
+        $this->assertRequestScope($req);
+
+        try {
+            $cancelled = $this->service->cancelAmountChange($req, auth()->id());
+            return response()->json([
+                'message' => 'Permintaan perubahan nominal dibatalkan.',
+                'data' => $cancelled,
+            ]);
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+            ], 422));
+        }
+    }
+
+    private function assertRequestScope(RentToRentAmountChangeRequest $request): void
+    {
+        $user = auth()->user();
+
+        if ($user->role === 'superadmin') {
+            return;
+        }
+
+        abort_if($user->branch_id !== $request->debt->branch_id, 403);
+    }
+
+    private function assertRequestSupervisorScope(RentToRentAmountChangeRequest $request): void
+    {
+        $user = auth()->user();
+
+        abort_unless(in_array($user->role, ['superadmin', 'supervisor'], true), 403);
+
+        if ($user->role === 'superadmin') {
+            return;
+        }
+
+        abort_if($user->branch_id !== $request->debt->branch_id, 403);
+    }
 }
+

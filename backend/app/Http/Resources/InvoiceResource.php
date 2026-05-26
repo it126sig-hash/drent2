@@ -23,6 +23,8 @@ class InvoiceResource extends JsonResource
             'generated_at' => $this->generated_at?->toISOString(),
             'sent_at' => $this->sent_at?->toISOString(),
             'voided_at' => $this->voided_at?->toISOString(),
+            'created_by_name' => $this->creator?->name,
+            'sent_by_name' => $this->sentBy?->name,
             'invoice_reconciliation' => $receivableService->invoiceReconciliation($this->resource),
             'pdf_url' => url("/api/v1/invoices/{$this->id}/pdf"),
             'public_path' => $this->public_token ? "/invoice/{$this->public_token}" : null,

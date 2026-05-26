@@ -29,6 +29,7 @@ class HandleBookingRequest extends FormRequest
             'costs.*.label'         => ['required_with:costs', 'string', 'max:255'],
             'costs.*.amount'        => ['required_with:costs', 'integer', 'min:0'],
             'costs.*.keterangan'    => ['nullable', 'string'],
+            'costs.*.is_additional' => ['nullable', 'boolean'],
             'alamat_penjemputan'    => ['nullable', 'string', 'max:500'],
             'tujuan'                => ['nullable', 'string', 'max:500'],
             'kota'                  => ['nullable', 'string', 'max:100'],

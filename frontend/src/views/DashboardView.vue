@@ -114,20 +114,8 @@ onMounted(fetchData)
       </div>
 
       <div class="header-actions">
-        <DatePicker
-          v-model="filters.date_from"
-          dateFormat="dd M yy"
-          showIcon
-          class="dashboard-date"
-          placeholder="Dari"
-        />
-        <DatePicker
-          v-model="filters.date_to"
-          dateFormat="dd M yy"
-          showIcon
-          class="dashboard-date"
-          placeholder="Sampai"
-        />
+        <DatePicker v-model="filters.date_from" dateFormat="dd M yy" showIcon class="dashboard-date" placeholder="Dari" />
+        <DatePicker v-model="filters.date_to" dateFormat="dd M yy" showIcon class="dashboard-date" placeholder="Sampai" />
         <button class="btn-pill btn-secondary" :disabled="loading" @click="fetchData">
           <i class="pi pi-refresh text-[10px]" :class="{ 'pi-spin': loading }"></i>
           <span>Refresh</span>
@@ -151,7 +139,7 @@ onMounted(fetchData)
       </template>
 
       <template v-else>
-        <div v-for="stat in kpis" :key="stat.key" class="kpi-tile" :class="toneClass(stat.tone)">
+        <div v-for="stat in kpis" :key="stat.key" class="kpi-tile" :class="toneClass(stat.tone)" @click="goTo(stat.route)">
           <div class="kpi-header">
             <div class="kpi-icon">
               <i :class="stat.icon"></i>
@@ -161,6 +149,7 @@ onMounted(fetchData)
           <div class="kpi-body">
             <p>{{ stat.label }}</p>
             <strong>{{ stat.display_value }}</strong>
+            <small v-if="stat.sub_value" class="kpi-sub-value">{{ stat.sub_value }}</small>
           </div>
         </div>
       </template>
@@ -225,9 +214,9 @@ onMounted(fetchData)
           </div>
           <div class="finance-grid">
             <div>
-              <span>Invoice belum lunas</span>
-              <strong>{{ formatCurrency(finance.outstanding_invoice_amount) }}</strong>
-              <small>{{ finance.outstanding_invoice_count || 0 }} invoice</small>
+              <span>Tagihan belum lunas</span>
+              <strong>{{ formatCurrency(finance.outstanding_amount) }}</strong>
+              <small>{{ finance.outstanding_count || 0 }} transaksi</small>
             </div>
             <div>
               <span>Rent to Rent terbuka</span>
@@ -250,14 +239,7 @@ onMounted(fetchData)
     </div>
 
     <section class="alert-grid">
-      <button
-        v-for="alert in alerts"
-        :key="alert.key"
-        type="button"
-        class="alert-tile"
-        :class="toneClass(alert.tone)"
-        @click="goTo(alert.route)"
-      >
+      <button v-for="alert in alerts" :key="alert.key" type="button" class="alert-tile" :class="toneClass(alert.tone)" @click="goTo(alert.route)">
         <span>{{ alert.label }}</span>
         <strong>{{ alert.value }}</strong>
       </button>
@@ -274,14 +256,7 @@ onMounted(fetchData)
       <section class="app-card leaderboard-card">
         <div class="leaderboard-header">
           <div class="leaderboard-tabs">
-            <button
-              v-for="board in leaderboards"
-              :key="board.status"
-              type="button"
-              class="leaderboard-tab"
-              :class="{ active: activeLeaderboard.status === board.status }"
-              @click="activeLeaderboardStatus = board.status"
-            >
+            <button v-for="board in leaderboards" :key="board.status" type="button" class="leaderboard-tab" :class="{ active: activeLeaderboard.status === board.status }" @click="activeLeaderboardStatus = board.status">
               <span>{{ board.label }}</span>
               <b>{{ leaderboardOrderCount(board) }}x</b>
             </button>
@@ -365,12 +340,29 @@ onMounted(fetchData)
 
 .kpi-tile {
   padding: 16px;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.kpi-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(26, 29, 46, 0.08);
+  border-color: var(--primary);
+}
+
+.kpi-sub-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  opacity: 0.85;
 }
 
 .kpi-header,
 .panel-header,
 .booking-title,
-.armada-row > div,
+.armada-row>div,
 .payment-list article,
 .leaderboard-header,
 .leaderboard-row {
@@ -571,7 +563,7 @@ onMounted(fetchData)
   font-size: 13px;
 }
 
-.armada-row > div {
+.armada-row>div {
   justify-content: flex-start;
   gap: 8px;
 }
@@ -596,7 +588,7 @@ onMounted(fetchData)
   padding: 16px;
 }
 
-.finance-grid > div {
+.finance-grid>div {
   display: grid;
   gap: 4px;
   padding: 12px;
@@ -624,7 +616,7 @@ onMounted(fetchData)
   border-top: 1px solid var(--surface-border);
 }
 
-.payment-list article > div {
+.payment-list article>div {
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -653,6 +645,13 @@ onMounted(fetchData)
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.alert-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(26, 29, 46, 0.08);
+  border-color: var(--primary);
 }
 
 .alert-tile span {

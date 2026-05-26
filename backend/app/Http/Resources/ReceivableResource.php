@@ -22,6 +22,13 @@ class ReceivableResource extends JsonResource
             'kode_booking' => $this->kode_booking,
             'status' => $this->status,
             'due_date' => $this->due_date?->toISOString(),
+            'kota' => $this->kota,
+            'rent_period' => [
+                'tujuan' => $this->tujuan,
+                'tgl_sewa' => $detail?->tgl_sewa instanceof \Carbon\Carbon ? $detail->tgl_sewa->toIso8601String() : $detail?->tgl_sewa,
+                'tgl_kembali' => $detail?->tgl_kembali instanceof \Carbon\Carbon ? $detail->tgl_kembali->toIso8601String() : $detail?->tgl_kembali,
+                'paket_sewa' => $detail?->paket_sewa ?: $this->paket_sewa ?: '-',
+            ],
             'customer' => [
                 'id' => $this->customer?->id,
                 'nama' => $this->customer?->nama,
@@ -48,6 +55,8 @@ class ReceivableResource extends JsonResource
                 'due_date' => $invoice?->due_date?->toISOString(),
                 'generated_at' => $invoice?->generated_at?->toISOString(),
                 'sent_at' => $invoice?->sent_at?->toISOString(),
+                'created_by_name' => $invoice?->creator?->name,
+                'sent_by_name' => $invoice?->sentBy?->name,
                 'pdf_url' => $invoice ? url("/api/v1/invoices/{$invoice->id}/pdf") : null,
                 'public_path' => $invoice?->public_token ? "/invoice/{$invoice->public_token}" : null,
                 'public_url' => $invoice?->public_token ? config('app.frontend_url', url('/')) . "/invoice/{$invoice->public_token}" : null,

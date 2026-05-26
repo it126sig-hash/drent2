@@ -30,18 +30,20 @@ class DriverService
         if (isset($filters['search'])) {
             $query->where(function ($q) use ($filters) {
                 $q->where('nama', 'like', '%' . $filters['search'] . '%')
-                  ->orWhere('kontak_1', 'like', '%' . $filters['search'] . '%')
-                  ->orWhere('no_sim', 'like', '%' . $filters['search'] . '%');
+                    ->orWhere('kontak_1', 'like', '%' . $filters['search'] . '%')
+                    ->orWhere('no_sim', 'like', '%' . $filters['search'] . '%');
             });
         }
 
-        return $query->latest()->paginate($filters['per_page'] ?? 15);
+        return $query->orderBy('is_tetap', 'desc') // 'desc' memastikan true/1 berada di atas
+            ->orderBy('nama', 'asc')       // 'asc' agar nama urut dari A ke Z
+            ->paginate($filters['per_page'] ?? 15);
     }
 
     public function create(array $data)
     {
         $data['tenant_id'] = Auth::user()->tenant_id;
-        
+
         // Jika branch_id tidak dikirim, gunakan branch user yang login
         if (!isset($data['branch_id'])) {
             $data['branch_id'] = Auth::user()->branch_id;

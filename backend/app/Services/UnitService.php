@@ -12,18 +12,31 @@ class UnitService
 {
     public function getAll(array $filters = [])
     {
-        $query = Unit::with(['rentalOwner', 'photos'])
-            ->where('tenant_id', Auth::user()->tenant_id);
+        // 1. Tambahkan join ke tabel rental_owners agar bisa melakukan pengurutan kolom relasi
+        //    Gunakan select('units.*') supaya kolom yang di-return tetap milik tabel utama (Unit)
+        $query = Unit::select('units.*')
+            ->with(['rentalOwner', 'photos', 'city'])
+            ->leftJoin('rental_owners', 'units.rental_owner_id', '=', 'rental_owners.id')
+            ->where('units.tenant_id', Auth::user()->tenant_id);
 
         // Branch scope wajib (Global Rule #8)
+        // Catatan: Tambahkan prefix 'units.' pada branch_id untuk menghindari error 'ambiguous column'
         if (isset($filters['branch_id']) && $filters['branch_id'] !== 'all') {
-            $query->where('branch_id', $filters['branch_id']);
+            $query->where('units.branch_id', $filters['branch_id']);
         } else if (Auth::user()->role !== 'superadmin') {
-            $query->where('branch_id', Auth::user()->branch_id);
+            $query->where('units.branch_id', Auth::user()->branch_id);
         }
 
         if (isset($filters['status'])) {
-            $query->where('status', $filters['status']);
+            $query->where('units.status', $filters['status']);
+        }
+
+        if (isset($filters['city_id']) && $filters['city_id'] !== '' && $filters['city_id'] !== null && $filters['city_id'] !== 'all') {
+            $query->where('units.city_id', $filters['city_id']);
+        }
+
+        if (isset($filters['rental_owner_id']) && $filters['rental_owner_id'] !== '' && $filters['rental_owner_id'] !== null && $filters['rental_owner_id'] !== 'all') {
+            $query->where('units.rental_owner_id', $filters['rental_owner_id']);
         }
 
         $searchTokens = $this->searchTokens($filters['search'] ?? null);
@@ -33,13 +46,14 @@ class UnitService
                     $q->where(function ($tokenQuery) use ($token) {
                         $like = '%' . $this->escapeLike($token) . '%';
 
+                        // Tambahkan prefix 'units.' pada kolom tabel utama agar query tidak bingung
                         $tokenQuery
-                            ->where('tipe', 'like', $like)
-                            ->orWhere('merk', 'like', $like)
-                            ->orWhere('no_polisi', 'like', $like)
-                            ->orWhere('status', 'like', $like)
-                            ->orWhere('catatan', 'like', $like)
-                            ->orWhere('tahun', 'like', $like)
+                            ->where('units.tipe', 'like', $like)
+                            ->orWhere('units.merk', 'like', $like)
+                            ->orWhere('units.no_polisi', 'like', $like)
+                            ->orWhere('units.status', 'like', $like)
+                            ->orWhere('units.catatan', 'like', $like)
+                            ->orWhere('units.tahun', 'like', $like)
                             ->orWhereHas('rentalOwner', function ($owner) use ($like) {
                                 $owner
                                     ->where('nama', 'like', $like)
@@ -47,13 +61,21 @@ class UnitService
                                     ->orWhere('kontak_2', 'like', $like)
                                     ->orWhere('kota', 'like', $like)
                                     ->orWhere('alamat', 'like', $like);
+                            })
+                            ->orWhereHas('city', function ($city) use ($like) {
+                                $city
+                                    ->where('nama', 'like', $like)
+                                    ->orWhere('provinsi', 'like', $like);
                             });
                     });
                 }
             });
         }
 
-        return $query->latest()->paginate($filters['per_page'] ?? 15);
+        // 2. Lakukan pengurutan menggunakan kolom dari tabel rental_owners yang sudah di-join
+        return $query->orderBy('rental_owners.is_owner', 'desc')
+            ->orderBy('rental_owners.nama', 'asc')
+            ->paginate($filters['per_page'] ?? 15);
     }
 
     private function searchTokens(?string $search): array
@@ -109,5 +131,53 @@ class UnitService
             Storage::disk('public')->delete($photo->path);
         }
         return $photo->delete();
+    }
+
+    public function checkScheduleConflict(Unit $unit, string $tglSewa, string $tglKembali): array
+    {
+        return \App\Models\BookingDetail::query()
+            ->where('unit_id', $unit->id)
+            ->whereNotNull('tgl_sewa')
+            ->whereNotNull('tgl_kembali')
+            ->where('status', '!=', 'batal')
+            ->whereHas('booking', fn($q) => $q->whereNotIn('status', ['cancelled', 'draft']))
+            ->where(fn($q) => $q
+                ->whereBetween('tgl_sewa', [$tglSewa, $tglKembali])
+                ->orWhereBetween('tgl_kembali', [$tglSewa, $tglKembali])
+                ->orWhere(fn($q2) => $q2
+                    ->where('tgl_sewa', '<=', $tglSewa)
+                    ->where('tgl_kembali', '>=', $tglKembali)
+                )
+            )
+            ->with('booking:id,kode_booking,status')
+            ->get(['id', 'booking_id', 'tgl_sewa', 'tgl_kembali', 'status'])
+            ->map(fn($d) => [
+                'kode_booking' => $d->booking?->kode_booking,
+                'status'       => $d->booking?->status,
+                'tgl_sewa'     => $d->tgl_sewa,
+                'tgl_kembali'  => $d->tgl_kembali,
+            ])
+            ->values()
+            ->all();
+    }
+
+    public function batchUpdateCity(array $data)
+    {
+        $query = Unit::where('tenant_id', Auth::user()->tenant_id);
+
+        if ($data['type'] === 'by_ids') {
+            $query->whereIn('id', $data['ids']);
+        } elseif ($data['type'] === 'by_owner') {
+            $query->where('rental_owner_id', $data['rental_owner_id']);
+        }
+
+        // Branch scope
+        if (Auth::user()->role !== 'superadmin') {
+            $query->where('branch_id', Auth::user()->branch_id);
+        }
+
+        $query->update([
+            'city_id' => $data['city_id']
+        ]);
     }
 }

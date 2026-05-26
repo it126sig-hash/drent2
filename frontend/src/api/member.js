@@ -24,6 +24,15 @@ export default {
     activate(id) {
         return axios.patch(`${prefix}/${id}/activate`);
     },
+    updateStatus(id, status) {
+        return axios.patch(`${prefix}/${id}/status`, { status_member: status });
+    },
+    extend(id, data) {
+        return axios.post(`${prefix}/${id}/extend`, data);
+    },
+    getExtensions(id) {
+        return axios.get(`${prefix}/${id}/extensions`);
+    },
     getDocumentUrl(id, type) {
         // This returns the API endpoint URL for the document
         return `${import.meta.env.VITE_API_URL}/v1/members/${id}/documents/${type}`;

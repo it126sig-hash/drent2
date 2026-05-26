@@ -35,6 +35,7 @@ class ReceivableController extends Controller
             'per_page',
             'invoice_status',
             'search',
+            'kota',
         ]);
 
         $user = auth()->user();
@@ -74,7 +75,7 @@ class ReceivableController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $filters = $request->only(['page', 'per_page', 'status', 'search']);
+        $filters = $request->only(['page', 'per_page', 'status', 'search', 'kota']);
         $user = auth()->user();
         $filters['tenant_id'] = $user->tenant_id;
         if ($user->role !== 'superadmin') {

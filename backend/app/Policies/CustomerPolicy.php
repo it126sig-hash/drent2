@@ -4,61 +4,46 @@ namespace App\Policies;
 
 use App\Models\Customer;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class CustomerPolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
+    private $permission = 'customer.view';
+
     public function viewAny(User $user): bool
     {
-        return true;
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $user, Customer $customer): bool
     {
-        return true;
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'cs']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
     }
 
-    /**
-     * Determine whether the user can update the model.
-     */
     public function update(User $user, Customer $customer): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'cs']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $user, Customer $customer): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
     }
 
-    /**
-     * Determine whether the user can restore the model.
-     */
     public function restore(User $user, Customer $customer): bool
     {
         return false;
     }
 
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
     public function forceDelete(User $user, Customer $customer): bool
     {
         return false;

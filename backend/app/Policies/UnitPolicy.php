@@ -4,59 +4,48 @@ namespace App\Policies;
 
 use App\Models\Unit;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class UnitPolicy
 {
-    /**
-     * Determine whether the user can view any models.
-     */
+    private $permission = 'vehicle.unit';
+
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance', 'cs', 'teknisi']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
     }
 
-    /**
-     * Determine whether the user can view the model.
-     */
     public function view(User $user, Unit $unit): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance', 'cs', 'teknisi']) 
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
             && $user->tenant_id === $unit->tenant_id;
     }
 
-    /**
-     * Determine whether the user can create models.
-     */
     public function create(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
     }
 
-    /**
-     * Determine whether the user can update the model.
-     */
     public function update(User $user, Unit $unit): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch']) 
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
             && $user->tenant_id === $unit->tenant_id;
     }
 
-    /**
-     * Determine whether the user can delete the model.
-     */
     public function delete(User $user, Unit $unit): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch']) 
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
             && $user->tenant_id === $unit->tenant_id;
     }
 
-    /**
-     * Determine whether the user can upload photos to the model.
-     */
     public function uploadPhoto(User $user, Unit $unit): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'teknisi']) 
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
             && $user->tenant_id === $unit->tenant_id;
     }
 }

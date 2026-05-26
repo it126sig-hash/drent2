@@ -23,6 +23,7 @@ class StorePaymentAccountRequest extends FormRequest
             'nama_bank'       => 'required|string|max:100',
             'nomor_rekening'  => 'required|string|max:50',
             'atas_nama'       => 'required|string|max:150',
+            'current_balance' => 'sometimes|integer',
             'is_active'       => 'sometimes|boolean',
             'branch_id'       => 'nullable|exists:branches,id',
         ];

@@ -185,6 +185,26 @@ export function useOperationalFund() {
     }
   }
 
+  const submitBookingExpense = async (bookingId, payload) => {
+    actionLoading.value = true
+    try {
+      const form = new FormData()
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== '') {
+          form.append(key, value)
+        }
+      })
+      const response = await operationalFundApi.createBookingExpense(bookingId, form)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Realisasi operasional berhasil disimpan', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      showError(err, 'Gagal menyimpan realisasi operasional')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   const approveExpense = async (expenseId) => {
     actionLoading.value = true
     try {
@@ -269,6 +289,90 @@ export function useOperationalFund() {
     }
   }
 
+  const markOperationalComplete = async (bookingId) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.markOperationalComplete(bookingId)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Operasional ditandai selesai', life: 3000 })
+      return response.data
+    } catch (err) {
+      showError(err, 'Gagal menandai operasional selesai')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const revertOperational = async (bookingId, reason) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.revertOperationalActive(bookingId, { reason })
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request aktifkan kembali operasional berhasil dikirim', life: 3000 })
+      return response.data
+    } catch (err) {
+      showError(err, 'Gagal mengajukan aktifkan kembali operasional')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const voidFund = async (fundId, voidReason) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.voidOperationalFund(fundId, { void_reason: voidReason })
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Dana operasional berhasil di-void', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      showError(err, 'Gagal mem-void dana operasional')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const voidExpense = async (expenseId, voidReason) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.voidOperationalExpense(expenseId, { void_reason: voidReason })
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Pengajuan void realisasi/bon berhasil dikirim', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      showError(err, 'Gagal mengajukan void realisasi/bon')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const approveVoidExpense = async (expenseId) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.approveVoidOperationalExpense(expenseId)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request void realisasi/bon disetujui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      showError(err, 'Gagal menyetujui void realisasi/bon')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const rejectVoidExpense = async (expenseId, rejectionNote) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.rejectVoidOperationalExpense(expenseId, { rejection_note: rejectionNote })
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request void realisasi/bon ditolak', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      showError(err, 'Gagal menolak void realisasi/bon')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   return {
     bookings,
     funds,
@@ -288,10 +392,17 @@ export function useOperationalFund() {
     fetchHistory,
     acceptFund,
     submitExpense,
+    submitBookingExpense,
     approveExpense,
     rejectExpense,
     openExpensePhoto,
     fetchDriverFunds,
     fetchDriverSchedules,
+    markOperationalComplete,
+    revertOperational,
+    voidFund,
+    voidExpense,
+    approveVoidExpense,
+    rejectVoidExpense,
   }
 }

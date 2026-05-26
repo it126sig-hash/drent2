@@ -116,6 +116,72 @@ export function useRentToRent() {
     }
   }
 
+  const requestAmountChange = async (debtId, payload) => {
+    actionLoading.value = true
+    try {
+      const response = await rentToRentApi.requestRentToRentAmountChange(debtId, payload)
+      selectedDebt.value = response.data.data
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Permintaan perubahan nominal berhasil diajukan', life: 3000 })
+      await fetchDebts(pagination.value.current_page)
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengajukan permintaan perubahan nominal'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const cancelAmountChange = async (requestId) => {
+    actionLoading.value = true
+    try {
+      await rentToRentApi.cancelRentToRentAmountChange(requestId)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Permintaan perubahan nominal dibatalkan', life: 3000 })
+      await fetchDebts(pagination.value.current_page)
+      if (selectedDebt.value && selectedDebt.value.pending_amount_request?.id === requestId) {
+        selectedDebt.value.pending_amount_request = null
+        selectedDebt.value.can_request_amount_change = true
+      }
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal membatalkan permintaan perubahan nominal'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const approveAmountChange = async (requestId) => {
+    actionLoading.value = true
+    try {
+      await rentToRentApi.approveRentToRentAmountChange(requestId)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Permintaan perubahan nominal disetujui', life: 3000 })
+      await fetchDebts(pagination.value.current_page)
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menyetujui permintaan perubahan nominal'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const rejectAmountChange = async (requestId, reason) => {
+    actionLoading.value = true
+    try {
+      await rentToRentApi.rejectRentToRentAmountChange(requestId, { rejection_note: reason })
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Permintaan perubahan nominal ditolak', life: 3000 })
+      await fetchDebts(pagination.value.current_page)
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menolak permintaan perubahan nominal'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   const fetchBills = async (page = 1) => {
     loading.value = true
     error.value = null
@@ -373,6 +439,10 @@ export function useRentToRent() {
     fetchDebts,
     fetchDebt,
     updateDebtAmount,
+    requestAmountChange,
+    cancelAmountChange,
+    approveAmountChange,
+    rejectAmountChange,
     fetchBills,
     fetchBill,
     generateBill,

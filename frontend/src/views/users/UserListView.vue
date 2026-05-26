@@ -14,6 +14,7 @@ import Tag from 'primevue/tag'
 import ConfirmDialog from 'primevue/confirmdialog'
 import UserFormDialog from '../../components/users/UserFormDialog.vue'
 import ResetPasswordDialog from '../../components/users/ResetPasswordDialog.vue'
+import UserPermissionOverrideDialog from './components/UserPermissionOverrideDialog.vue'
 
 const { 
   users, 
@@ -37,6 +38,7 @@ const roleFilter = ref(null)
 const statusFilter = ref(null)
 const showDialog = ref(false)
 const showResetDialog = ref(false)
+const showPermissionDialog = ref(false)
 const selectedUser = ref(null)
 
 const statusOptions = [
@@ -95,6 +97,11 @@ const openReset = (user) => {
   showResetDialog.value = true
 }
 
+const openPermissions = (user) => {
+  selectedUser.value = { ...user }
+  showPermissionDialog.value = true
+}
+
 const saveUser = async (data) => {
   try {
     if (selectedUser.value) {
@@ -144,44 +151,48 @@ const confirmDelete = (user) => {
   })
 }
 
-const getRoleSeverity = (role) => {
+const getRoleBadgeClass = (role) => {
   return {
-    superadmin: 'danger',
+    superadmin: 'error',
     admin_branch: 'warning',
     finance: 'info',
     cs: 'success',
-    teknisi: 'contrast',
-    driver_tetap: 'secondary'
-  }[role] || 'secondary'
-}
-
-const getStatusSeverity = (isActive) => {
-  return isActive ? 'success' : 'danger'
+    teknisi: 'neutral',
+    driver_tetap: 'neutral',
+    supervisor: 'info'
+  }[role] || 'neutral'
 }
 </script>
 
 <template>
-  <div class="view-container">
+  <div class="page-container user-management-page table-page-active">
     <ConfirmDialog />
     
-    <div class="header-section">
-      <div class="header-content">
-        <h1>Manajemen User</h1>
-        <p>Kelola akses pengguna, role, dan branch assignment</p>
+    <div class="page-header">
+      <div class="header-left">
+        <div>
+          <h1>Manajemen User</h1>
+          <p class="text-secondary text-xs">Kelola akses pengguna, role, dan branch assignment.</p>
+        </div>
       </div>
-      <Button 
-        v-if="canManage"
-        label="Tambah User" 
-        icon="pi pi-plus" 
-        class="p-button-tosca" 
-        @click="openNew" 
-      />
+      <div class="header-actions">
+        <button 
+          v-if="canManage"
+          class="btn-pill btn-primary"
+          type="button"
+          @click="openNew"
+        >
+          <i class="pi pi-plus"></i>
+          <span>Tambah User</span>
+        </button>
+      </div>
     </div>
 
-    <div class="content-card">
-      <div class="table-toolbar">
-        <div class="filter-wrapper">
-          <span class="p-input-icon-left search-wrapper">
+    <div class="filter-bar surface-card">
+      <div class="filter-groups">
+        <div class="filter-group filter-group-wide">
+          <label>Pencarian</label>
+          <span class="filter-search">
             <i class="pi pi-search" />
             <InputText 
               v-model="searchQuery" 
@@ -190,6 +201,9 @@ const getStatusSeverity = (isActive) => {
               class="w-full"
             />
           </span>
+        </div>
+        <div class="filter-group">
+          <label>Role</label>
           <Dropdown 
             v-model="roleFilter" 
             :options="roles" 
@@ -198,8 +212,11 @@ const getStatusSeverity = (isActive) => {
             placeholder="Semua Role" 
             showClear
             @change="onSearch"
-            class="status-filter"
+            class="w-full md:w-44"
           />
+        </div>
+        <div class="filter-group">
+          <label>Status</label>
           <Dropdown 
             v-model="statusFilter" 
             :options="statusOptions" 
@@ -207,16 +224,20 @@ const getStatusSeverity = (isActive) => {
             optionValue="value" 
             placeholder="Semua Status" 
             @change="onSearch"
-            class="status-filter"
+            class="w-full md:w-44"
           />
         </div>
       </div>
+    </div>
 
+    <div class="table-shell list-tab-fill">
       <DataTable 
         :value="users" 
         :loading="loading" 
+        scrollable
+        scrollHeight="flex"
         responsiveLayout="scroll"
-        class="p-datatable-sm"
+        class="drent-datatable"
         stripedRows
       >
         <template #empty>
@@ -230,13 +251,9 @@ const getStatusSeverity = (isActive) => {
           <template #body="{ data }">
             <div class="user-info">
               <span class="user-name">{{ data.name }}</span>
-              <div class="flex gap-2 align-items-center">
-                <Tag 
-                  :value="data.role_label" 
-                  :severity="getRoleSeverity(data.role)"
-                  class="type-tag"
-                />
-                <span class="text-xs text-slate-500">{{ data.email }}</span>
+              <div class="user-meta">
+                <span class="drent-badge" :class="getRoleBadgeClass(data.role)">{{ data.role_label }}</span>
+                <span class="user-email">{{ data.email }}</span>
               </div>
             </div>
           </template>
@@ -250,39 +267,52 @@ const getStatusSeverity = (isActive) => {
 
         <Column field="is_active" header="Status" style="min-width: 120px">
           <template #body="{ data }">
-            <Tag 
-              :severity="getStatusSeverity(data.is_active)" 
-              :value="data.is_active ? 'Aktif' : 'Non-Aktif'"
-              class="status-tag"
-            />
+            <span class="drent-badge" :class="data.is_active ? 'success' : 'neutral'">
+              {{ data.is_active ? 'Aktif' : 'Non-Aktif' }}
+            </span>
           </template>
         </Column>
 
         <Column header="Aksi" style="min-width: 180px; text-align: center">
           <template #body="{ data }">
-            <div class="action-buttons">
-              <Button 
+            <div class="action-pill-group">
+              <button 
                 v-if="canManage"
-                icon="pi pi-key" 
-                class="p-button-rounded p-button-text p-button-warning" 
+                class="action-btn"
+                type="button"
+                @click="openPermissions(data)" 
+                v-tooltip.top="'Hak Akses'"
+              >
+                <i class="pi pi-shield" />
+              </button>
+              <button 
+                v-if="canManage"
+                class="action-btn"
+                type="button"
                 @click="openReset(data)" 
                 v-tooltip.top="'Reset Password'"
-              />
-              <Button 
+              >
+                <i class="pi pi-key" />
+              </button>
+              <button 
                 v-if="canManage"
-                icon="pi pi-pencil" 
-                class="p-button-rounded p-button-text p-button-secondary" 
+                class="action-btn"
+                type="button"
                 @click="editUser(data)" 
                 v-tooltip.top="'Edit'"
-              />
-              <Button 
+              >
+                <i class="pi pi-pencil" />
+              </button>
+              <button 
                 v-if="canManage"
-                icon="pi pi-trash" 
-                class="p-button-rounded p-button-text p-button-danger" 
+                class="action-btn action-btn-danger"
+                type="button"
                 @click="confirmDelete(data)" 
                 v-tooltip.top="'Hapus'"
                 :disabled="data.id === authStore.user?.id"
-              />
+              >
+                <i class="pi pi-trash" />
+              </button>
             </div>
           </template>
         </Column>
@@ -314,61 +344,17 @@ const getStatusSeverity = (isActive) => {
       :loading="loading"
       @saved="saveReset"
     />
+
+    <UserPermissionOverrideDialog
+      v-model:visible="showPermissionDialog"
+      :user="selectedUser"
+    />
   </div>
 </template>
 
 <style scoped>
-.view-container {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-}
-
-.header-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-content h1 {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
-
-.header-content p {
-  color: #64748b;
-  margin-top: 5px;
-}
-
-.content-card {
-  background-color: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
-}
-
-.table-toolbar {
-  padding: 20px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.filter-wrapper {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.search-wrapper {
-  max-width: 350px;
-  flex: 1;
-  min-width: 250px;
-}
-
-.status-filter {
-  width: 180px;
+.user-management-page {
+  background: var(--page-bg);
 }
 
 .user-info {
@@ -378,26 +364,25 @@ const getStatusSeverity = (isActive) => {
 }
 
 .user-name {
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.type-tag {
-  font-size: 0.65rem;
-  padding: 2px 8px;
-  width: fit-content;
-}
-
-.status-tag {
+  font-family: var(--font-headline);
+  font-size: 13px;
   font-weight: 600;
-  font-size: 0.75rem;
-  padding: 4px 10px;
+  color: var(--text-primary);
 }
 
-.action-buttons {
+.user-meta {
   display: flex;
-  justify-content: center;
-  gap: 5px;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-email {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.action-btn-danger {
+  color: var(--negative) !important;
 }
 
 .empty-state {
@@ -405,48 +390,57 @@ const getStatusSeverity = (isActive) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 50px 0;
-  color: #94a3b8;
+  padding: 44px 0;
+  color: var(--text-tertiary);
 }
 
 .empty-state i {
-  font-size: 3rem;
-  margin-bottom: 15px;
-  opacity: 0.5;
+  font-size: 2.4rem;
+  margin-bottom: var(--space-md);
+  opacity: 0.7;
 }
 
 .paginator-wrapper {
-  padding: 10px;
-  border-top: 1px solid #f1f5f9;
+  padding: var(--space-sm);
+  border-top: 1px solid var(--surface-border);
 }
 
-.p-button-tosca {
-  background-color: #06b6d4 !important;
-  border-color: #06b6d4 !important;
+/* Premium Drent Badge styling matching design.md rules */
+.drent-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-transform: capitalize;
+  white-space: nowrap;
 }
 
-.p-button-tosca:hover {
-  background-color: #0891b2 !important;
-  border-color: #0891b2 !important;
+.drent-badge.success {
+  background-color: #E6F6EC;
+  color: #147239;
 }
 
-.flex { display: flex; }
-.gap-2 { gap: 0.5rem; }
-.align-items-center { align-items: center; }
-.text-xs { font-size: 0.75rem; }
-.text-slate-500 { color: #64748b; }
-
-:deep(.p-datatable .p-datatable-thead > tr > th) {
-  background-color: #f8fafc;
-  color: #475569;
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.5px;
-  padding: 15px;
+.drent-badge.error {
+  background-color: #FCEAE9;
+  color: #B02A24;
 }
 
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 15px;
+.drent-badge.warning {
+  background-color: #FDF4D9;
+  color: #8C660A;
+}
+
+.drent-badge.info {
+  background-color: #E1F4F6;
+  color: #085A66;
+}
+
+.drent-badge.neutral {
+  background-color: #E4E8F3;
+  color: #4A5060;
 }
 </style>

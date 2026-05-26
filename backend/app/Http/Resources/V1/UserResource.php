@@ -10,14 +10,18 @@ class UserResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' => $this->id,
-            'name' => $this->name,
-            'email' => $this->email,
-            'role' => $this->role,
-            'tenant_id' => $this->tenant_id,
-            'branch_id' => $this->branch_id,
+            'id'          => $this->id,
+            'name'        => $this->name,
+            'email'       => $this->email,
+            'role'        => $this->role,
+            'tenant_id'   => $this->tenant_id,
+            'branch_id'   => $this->branch_id,
             'branch_name' => $this->whenLoaded('branch', fn() => $this->branch->name),
-            'created_at' => $this->created_at,
+            // Always include permissions so the frontend always receives a valid array.
+            // This resource is used exclusively by AuthController (login, me) and
+            // user detail endpoints — it is safe and necessary to always compute this.
+            'permissions' => (new \App\Services\PermissionService())->getEffectivePermissions($this->resource),
+            'created_at'  => $this->created_at,
         ];
     }
 }

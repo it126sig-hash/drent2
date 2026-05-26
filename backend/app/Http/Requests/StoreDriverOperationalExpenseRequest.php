@@ -19,6 +19,7 @@ class StoreDriverOperationalExpenseRequest extends FormRequest
             'amount' => ['required', 'integer', 'min:1'],
             'description' => ['required', 'string', 'min:3'],
             'photo' => ['nullable', 'image', 'max:4096'],
+            'payment_account_id' => ['nullable', 'exists:payment_accounts,id'],
         ];
     }
 }

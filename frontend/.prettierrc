@@ -1,0 +1,7 @@
+{
+  "html.format.wrapLineLength": 0,
+  "html.format.wrapAttributes": "auto",
+  "[vue]": {
+    "editor.defaultFormatter": "Vue.volar"
+  }
+}

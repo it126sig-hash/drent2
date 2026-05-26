@@ -25,6 +25,10 @@ use App\Http\Controllers\Api\V1\RentToRentController;
 use App\Http\Controllers\Api\V1\SupervisorRequestController;
 use App\Http\Controllers\Api\V1\DriverOperationalFundController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\FinanceCategoryController;
+use App\Http\Controllers\Api\V1\MonthlyFinanceReportController;
+use App\Http\Controllers\Api\V1\PaymentAccountTransactionController;
+use App\Http\Controllers\Api\V1\TransactionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -51,8 +55,17 @@ Route::prefix('v1')->group(function () {
         Route::patch('users/{user}/reset-password', [UserController::class, 'resetPassword']);
         Route::apiResource('users', UserController::class);
 
+        // Role Management
+        Route::get('role-permissions', [\App\Http\Controllers\Api\V1\RolePermissionController::class, 'index']);
+        Route::put('role-permissions/{role}', [\App\Http\Controllers\Api\V1\RolePermissionController::class, 'update']);
+        Route::get('users/{user}/permissions', [\App\Http\Controllers\Api\V1\RolePermissionController::class, 'userPermissions']);
+        Route::put('users/{user}/permissions', [\App\Http\Controllers\Api\V1\RolePermissionController::class, 'updateUserPermissions']);
+
         // Units
+        Route::post('units/batch-update-city', [UnitController::class, 'batchUpdateCity']);
+        Route::get('units/{unit}/schedule-check', [UnitController::class, 'checkSchedule']);
         Route::apiResource('units', UnitController::class);
+
         Route::post('units/{unit}/photos', [UnitController::class, 'uploadPhoto']);
         Route::delete('units/{unit}/photos/{photo}', [UnitController::class, 'deletePhoto']);
 
@@ -66,10 +79,14 @@ Route::prefix('v1')->group(function () {
         // Members
         Route::apiResource('members', MemberController::class);
         Route::patch('members/{member}/activate', [MemberController::class, 'activate']);
+        Route::patch('members/{member}/status', [MemberController::class, 'updateStatus']);
+        Route::post('members/{member}/extend', [MemberController::class, 'extend']);
+        Route::get('members/{member}/extensions', [MemberController::class, 'extensions']);
         Route::get('members/{member}/documents/{type}', [MemberController::class, 'showDocument']);
 
         // Master Data: Payment Accounts, Cost Types, Pricing Packages
         Route::apiResource('payment-accounts', PaymentAccountController::class);
+        Route::apiResource('finance-categories', FinanceCategoryController::class);
         Route::apiResource('cities', CityController::class);
         Route::apiResource('cost-types', CostTypeController::class);
         Route::apiResource('pricing-packages', PricingPackageController::class);
@@ -95,6 +112,11 @@ Route::prefix('v1')->group(function () {
         Route::post('bookings/{booking}/refund', [RefundController::class, 'store']);
 
         // Receivables & Invoices
+        Route::get('reports/monthly-finance', MonthlyFinanceReportController::class);
+        Route::get('payment-account-transactions', [PaymentAccountTransactionController::class, 'index']);
+        Route::post('payment-account-transactions/transfer', [PaymentAccountTransactionController::class, 'transfer']);
+        Route::post('payment-account-transactions/other', [PaymentAccountTransactionController::class, 'other']);
+        Route::post('payment-account-transactions/adjust', [PaymentAccountTransactionController::class, 'adjust']);
         Route::get('receivables', [ReceivableController::class, 'index']);
         Route::get('receivables/payment-history', [ReceivableController::class, 'paymentHistory']);
         Route::post('receivables/invoices', [ReceivableController::class, 'generateInvoice']);
@@ -103,6 +125,10 @@ Route::prefix('v1')->group(function () {
         Route::post('invoices/{invoice}/mark-sent', [ReceivableController::class, 'markInvoiceSent']);
         Route::post('invoices/{invoice}/refresh-amount', [ReceivableController::class, 'refreshInvoiceAmount']);
         Route::post('invoices/{invoice}/payments', [ReceivableController::class, 'storeInvoicePayment']);
+
+        // Transactions
+        Route::get('transactions', [TransactionController::class, 'index']);
+        Route::get('transactions/{booking}', [TransactionController::class, 'show']);
 
         // Rent-to-rent payables
         Route::get('rent-to-rent', [RentToRentController::class, 'index']);
@@ -120,6 +146,10 @@ Route::prefix('v1')->group(function () {
         Route::post('rent-to-rent/bills/{bill}/reject-void', [RentToRentController::class, 'rejectVoid']);
         Route::get('rent-to-rent/{debt}', [RentToRentController::class, 'show']);
         Route::patch('rent-to-rent/{debt}/amount', [RentToRentController::class, 'updateAmount']);
+        Route::post('rent-to-rent/debts/{debt}/amount-change-requests', [RentToRentController::class, 'requestAmountChange']);
+        Route::post('rent-to-rent/amount-change-requests/{req}/approve', [RentToRentController::class, 'approveAmountChange']);
+        Route::post('rent-to-rent/amount-change-requests/{req}/reject', [RentToRentController::class, 'rejectAmountChange']);
+        Route::post('rent-to-rent/amount-change-requests/{req}/cancel', [RentToRentController::class, 'cancelAmountChange']);
         Route::post('rent-to-rent/{debt}/mark-paid', [RentToRentController::class, 'markDebtPaid']);
         Route::post('rent-to-rent/{debt}/payments', [RentToRentController::class, 'storeDebtPayment']);
         Route::post('rent-to-rent/bills/{bill}/mark-sent', [RentToRentController::class, 'markSent']);
@@ -133,12 +163,17 @@ Route::prefix('v1')->group(function () {
         Route::get('operational-funds/history', [DriverOperationalFundController::class, 'history']);
         Route::get('operational-funds/{fund}', [DriverOperationalFundController::class, 'show']);
         Route::post('bookings/{booking}/operational-funds', [DriverOperationalFundController::class, 'store']);
+        Route::post('bookings/{booking}/expenses', [DriverOperationalFundController::class, 'storeBookingExpense']);
         Route::post('operational-funds/{fund}/close', [DriverOperationalFundController::class, 'close']);
         Route::post('operational-funds/{fund}/accept', [DriverOperationalFundController::class, 'accept']);
         Route::post('operational-funds/{fund}/expenses', [DriverOperationalFundController::class, 'storeExpense']);
+        Route::post('operational-funds/{fund}/void', [DriverOperationalFundController::class, 'voidFund']);
         Route::get('operational-expenses/{expense}/photo', [DriverOperationalFundController::class, 'showExpensePhoto']);
         Route::post('operational-expenses/{expense}/approve', [DriverOperationalFundController::class, 'approveExpense']);
         Route::post('operational-expenses/{expense}/reject', [DriverOperationalFundController::class, 'rejectExpense']);
+        Route::post('operational-expenses/{expense}/void', [DriverOperationalFundController::class, 'voidExpense']);
+        Route::post('operational-expenses/{expense}/approve-void', [DriverOperationalFundController::class, 'approveVoidExpense']);
+        Route::post('operational-expenses/{expense}/reject-void', [DriverOperationalFundController::class, 'rejectVoidExpense']);
         Route::get('driver/operational-funds', [DriverOperationalFundController::class, 'driverFunds']);
         Route::get('driver/schedules', [DriverOperationalFundController::class, 'driverSchedules']);
 
@@ -150,6 +185,10 @@ Route::prefix('v1')->group(function () {
         Route::post('bookings/{booking}/request-rental-unit-return', [BookingController::class, 'requestRentalUnitReturn']);
         Route::post('bookings/{booking}/approve-rental-unit-return', [BookingController::class, 'approveRentalUnitReturn']);
         Route::post('bookings/{booking}/reject-rental-unit-return', [BookingController::class, 'rejectRentalUnitReturn']);
+        Route::post('bookings/{booking}/operational-complete', [DriverOperationalFundController::class, 'markOperationalComplete']);
+        Route::post('bookings/{booking}/operational-revert', [DriverOperationalFundController::class, 'requestRevertOperational']);
+        Route::post('bookings/{booking}/operational-revert/approve', [DriverOperationalFundController::class, 'approveRevertOperational']);
+        Route::post('bookings/{booking}/operational-revert/reject', [DriverOperationalFundController::class, 'rejectRevertOperational']);
         Route::post('bookings/{booking}/details', [BookingDetailController::class, 'store']);
         Route::patch('booking-details/{bookingDetail}', [BookingDetailController::class, 'update']);
         Route::post('booking-details/{bookingDetail}/costs', [BookingCostController::class, 'store']);

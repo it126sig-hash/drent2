@@ -17,6 +17,7 @@ class Unit extends Model
         'tenant_id',
         'branch_id',
         'rental_owner_id',
+        'city_id',
         'tipe',
         'merk',
         'tahun',
@@ -24,9 +25,15 @@ class Unit extends Model
         'harga_1_hari',
         'harga_1_minggu',
         'harga_1_bulan',
+        'harga_all_in',
+        'harga_all_in_1_minggu',
+        'harga_all_in_1_bulan',
         'modal_1_hari',
         'modal_1_minggu',
         'modal_1_bulan',
+        'modal_all_in',
+        'modal_all_in_1_minggu',
+        'modal_all_in_1_bulan',
         'status',
         'catatan',
     ];
@@ -36,9 +43,15 @@ class Unit extends Model
         'harga_1_hari' => 'integer',
         'harga_1_minggu' => 'integer',
         'harga_1_bulan' => 'integer',
+        'harga_all_in' => 'integer',
+        'harga_all_in_1_minggu' => 'integer',
+        'harga_all_in_1_bulan' => 'integer',
         'modal_1_hari' => 'integer',
         'modal_1_minggu' => 'integer',
         'modal_1_bulan' => 'integer',
+        'modal_all_in' => 'integer',
+        'modal_all_in_1_minggu' => 'integer',
+        'modal_all_in_1_bulan' => 'integer',
     ];
 
     public function tenant()
@@ -54,6 +67,11 @@ class Unit extends Model
     public function rentalOwner()
     {
         return $this->belongsTo(RentalOwner::class);
+    }
+
+    public function city()
+    {
+        return $this->belongsTo(City::class);
     }
 
     public function photos()

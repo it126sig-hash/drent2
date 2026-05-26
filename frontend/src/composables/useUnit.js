@@ -5,7 +5,8 @@ import {
   updateUnit, 
   deleteUnit,
   uploadUnitPhoto,
-  deleteUnitPhoto
+  deleteUnitPhoto,
+  batchUpdateUnitCity
 } from '../api/unit'
 
 export function useUnit() {
@@ -111,6 +112,19 @@ export function useUnit() {
     }
   }
 
+  const batchUpdateCity = async (data) => {
+    loading.value = true
+    error.value = null
+    try {
+      await batchUpdateUnitCity(data)
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal memperbarui kota unit secara batch'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     units,
     loading,
@@ -121,6 +135,7 @@ export function useUnit() {
     update,
     remove,
     addPhoto,
-    removePhoto
+    removePhoto,
+    batchUpdateCity
   }
 }

@@ -65,4 +65,9 @@ class Member extends Model
     {
         return $this->belongsTo(User::class, 'surveyor_id');
     }
+
+    public function extensions()
+    {
+        return $this->hasMany(MemberExtension::class)->latest();
+    }
 }

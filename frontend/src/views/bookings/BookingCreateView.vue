@@ -11,7 +11,7 @@ import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCity } from '../../composables/useCity';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
-import { getUnits } from '../../api/unit';
+import { getUnits, checkUnitSchedule } from '../../api/unit';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Dialog from 'primevue/dialog';
@@ -50,9 +50,16 @@ const waitingListErrors = ref({});
 const isSubmitting = ref(false);
 const unitSearchLoading = ref(false);
 const unitServerSearchTerm = ref('');
+const unitCityFilter = ref(null);
+const showScheduleConflictDialog = ref(false);
+const scheduleConflicts = ref([]);
 let customerSearchTimer = null;
 let unitSearchTimer = null;
 let pricingPackageSearchTimer = null;
+let citySearchTimer = null;
+let driverSearchTimer = null;
+let accountSearchTimer = null;
+let costTypeSearchTimer = null;
 let unitSearchRequestId = 0;
 
 const paketOptions = [
@@ -347,11 +354,19 @@ const debounceSearch = (timerName, callback, delay = 350) => {
   if (timerName === 'customer' && customerSearchTimer) clearTimeout(customerSearchTimer);
   if (timerName === 'unit' && unitSearchTimer) clearTimeout(unitSearchTimer);
   if (timerName === 'pricingPackage' && pricingPackageSearchTimer) clearTimeout(pricingPackageSearchTimer);
+  if (timerName === 'city' && citySearchTimer) clearTimeout(citySearchTimer);
+  if (timerName === 'driver' && driverSearchTimer) clearTimeout(driverSearchTimer);
+  if (timerName === 'account' && accountSearchTimer) clearTimeout(accountSearchTimer);
+  if (timerName === 'costType' && costTypeSearchTimer) clearTimeout(costTypeSearchTimer);
 
   const timer = setTimeout(callback, delay);
   if (timerName === 'customer') customerSearchTimer = timer;
   if (timerName === 'unit') unitSearchTimer = timer;
   if (timerName === 'pricingPackage') pricingPackageSearchTimer = timer;
+  if (timerName === 'city') citySearchTimer = timer;
+  if (timerName === 'driver') driverSearchTimer = timer;
+  if (timerName === 'account') accountSearchTimer = timer;
+  if (timerName === 'costType') costTypeSearchTimer = timer;
 };
 
 const searchCustomers = async (search = '') => {
@@ -367,10 +382,13 @@ const onCustomerFilter = (event) => {
   debounceSearch('customer', () => searchCustomers(String(event?.value || '').trim()));
 };
 
-const searchUnits = async (search = '') => {
+const searchUnits = async (search = '', cityId = null) => {
   const requestId = ++unitSearchRequestId;
   const params = { per_page: 25 };
   if (search) params.search = search;
+  // Gunakan cityId yang dipass, atau fallback ke unitCityFilter aktif
+  const activeCityId = cityId !== null ? cityId : unitCityFilter.value;
+  if (activeCityId !== null) params.city_id = activeCityId;
   unitSearchLoading.value = true;
 
   try {
@@ -390,6 +408,62 @@ const searchUnits = async (search = '') => {
 
 const onUnitFilter = (event) => {
   debounceSearch('unit', () => searchUnits(String(event?.value || '').trim()));
+};
+
+const onKotaChange = (selectedValue) => {
+  const city = cityOptions.value.find(c => c.value === selectedValue);
+  if (city) {
+    unitCityFilter.value = city.id;
+    searchUnits('', city.id);
+  } else {
+    unitCityFilter.value = null;
+    searchUnits();
+  }
+};
+
+const clearUnitCityFilter = () => {
+  unitCityFilter.value = null;
+  searchUnits();
+};
+
+const searchCities = async (search = '') => {
+  const params = { per_page: 30, is_active: true };
+  if (search) params.search = search;
+  await fetchCities(params);
+};
+
+const onCityFilter = (event) => {
+  debounceSearch('city', () => searchCities(String(event?.value || '').trim()));
+};
+
+const searchDrivers = async (search = '') => {
+  const params = { per_page: 25 };
+  if (search) params.search = search;
+  await fetchDrivers(params);
+};
+
+const onDriverFilter = (event) => {
+  debounceSearch('driver', () => searchDrivers(String(event?.value || '').trim()));
+};
+
+const searchAccounts = async (search = '') => {
+  const params = { per_page: 25 };
+  if (search) params.search = search;
+  await fetchAccounts(params);
+};
+
+const onAccountFilter = (event) => {
+  debounceSearch('account', () => searchAccounts(String(event?.value || '').trim()));
+};
+
+const searchCostTypes = async (search = '') => {
+  const params = { per_page: 50, is_active: true };
+  if (search) params.search = search;
+  await fetchCostTypes(params);
+};
+
+const onCostTypeFilter = (event) => {
+  debounceSearch('costType', () => searchCostTypes(String(event?.value || '').trim()));
 };
 
 const searchPricingPackages = async (search = '') => {
@@ -777,13 +851,25 @@ watch(
   }
 );
 
-watch(
-  selectedUnit,
-  (unit) => {
-    if (!isDirectWaitingList.value || !unit) return;
-    waitingListForm.value.harga_mobil = unit.harga_1_hari || 0;
+// Helper: ambil harga unit berdasarkan paket sewa
+const getUnitHargaByPaket = (unit, paket) => {
+  if (!unit) return 0;
+  switch (paket) {
+    case 'mingguan': return unit.harga_1_minggu || 0;
+    case 'bulanan':  return unit.harga_1_bulan  || 0;
+    default:         return unit.harga_1_hari   || 0;
   }
-);
+};
+
+// Helper: ambil harga all-in unit berdasarkan paket sewa
+const getUnitAllInByPaket = (unit, paket) => {
+  if (!unit) return null;
+  switch (paket) {
+    case 'mingguan': return unit.harga_all_in_1_minggu || null;
+    case 'bulanan':  return unit.harga_all_in_1_bulan  || null;
+    default:         return unit.harga_all_in           || null;
+  }
+};
 
 watch(selectedCustomer, (customer) => {
   if (customer && selectedCustomerCache.value?.value !== customer.value) {
@@ -791,11 +877,54 @@ watch(selectedCustomer, (customer) => {
   }
 });
 
-watch(selectedUnit, (unit) => {
-  if (unit && selectedUnitCache.value?.id !== unit.id) {
-    selectedUnitCache.value = unit;
+// Watch gabungan: unit cache + harga otomatis sesuai paket & pricing mode
+watch(
+  () => [
+    selectedUnit.value,
+    form.value.paket_sewa,
+    waitingListForm.value.pricing_mode,
+    waitingListForm.value.pricing_package_id,
+  ],
+  ([unit, paket, pricingMode, packageId]) => {
+    // Selalu update cache untuk summary panel
+    if (unit && selectedUnitCache.value?.id !== unit.id) {
+      selectedUnitCache.value = unit;
+    }
+
+    if (!isDirectWaitingList.value || !unit) return;
+
+    if (pricingMode === 'non_all_in') {
+      waitingListForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
+    } else if (pricingMode === 'all_in') {
+      // Harga mobil (non-all-in component) tetap menggunakan harga harian
+      waitingListForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
+      // Auto-fill harga all-in dari unit hanya jika package belum dipilih
+      if (!packageId) {
+        waitingListForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
+      }
+    }
   }
-});
+);
+
+// Watch cek konflik jadwal unit
+watch(
+  () => [form.value.unit_id, form.value.tgl_sewa, form.value.tgl_kembali],
+  async ([unitId, tglSewa, tglKembali]) => {
+    if (!unitId || !tglSewa || !tglKembali) return;
+    try {
+      const res = await checkUnitSchedule(unitId, {
+        tgl_sewa: formatDateTime(tglSewa),
+        tgl_kembali: formatDateTime(tglKembali),
+      });
+      if (res.data.data?.length) {
+        scheduleConflicts.value = res.data.data;
+        showScheduleConflictDialog.value = true;
+      }
+    } catch {
+      // Abaikan error cek jadwal — tidak blokir form
+    }
+  }
+);
 
 watch(
   () => waitingListForm.value.pricing_package_id,
@@ -899,17 +1028,15 @@ const mergeSelectedOption = (options, selected, key = 'id') => {
 const mapUnitOption = (u) => ({
         ...u,
         label: `${u.merk} ${u.tipe}`,
-        sublabel: `${u.no_polisi} - ${u.rental_owner?.nama || 'N/A'}`,
-        disabled: u.status !== 'Aktif',
+        kota: u.city?.nama || '-',
+        sublabel: `${u.no_polisi} - ${u.rental_owner?.nama || 'N/A'} - ${u.city?.nama || '-'}`,
+        disabled: false,
         searchableLabel: [
           u.merk,
           u.tipe,
           u.rental_owner?.nama,
           u.no_polisi,
-          u.no_polisi,
-          u.rental_owner?.nama,
-          u.tipe,
-          u.merk,
+          u.city?.nama,
           unitStatusMeta(u.status).label,
         ].filter(Boolean).join(' '),
         normalizedSearchableLabel: normalizeSearch([
@@ -917,6 +1044,7 @@ const mapUnitOption = (u) => ({
           u.tipe,
           u.rental_owner?.nama,
           u.no_polisi,
+          u.city?.nama,
           unitStatusMeta(u.status).label,
         ].filter(Boolean).join(' ')),
         serverSearchLabel: unitServerSearchTerm.value,
@@ -930,6 +1058,7 @@ const cityOptions = computed(() =>
   cities.value
     .filter(city => city.is_active)
     .map(city => ({
+      id: city.id,
       label: city.provinsi ? `${city.nama} - ${city.provinsi}` : city.nama,
       value: city.nama,
       searchableLabel: [city.nama, city.provinsi].filter(Boolean).join(' ')
@@ -1068,6 +1197,35 @@ const formatDate = (value) => {
     </div>
     <div class="booking-layout-grid">
       <div class="booking-form-column">
+        <Card class="premium-card">
+            <template #title>
+            <div class="section-title">
+              <i class="pi pi-user text-tosca"></i>
+              <span>Kota Operasional</span>
+            </div>
+          </template>
+          <template #content>
+            <div class="form-field-vertical">
+              <label class="field-label">Kota booking *</label>
+                <Dropdown
+                  v-model="form.kota"
+                  :options="cityOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Pilih kota tujuan/operasional"
+                  filter
+                  :filterFields="['searchableLabel']"
+                  :loading="citiesLoading"
+                  class="w-full premium-input"
+                  :class="{ 'p-invalid': formErrors.kota }"
+                  :empty-message="'Belum ada kota aktif'"
+                  @filter="onCityFilter"
+                  @change="onKotaChange($event.value)"
+                />
+                <small class="p-error" v-if="formErrors.kota">{{ formErrors.kota }}</small>
+              </div>
+          </template>
+        </Card>
         <Card class="premium-card">
           <template #title>
             <div class="section-title">
@@ -1209,6 +1367,7 @@ const formatDate = (value) => {
                     :loading="citiesLoading"
                     class="w-full premium-input"
                     :empty-message="'Belum ada kota aktif'"
+                    @filter="onCityFilter"
                   />
                 </div>
               </div>
@@ -1240,12 +1399,25 @@ const formatDate = (value) => {
 
               <div v-if="form.unit_mode === 'existing'" class="form-field-vertical">
                 <label class="field-label">Cari unit ready</label>
+
+                <div v-if="unitCityFilter" class="unit-city-filter-chip">
+                  <i class="pi pi-map-marker" />
+                  <span>Filter kota: {{ form.kota }}</span>
+                  <Button
+                    icon="pi pi-times"
+                    text
+                    rounded
+                    size="small"
+                    class="chip-clear-btn"
+                    @click="clearUnitCityFilter"
+                  />
+                </div>
+
                 <Dropdown
                   v-model="form.unit_id"
                   :options="unitOptions"
                   optionLabel="searchableLabel"
                   optionValue="id"
-                  optionDisabled="disabled"
                   placeholder="Cari mobil, nopol, pemilik, atau status..."
                   filter
                   :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
@@ -1296,6 +1468,8 @@ const formatDate = (value) => {
                       <strong>{{ selectedUnit.no_polisi || '-' }}</strong>
                       <span>Pemilik</span>
                       <strong>{{ selectedUnit.rental_owner?.nama || 'N/A' }}</strong>
+                      <span>Kota</span>
+                      <strong>{{ selectedUnit.kota || '-' }}</strong>
                       <span>Status</span>
                       <strong>{{ selectedUnit.status || '-' }}</strong>
                     </div>
@@ -1377,24 +1551,6 @@ const formatDate = (value) => {
               </div>
 
               <div class="form-field-vertical md:col-span-2">
-                <label class="field-label">Kota booking *</label>
-                <Dropdown
-                  v-model="form.kota"
-                  :options="cityOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  placeholder="Pilih kota tujuan/operasional"
-                  filter
-                  :filterFields="['searchableLabel']"
-                  :loading="citiesLoading"
-                  class="w-full premium-input"
-                  :class="{ 'p-invalid': formErrors.kota }"
-                  :empty-message="'Belum ada kota aktif'"
-                />
-                <small class="p-error" v-if="formErrors.kota">{{ formErrors.kota }}</small>
-              </div>
-
-              <div class="form-field-vertical md:col-span-2">
                 <label class="field-label">Alamat jemput *</label>
                 <Textarea
                   v-model="form.alamat_penjemputan"
@@ -1436,9 +1592,11 @@ const formatDate = (value) => {
                         optionLabel="name"
                         optionValue="id"
                         placeholder="Pilih akun pembayaran"
+                        filter
                         class="w-full premium-input"
                         :disabled="isEditMode"
                         :empty-message="'Belum ada akun pembayaran aktif'"
+                        @filter="onAccountFilter"
                       />
                     </div>
                     <div class="form-field-vertical">
@@ -1538,25 +1696,6 @@ const formatDate = (value) => {
                   <label class="field-label">Tujuan</label>
                   <InputText v-model="form.tujuan" placeholder="Ke luar kota / wisata / kantor..." class="w-full premium-input" />
                 </div>
-
-                <div class="form-field-vertical md:col-span-2">
-                  <label class="field-label">Kota booking *</label>
-                  <Dropdown
-                    v-model="form.kota"
-                    :options="cityOptions"
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Pilih kota tujuan/operasional"
-                    filter
-                    :filterFields="['searchableLabel']"
-                    :loading="citiesLoading"
-                    class="w-full premium-input"
-                    :class="{ 'p-invalid': formErrors.kota }"
-                    :empty-message="'Belum ada kota aktif'"
-                  />
-                  <small class="p-error" v-if="formErrors.kota">{{ formErrors.kota }}</small>
-                </div>
-
                 <div class="form-field-vertical md:col-span-2">
                   <label class="field-label">Alamat jemput *</label>
                   <Textarea
@@ -1580,6 +1719,7 @@ const formatDate = (value) => {
                     filter
                     showClear
                     class="w-full premium-input"
+                    @filter="onDriverFilter"
                   />
                 </div>
 
@@ -1601,8 +1741,10 @@ const formatDate = (value) => {
                     mode="currency"
                     currency="IDR"
                     locale="id-ID"
+                    :disabled="true"
                     class="w-full premium-input"
                   />
+                  <small class="field-hint">Diisi otomatis berdasarkan unit & paket sewa</small>
                   <small class="p-error" v-if="waitingListErrors.harga_mobil">{{ waitingListErrors.harga_mobil }}</small>
                 </div>
 
@@ -1668,8 +1810,10 @@ const formatDate = (value) => {
                     optionValue="id"
                     placeholder="Tipe"
                     showClear
+                    filter
                     class="premium-input cost-type-input"
                     @change="onWaitingCostTypeChange(idx, cost.cost_type_id)"
+                    @filter="onCostTypeFilter"
                   />
                   <Dropdown
                     v-model="cost.type"
@@ -1761,6 +1905,10 @@ const formatDate = (value) => {
               <strong>{{ selectedUnit?.rental_owner?.nama || '-' }}</strong>
             </div>
             <div>
+              <span>Kota unit</span>
+              <strong>{{ selectedUnit?.kota || '-' }}</strong>
+            </div>
+            <div>
               <span>Status unit</span>
               <Tag
                 v-if="selectedUnit"
@@ -1810,6 +1958,42 @@ const formatDate = (value) => {
         </div>
       </aside>
     </div>
+
+    <!-- Dialog: Peringatan Konflik Jadwal Unit -->
+    <Dialog
+      v-model:visible="showScheduleConflictDialog"
+      modal
+      :closable="false"
+      header="Peringatan Jadwal Unit"
+      :style="{ width: '480px' }"
+      :breakpoints="{ '640px': '94vw' }"
+    >
+      <div class="conflict-dialog-body">
+        <div class="conflict-icon-wrap">
+          <i class="pi pi-exclamation-triangle" />
+        </div>
+        <p class="conflict-message">
+          Unit <strong>{{ selectedUnit?.label }}</strong> sudah dijadwalkan / sedang berjalan
+          pada periode yang dipilih:
+        </p>
+        <ul class="conflict-list">
+          <li v-for="(c, i) in scheduleConflicts" :key="i">
+            <strong>{{ c.kode_booking }}</strong>
+            <span class="conflict-status">({{ c.status }})</span>
+            &mdash; {{ formatDate(c.tgl_sewa) }} s/d {{ formatDate(c.tgl_kembali) }}
+          </li>
+        </ul>
+        <p class="conflict-note">Klik OK untuk tetap melanjutkan dengan unit ini.</p>
+      </div>
+      <template #footer>
+        <Button
+          label="OK, Tetap Lanjutkan"
+          icon="pi pi-check"
+          @click="showScheduleConflictDialog = false"
+          class="p-button-tosca w-full justify-center"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -1865,7 +2049,7 @@ const formatDate = (value) => {
 
 .booking-summary-column {
   min-width: 0;
-  align-self: start;
+  align-self: stretch;
 }
 
 .section-stack {
@@ -2443,5 +2627,102 @@ const formatDate = (value) => {
      top: 4px;
      right: 4px;
   }
+}
+</style>
+
+<style scoped>
+/* ── City filter chip ─────────────────────────────────── */
+.unit-city-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 10px;
+  background: #E1F4F6;
+  border: 1px solid #B0DDE4;
+  border-radius: var(--radius-full);
+  color: #085A66;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.unit-city-filter-chip i {
+  font-size: 11px;
+}
+
+:deep(.chip-clear-btn.p-button) {
+  width: 18px !important;
+  height: 18px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  color: #085A66 !important;
+  font-size: 9px;
+}
+
+:deep(.chip-clear-btn.p-button:hover) {
+  background: rgba(8, 90, 102, 0.12) !important;
+}
+
+/* ── Field hint ───────────────────────────────────────── */
+.field-hint {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* ── Schedule conflict dialog ─────────────────────────── */
+.conflict-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.conflict-icon-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.conflict-icon-wrap i {
+  font-size: 36px;
+  color: #D4A017;
+}
+
+.conflict-message {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.conflict-list {
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conflict-list li {
+  padding: 8px 12px;
+  background: #FDF4D9;
+  border: 1px solid #F2C94C;
+  border-radius: var(--radius-default);
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.conflict-list .conflict-status {
+  color: #8C660A;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.conflict-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 </style>

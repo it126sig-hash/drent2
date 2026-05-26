@@ -6,7 +6,10 @@ use App\Models\BookingDetail;
 use App\Models\RentalOwner;
 use App\Models\RentToRentBill;
 use App\Models\RentToRentDebt;
+use App\Models\RentToRentAmountChangeRequest;
 use App\Models\RentToRentPayment;
+use App\Models\PaymentAccount;
+use App\Services\PaymentAccountTransactionService;
 use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -15,6 +18,9 @@ use Illuminate\Support\Str;
 
 class RentToRentService
 {
+    public function __construct(private PaymentAccountTransactionService $transactionService)
+    {
+    }
     public function listDebts(array $filters = []): array
     {
         $perPage = (int) ($filters['per_page'] ?? 15);
@@ -123,6 +129,14 @@ class RentToRentService
             throw new \InvalidArgumentException('Nominal rent-to-rent tidak bisa diedit karena sudah masuk dokumen tagihan.');
         }
 
+        $hasPending = RentToRentAmountChangeRequest::where('rent_to_rent_debt_id', $debt->id)
+            ->where('status', 'pending')
+            ->exists();
+
+        if ($hasPending) {
+            throw new \InvalidArgumentException('Ada permintaan perubahan nominal yang sedang pending ACC.');
+        }
+
         $debt->update([
             'amount_override' => $amount,
         ]);
@@ -131,6 +145,97 @@ class RentToRentService
 
         return $debt->fresh($this->debtDetailRelations());
     }
+
+    public function requestAmountChange(RentToRentDebt $debt, ?int $amount, string $reason, int $userId): RentToRentAmountChangeRequest
+    {
+        $debt->loadMissing('billItems.bill');
+
+        if ($this->hasLockedBillItem($debt)) {
+            throw new \InvalidArgumentException('Nominal rent-to-rent tidak bisa diedit karena sudah masuk dokumen tagihan.');
+        }
+
+        $hasPending = RentToRentAmountChangeRequest::where('rent_to_rent_debt_id', $debt->id)
+            ->where('status', 'pending')
+            ->exists();
+
+        if ($hasPending) {
+            throw new \InvalidArgumentException('Sudah ada permintaan perubahan nominal yang sedang menunggu persetujuan.');
+        }
+
+        return RentToRentAmountChangeRequest::create([
+            'rent_to_rent_debt_id' => $debt->id,
+            'requested_amount_override' => $amount,
+            'reason' => $reason,
+            'status' => 'pending',
+            'requested_by' => $userId,
+            'requested_at' => now(),
+        ]);
+    }
+
+    public function approveAmountChange(RentToRentAmountChangeRequest $request, int $approverId): RentToRentAmountChangeRequest
+    {
+        if ($request->status !== 'pending') {
+            throw new \InvalidArgumentException('Permintaan ini tidak berstatus pending.');
+        }
+
+        DB::transaction(function () use ($request, $approverId) {
+            $request->update([
+                'status' => 'approved',
+                'approved_by' => $approverId,
+                'reviewed_at' => now(),
+            ]);
+
+            $debt = $request->debt;
+            $debt->loadMissing('billItems.bill');
+
+            if ($this->hasLockedBillItem($debt)) {
+                throw new \InvalidArgumentException('Nominal rent-to-rent tidak bisa diedit karena sudah masuk dokumen tagihan.');
+            }
+
+            $debt->update([
+                'amount_override' => $request->requested_amount_override,
+            ]);
+
+            $this->refreshDebtCache($debt);
+        });
+
+        return $request->fresh(['debt', 'approvedBy']);
+    }
+
+    public function rejectAmountChange(RentToRentAmountChangeRequest $request, ?string $rejectionNote, int $rejectorId): RentToRentAmountChangeRequest
+    {
+        if ($request->status !== 'pending') {
+            throw new \InvalidArgumentException('Permintaan ini tidak berstatus pending.');
+        }
+
+        $request->update([
+            'status' => 'rejected',
+            'rejected_by' => $rejectorId,
+            'rejection_note' => $rejectionNote,
+            'reviewed_at' => now(),
+        ]);
+
+        return $request->fresh(['debt', 'rejectedBy']);
+    }
+
+    public function cancelAmountChange(RentToRentAmountChangeRequest $request, int $userId): RentToRentAmountChangeRequest
+    {
+        if ($request->status !== 'pending') {
+            throw new \InvalidArgumentException('Permintaan ini tidak berstatus pending.');
+        }
+
+        if ($request->requested_by !== $userId) {
+            throw new \InvalidArgumentException('Anda hanya dapat membatalkan permintaan yang Anda buat sendiri.');
+        }
+
+        $request->update([
+            'status' => 'cancelled',
+            'reviewed_at' => now(),
+        ]);
+
+        return $request->fresh(['debt']);
+    }
+
 
     public function createBill(array $debtIds, int $branchId, int $tenantId): RentToRentBill
     {
@@ -240,6 +345,16 @@ class RentToRentService
                 'created_by' => auth()->id(),
             ]);
 
+            // Update saldo rekening (uang keluar)
+            $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+            $this->transactionService->applyDelta($account, -(int) $payment->amount, [
+                'type' => 'rent_to_rent_payment_out',
+                'amount' => (int) $payment->amount,
+                'description' => "Pembayaran rent-to-rent kepada " . ($debt->rentalOwner?->nama ?? "Owner") . " untuk booking #{$debt->booking?->kode_booking}",
+                'created_by' => auth()->id(),
+                'transaction_at' => $payment->paid_at ?? now(),
+            ]);
+
             $payment->allocations()->create([
                 'rent_to_rent_bill_item_id' => null,
                 'rent_to_rent_debt_id' => $debt->id,
@@ -342,6 +457,16 @@ class RentToRentService
                 'status' => 'active',
                 'paid_at' => isset($data['paid_at']) ? Carbon::parse($data['paid_at']) : now(),
                 'created_by' => auth()->id(),
+            ]);
+
+            // Update saldo rekening (uang keluar)
+            $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+            $this->transactionService->applyDelta($account, -(int) $payment->amount, [
+                'type' => 'rent_to_rent_payment_out',
+                'amount' => (int) $payment->amount,
+                'description' => "Pembayaran tagihan rent-to-rent #{$bill->bill_number} kepada " . ($bill->rentalOwner?->nama ?? "Owner"),
+                'created_by' => auth()->id(),
+                'transaction_at' => $payment->paid_at ?? now(),
             ]);
 
             $remainingPayment = (int) $payment->amount;
@@ -465,6 +590,19 @@ class RentToRentService
             ]);
 
             $this->syncAfterPaymentVoid($payment->fresh(['bill.items.debt', 'allocations.debt']));
+
+            // Update saldo rekening (uang masuk karena void)
+            $ownerName = $payment->bill?->rentalOwner?->nama 
+                ?? $payment->allocations->first()?->debt?->rentalOwner?->nama 
+                ?? "Owner";
+            $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+            $this->transactionService->applyDelta($account, (int) $payment->amount, [
+                'type' => 'rent_to_rent_payment_void',
+                'amount' => (int) $payment->amount,
+                'description' => "Void pembayaran rent-to-rent kepada {$ownerName}: " . $payment->void_reason,
+                'created_by' => auth()->id(),
+                'transaction_at' => now(),
+            ]);
 
             return $this->formatPaymentHistory($payment->fresh([
                 'bill.rentalOwner',
@@ -696,10 +834,26 @@ class RentToRentService
             }
 
             foreach ($bill->payments as $payment) {
-                $payment->update([
-                    'status' => 'voided',
-                    'voided_at' => now(),
-                ]);
+                if ($payment->status === 'active') {
+                    $payment->update([
+                        'status' => 'voided',
+                        'voided_at' => now(),
+                    ]);
+
+                    $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+                    $this->transactionService->applyDelta($account, (int) $payment->amount, [
+                        'type' => 'rent_to_rent_payment_void',
+                        'amount' => (int) $payment->amount,
+                        'description' => "Void tagihan rent-to-rent #{$bill->bill_number} (Void Pembayaran): " . $bill->void_reason,
+                        'created_by' => auth()->id(),
+                        'transaction_at' => now(),
+                    ]);
+                } else {
+                    $payment->update([
+                        'status' => 'voided',
+                        'voided_at' => now(),
+                    ]);
+                }
             }
 
             $bill->update([
@@ -791,12 +945,60 @@ class RentToRentService
         $unit = $detail?->unit;
         $duration = (int) ($detail?->lama_sewa ?? 1);
         $package = $detail?->paket_sewa ?? 'harian';
+        $pricingMode = $detail?->pricing_mode;
 
-        $base = match ($package) {
-            'mingguan' => (int) ($unit?->modal_1_minggu ?? 0),
-            'bulanan' => (int) ($unit?->modal_1_bulan ?? 0),
-            default => (int) ($unit?->modal_1_hari ?? 0),
-        };
+        if ($pricingMode === 'all_in') {
+            if ($detail?->pricing_package_id !== null) {
+                $base = match ($package) {
+                    'mingguan' => (int) ($unit?->modal_1_minggu ?? 0),
+                    'bulanan' => (int) ($unit?->modal_1_bulan ?? 0),
+                    default => (int) ($unit?->modal_1_hari ?? 0),
+                };
+            } else {
+                $base = match ($package) {
+                    'mingguan' => (int) ($unit?->modal_all_in_1_minggu ?? 0),
+                    'bulanan' => (int) ($unit?->modal_all_in_1_bulan ?? 0),
+                    default => (int) ($unit?->modal_all_in ?? 0),
+                };
+            }
+        } else {
+            $base = match ($package) {
+                'mingguan' => (int) ($unit?->modal_1_minggu ?? 0),
+                'bulanan' => (int) ($unit?->modal_1_bulan ?? 0),
+                default => (int) ($unit?->modal_1_hari ?? 0),
+            };
+        }
+
+        return $base * max(1, $duration);
+    }
+
+    public function sellingPrice(RentToRentDebt $debt): ?int
+    {
+        $detail = $debt->relationLoaded('bookingDetail')
+            ? $debt->bookingDetail
+            : $debt->bookingDetail()->with('unit')->first();
+
+        if ($detail?->pricing_mode !== 'all_in') {
+            return null;
+        }
+
+        $unit = $detail?->unit;
+        $duration = (int) ($detail?->lama_sewa ?? 1);
+        $package = $detail?->paket_sewa ?? 'harian';
+
+        if ($detail?->pricing_package_id !== null) {
+            $base = match ($package) {
+                'mingguan' => (int) ($unit?->harga_1_minggu ?? 0),
+                'bulanan' => (int) ($unit?->harga_1_bulan ?? 0),
+                default => (int) ($unit?->harga_1_hari ?? 0),
+            };
+        } else {
+            $base = match ($package) {
+                'mingguan' => (int) ($unit?->harga_all_in_1_minggu ?? 0),
+                'bulanan' => (int) ($unit?->harga_all_in_1_bulan ?? 0),
+                default => (int) ($unit?->harga_all_in ?? 0),
+            };
+        }
 
         return $base * max(1, $duration);
     }

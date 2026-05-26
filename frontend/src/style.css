@@ -73,6 +73,9 @@
   background-color: var(--primary) !important;
   color: var(--text-white) !important;
 }
+.text-italic {
+ font-style: italic !important;
+}
 .back-button {
   width: 34px;
   height: 34px;
@@ -97,9 +100,6 @@
   line-height: 1.3;
   text-transform: capitalize;
   white-space: nowrap;
-}
-.text-italic{
-  font-style: italic;
 }
 
 .status-badge.neutral { background: var(--secondary); color: var(--primary); }

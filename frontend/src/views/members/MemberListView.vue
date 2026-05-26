@@ -83,33 +83,37 @@ const getStatusSeverity = (status) => {
 </script>
 
 <template>
-  <div class="view-container">
-    <div class="header-section">
-      <div class="header-content">
-        <h1>Manajemen Member</h1>
-        <p>Kelola data pelanggan yang mengajukan sewa lepas kunci</p>
+  <div class="page-container table-page-active">
+    <div class="page-header flex justify-between items-center mb-4">
+      <div class="header-left">
+        <h1 class="page-title m-0 text-2xl font-bold text-[var(--text-primary)]">Manajemen Member</h1>
+        <p class="page-subtitle m-0 mt-1 text-[var(--text-secondary)]">Kelola data pelanggan yang mengajukan sewa lepas kunci</p>
       </div>
-      <Button 
-        v-if="canCreate"
-        label="Tambah Member Baru" 
-        icon="pi pi-plus" 
-        class="p-button-tosca" 
-        @click="createMember" 
-      />
+      <div class="header-actions">
+        <Button 
+          v-if="canCreate"
+          label="Tambah Member Baru" 
+          icon="pi pi-plus" 
+          class="btn-pill btn-primary" 
+          @click="createMember" 
+        />
+      </div>
     </div>
 
-    <div class="content-card">
-      <div class="table-toolbar">
-        <div class="filter-wrapper">
-          <span class="p-input-icon-left search-wrapper">
+    <div class="filter-bar bg-[var(--surface-default)] p-3 rounded-lg border border-[var(--surface-border)] mb-3">
+      <div class="filter-groups flex flex-wrap gap-3">
+        <div class="filter-group filter-search flex-1" style="min-width: 300px;">
+          <span class="p-input-icon-left w-full">
             <i class="pi pi-search" />
             <InputText 
               v-model="searchQuery" 
-              placeholder="Cari nama pelanggan atau ID member..." 
+              placeholder="Cari nama atau ID..." 
               @input="onSearch"
               class="w-full"
             />
           </span>
+        </div>
+        <div class="filter-group">
           <Dropdown 
             v-model="statusFilter" 
             :options="statusOptions" 
@@ -117,30 +121,32 @@ const getStatusSeverity = (status) => {
             optionValue="value" 
             placeholder="Filter Status" 
             @change="onSearch"
-            class="status-filter"
+            style="min-width: 180px;"
           />
         </div>
       </div>
+    </div>
 
+    <div class="table-shell app-card rounded-lg border border-[var(--surface-border)] overflow-hidden bg-[var(--surface-default)] flex-col">
       <DataTable 
         :value="members" 
         :loading="loading" 
-        responsiveLayout="scroll"
-        class="p-datatable-sm"
-        stripedRows
+        scrollable 
+        scrollHeight="flex"
+        class="drent-datatable"
       >
         <template #empty>
-          <div class="empty-state">
-            <i class="pi pi-id-card"></i>
+          <div class="flex flex-col items-center justify-center p-5 text-[var(--text-secondary)]">
+            <i class="pi pi-id-card text-4xl mb-3 opacity-50"></i>
             <p>Belum ada data member.</p>
           </div>
         </template>
 
         <Column field="customer.nama" header="Nama Pelanggan" style="min-width: 200px">
           <template #body="{ data }">
-            <div class="customer-info">
-              <span class="customer-name">{{ data.customer?.nama }}</span>
-              <small class="text-gray-500">{{ data.customer?.kontak_1 }}</small>
+            <div class="flex flex-col gap-1">
+              <span class="font-semibold text-[var(--text-primary)]">{{ data.customer?.nama }}</span>
+              <small class="text-[var(--text-secondary)]">{{ data.customer?.kontak_1 }}</small>
             </div>
           </template>
         </Column>
@@ -156,23 +162,23 @@ const getStatusSeverity = (status) => {
             <Tag 
               :severity="getStatusSeverity(data.status_member)" 
               :value="data.status_member"
-              class="status-tag"
+              class="status-badge"
             />
           </template>
         </Column>
 
         <Column field="tanggal_exp" header="Kedaluwarsa" style="min-width: 120px">
           <template #body="{ data }">
-            {{ data.tanggal_exp || '-' }}
+            <span class="text-sm">{{ data.tanggal_exp || '-' }}</span>
           </template>
         </Column>
 
-        <Column header="Aksi" style="min-width: 100px; text-align: center">
+        <Column header="Aksi" style="min-width: 80px; text-align: center" frozen alignFrozen="right">
           <template #body="{ data }">
-            <div class="action-buttons">
+            <div class="action-pill-group flex justify-center">
               <Button 
                 icon="pi pi-eye" 
-                class="p-button-rounded p-button-text p-button-secondary" 
+                class="action-btn p-button-rounded p-button-text p-button-secondary" 
                 @click="viewDetail(data.id)" 
                 v-tooltip.top="'Lihat Detail'"
               />
@@ -181,7 +187,7 @@ const getStatusSeverity = (status) => {
         </Column>
       </DataTable>
 
-      <div class="paginator-wrapper">
+      <div class="border-t border-[var(--surface-border)] p-2">
         <Paginator 
           :rows="pagination.per_page" 
           :totalRecords="pagination.total" 
@@ -196,123 +202,5 @@ const getStatusSeverity = (status) => {
 </template>
 
 <style scoped>
-.view-container {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-}
-
-.header-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-content h1 {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
-
-.header-content p {
-  color: #64748b;
-  margin-top: 5px;
-}
-
-.content-card {
-  background-color: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
-}
-
-.table-toolbar {
-  padding: 20px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.filter-wrapper {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.search-wrapper {
-  max-width: 350px;
-  flex: 1;
-  min-width: 250px;
-}
-
-.status-filter {
-  width: 180px;
-}
-
-.customer-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.customer-name {
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.status-tag {
-  font-weight: 600;
-  font-size: 0.75rem;
-  padding: 4px 10px;
-}
-
-.action-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 5px;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 50px 0;
-  color: #94a3b8;
-}
-
-.empty-state i {
-  font-size: 3rem;
-  margin-bottom: 15px;
-  opacity: 0.5;
-}
-
-.paginator-wrapper {
-  padding: 10px;
-  border-top: 1px solid #f1f5f9;
-}
-
-.p-button-tosca {
-  background-color: #06b6d4 !important;
-  border-color: #06b6d4 !important;
-}
-
-.p-button-tosca:hover {
-  background-color: #0891b2 !important;
-  border-color: #0891b2 !important;
-}
-
-:deep(.p-datatable .p-datatable-thead > tr > th) {
-  background-color: #f8fafc;
-  color: #475569;
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.5px;
-  padding: 15px;
-}
-
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 15px;
-}
+/* Mewarisi token global DRENT dari src/style.css */
 </style>

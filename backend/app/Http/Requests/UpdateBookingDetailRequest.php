@@ -40,6 +40,7 @@ class UpdateBookingDetailRequest extends FormRequest
             'costs.*.label' => 'required_with:costs|string|max:255',
             'costs.*.amount' => 'required_with:costs|integer|min:0',
             'costs.*.keterangan' => 'nullable|string',
+            'costs.*.is_additional' => 'nullable|boolean',
         ];
     }
 

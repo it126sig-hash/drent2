@@ -12,7 +12,10 @@ class PricingPackagePolicy
      */
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch']);
+        // Superadmin selalu bisa akses semuanya
+        if ($user->role === 'superadmin') return true;
+        // Untuk role lain, cek apakah role tersebut diberi izin 'master.pricing_package.view' di database
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package');
     }
 
     /**
@@ -21,7 +24,8 @@ class PricingPackagePolicy
     public function view(User $user, PricingPackage $pricingPackage): bool
     {
         if ($user->role === 'superadmin') return true;
-        return $user->branch_id === $pricingPackage->branch_id;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package')
+            && $user->branch_id === $pricingPackage->branch_id;
     }
 
     /**
@@ -29,7 +33,8 @@ class PricingPackagePolicy
      */
     public function create(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package');
     }
 
     /**
@@ -38,7 +43,8 @@ class PricingPackagePolicy
     public function update(User $user, PricingPackage $pricingPackage): bool
     {
         if ($user->role === 'superadmin') return true;
-        return $user->role === 'admin_branch' && $user->branch_id === $pricingPackage->branch_id;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package')
+            && $user->branch_id === $pricingPackage->branch_id;
     }
 
     /**
@@ -47,6 +53,7 @@ class PricingPackagePolicy
     public function delete(User $user, PricingPackage $pricingPackage): bool
     {
         if ($user->role === 'superadmin') return true;
-        return $user->role === 'admin_branch' && $user->branch_id === $pricingPackage->branch_id;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package')
+            && $user->branch_id === $pricingPackage->branch_id;
     }
 }

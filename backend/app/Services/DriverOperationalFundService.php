@@ -12,6 +12,7 @@ use App\Models\DriverOperationalFund;
 use App\Models\CostType;
 use App\Models\PaymentAccount;
 use App\Models\User;
+use App\Services\PaymentAccountTransactionService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\LengthAwarePaginator as Paginator;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +20,9 @@ use Illuminate\Support\Facades\DB;
 
 class DriverOperationalFundService
 {
+    public function __construct(private PaymentAccountTransactionService $transactionService)
+    {
+    }
     private array $fundRelations = [
         'booking.customer',
         'bookingDetail.unit',
@@ -58,6 +62,9 @@ class DriverOperationalFundService
                 'operationalFunds.expenses.costType',
                 'operationalFunds.expenses.submitter',
                 'operationalFunds.expenses.reviewer',
+                'operationalExpenses.costType',
+                'operationalExpenses.submitter',
+                'operationalExpenses.reviewer',
             ])
             ->where('tenant_id', $user->tenant_id)
             ->when($user->role !== 'superadmin', fn ($q) => $q->where('branch_id', $user->branch_id))
@@ -72,18 +79,10 @@ class DriverOperationalFundService
                 $q->whereHas('operationalFunds', fn ($fund) => $fund->where('status', $status))
             )
             ->when(($filters['operational_state'] ?? null) === 'active', fn ($q) =>
-                $q->where(function ($query) {
-                    $query->whereDoesntHave('operationalFunds')
-                        ->orWhereHas('operationalFunds', fn ($fund) =>
-                            $fund->whereIn('status', ['pending_driver_acceptance', 'accepted'])
-                        );
-                })
+                $q->where('is_operational_completed', false)
             )
             ->when(($filters['operational_state'] ?? null) === 'completed', fn ($q) =>
-                $q->whereHas('operationalFunds', fn ($fund) => $fund->where('status', 'closed'))
-                    ->whereDoesntHave('operationalFunds', fn ($fund) =>
-                        $fund->whereIn('status', ['pending_driver_acceptance', 'accepted'])
-                    )
+                $q->where('is_operational_completed', true)
             )
             ->when($filters['date_from'] ?? null, fn ($q, $date) =>
                 $q->whereHas('bookingDetails', fn ($detail) => $detail->whereDate('tgl_sewa', '>=', $date))
@@ -166,6 +165,18 @@ class DriverOperationalFundService
                 'created_by' => Auth::id(),
             ]);
 
+            // Update saldo rekening (uang keluar)
+            $account = PaymentAccount::lockForUpdate()->findOrFail($fund->payment_account_id);
+            $this->transactionService->applyDelta($account, -(int) $fund->amount, [
+                'type' => 'driver_fund_out',
+                'amount' => (int) $fund->amount,
+                'description' => $fundType === 'salary' 
+                    ? "Pembayaran gaji driver " . ($driver->nama ?? "Driver") . " untuk booking #{$booking->kode_booking}"
+                    : "Deposit dana operasional driver " . ($driver->nama ?? "Driver") . " untuk booking #{$booking->kode_booking}",
+                'created_by' => Auth::id(),
+                'transaction_at' => $fund->paid_at ?? now(),
+            ]);
+
             foreach ($data['items'] as $item) {
                 $fund->items()->create([
                     'cost_type_id' => $item['cost_type_id'] ?? null,
@@ -220,6 +231,96 @@ class DriverOperationalFundService
 
             return $fund->fresh($this->fundRelations);
         });
+    }
+
+    public function markOperationalComplete(Booking $booking): void
+    {
+        $this->assertCanUseBooking($booking);
+
+        DB::transaction(function () use ($booking) {
+            $booking->update([
+                'is_operational_completed' => true
+            ]);
+        });
+    }
+
+    public function requestOperationalRevert(Booking $booking, string $reason): Booking
+    {
+        $this->assertCanUseBooking($booking);
+
+        if (!$booking->is_operational_completed) {
+            throw new \InvalidArgumentException(
+                'Booking ini sudah berstatus operasional aktif.'
+            );
+        }
+
+        if ($booking->operational_revert_status === 'pending') {
+            throw new \InvalidArgumentException(
+                'Request aktifkan kembali operasional masih menunggu approval supervisor.'
+            );
+        }
+
+        $booking->update([
+            'operational_revert_status' => 'pending',
+            'operational_revert_reason' => $reason,
+            'operational_revert_requested_by' => auth()->id(),
+            'operational_revert_requested_at' => now(),
+            'operational_revert_approved_by' => null,
+            'operational_revert_approved_at' => null,
+            'operational_revert_rejected_by' => null,
+            'operational_revert_rejected_at' => null,
+            'operational_revert_rejection_note' => null,
+        ]);
+
+        return $booking->fresh();
+    }
+
+    public function approveOperationalRevert(Booking $booking): Booking
+    {
+        $this->assertCanUseBooking($booking);
+
+        if ($booking->operational_revert_status !== 'pending') {
+            throw new \InvalidArgumentException(
+                'Hanya request aktifkan kembali operasional berstatus pending yang bisa disetujui.'
+            );
+        }
+
+        if ($booking->operational_revert_requested_by === auth()->id() && auth()->user()?->role !== 'superadmin') {
+            throw new \InvalidArgumentException(
+                'Request harus di-ACC oleh supervisor lain.'
+            );
+        }
+
+        DB::transaction(function () use ($booking) {
+            $booking->update([
+                'is_operational_completed' => false,
+                'operational_revert_status' => 'approved',
+                'operational_revert_approved_by' => auth()->id(),
+                'operational_revert_approved_at' => now(),
+            ]);
+        });
+
+        return $booking->fresh();
+    }
+
+    public function rejectOperationalRevert(Booking $booking, ?string $note = null): Booking
+    {
+        $this->assertCanUseBooking($booking);
+
+        if ($booking->operational_revert_status !== 'pending') {
+            throw new \InvalidArgumentException(
+                'Hanya request aktifkan kembali operasional berstatus pending yang bisa ditolak.'
+            );
+        }
+
+        $booking->update([
+            'operational_revert_status' => 'rejected',
+            'operational_revert_rejected_by' => auth()->id(),
+            'operational_revert_rejected_at' => now(),
+            'operational_revert_rejection_note' => $note,
+        ]);
+
+        return $booking->fresh();
     }
 
     public function history(array $filters = []): Paginator
@@ -282,13 +383,15 @@ class DriverOperationalFundService
                 'id' => 'expense-' . $expense->id,
                 'type' => 'expense',
                 'expense_type' => $expense->type,
-                'label' => $expense->type === 'return' ? 'Pengembalian Sisa Dana' : 'Pembayaran Bon',
+                'label' => $expense->type === 'return'
+                    ? 'Pengembalian Sisa Dana'
+                    : ($expense->driver_operational_fund_id === null ? 'Realisasi Langsung' : 'Pembayaran Bon'),
                 'booking_id' => $expense->booking_id,
                 'booking_code' => $expense->booking?->kode_booking,
                 'customer_name' => $expense->booking?->customer?->nama,
                 'driver_name' => $expense->driver?->nama,
                 'amount' => (int) $expense->amount,
-                'direction' => 'in',
+                'direction' => ($expense->type === 'expense' && $expense->driver_operational_fund_id === null) ? 'out' : 'in',
                 'status' => $expense->status,
                 'happened_at' => $expense->reviewed_at?->toISOString() ?? $expense->created_at?->toISOString(),
                 'payment_account' => $expense->fund?->paymentAccount ? [
@@ -301,6 +404,7 @@ class DriverOperationalFundService
                 'created_by_name' => $expense->submitter?->name,
                 'reviewed_by_name' => $expense->reviewer?->name,
                 'cost_type_name' => $expense->costType?->nama,
+                'rejection_reason' => $expense->rejection_reason,
             ]);
 
         $items = $funds
@@ -398,6 +502,55 @@ class DriverOperationalFundService
         });
     }
 
+    public function createBookingExpense(Booking $booking, array $data, mixed $photo = null): DriverOperationalExpense
+    {
+        return DB::transaction(function () use ($booking, $data, $photo) {
+            $this->assertCanUseBooking($booking);
+
+            $photoPath = $photo ? $photo->store('driver-operational-receipts', 'public') : null;
+
+            $detailId = $data['booking_detail_id'] ?? null;
+            if (! $detailId && $booking->bookingDetails->count() > 0) {
+                // If not provided, attach to the first detail without driver (or just first detail)
+                $detailId = $booking->bookingDetails->first()->id;
+            }
+
+            $expense = DriverOperationalExpense::create([
+                'tenant_id' => $booking->tenant_id,
+                'branch_id' => $booking->branch_id,
+                'driver_operational_fund_id' => null,
+                'booking_id' => $booking->id,
+                'booking_detail_id' => $detailId,
+                'driver_id' => null,
+                'cost_type_id' => $data['type'] === 'return' ? null : ($data['cost_type_id'] ?? null),
+                'type' => $data['type'],
+                'amount' => $data['amount'],
+                'description' => $data['description'],
+                'photo_path' => $photoPath,
+                'status' => 'approved', // Direct realization from finance without driver is auto-approved
+                'source' => 'finance',
+                'submitted_by' => Auth::id(),
+                'reviewed_by' => Auth::id(),
+                'reviewed_at' => now(),
+                'payment_account_id' => $data['payment_account_id'] ?? null,
+            ]);
+
+            // Update saldo rekening (uang keluar karena biaya operasional langsung)
+            if ($expense->payment_account_id) {
+                $account = PaymentAccount::lockForUpdate()->findOrFail($expense->payment_account_id);
+                $this->transactionService->applyDelta($account, -(int) $expense->amount, [
+                    'type' => 'driver_direct_expense_out',
+                    'amount' => (int) $expense->amount,
+                    'description' => "Pengeluaran operasional langsung booking #{$booking->kode_booking}: " . $expense->description,
+                    'created_by' => Auth::id(),
+                    'transaction_at' => now(),
+                ]);
+            }
+
+            return $expense->fresh(['costType', 'submitter', 'reviewer']);
+        });
+    }
+
     public function approveExpense(DriverOperationalExpense $expense): DriverOperationalExpense
     {
         return DB::transaction(function () use ($expense) {
@@ -418,6 +571,21 @@ class DriverOperationalFundService
             ]);
 
             $this->applyExpenseDebit($expense, 'Bon/pengembalian operasional disetujui finance');
+
+            // Jika type = return, tambahkan saldo rekening asal deposit/fund
+            if ($expense->type === 'return') {
+                $fund = $expense->fund;
+                if ($fund && $fund->payment_account_id) {
+                    $account = PaymentAccount::lockForUpdate()->findOrFail($fund->payment_account_id);
+                    $this->transactionService->applyDelta($account, (int) $expense->amount, [
+                        'type' => 'driver_return_in',
+                        'amount' => (int) $expense->amount,
+                        'description' => "Pengembalian sisa dana operasional oleh driver " . ($expense->driver?->nama ?? "Driver") . " untuk booking #{$expense->booking?->kode_booking}",
+                        'created_by' => Auth::id(),
+                        'transaction_at' => now(),
+                    ]);
+                }
+            }
 
             if ($expense->driver?->user_id) {
                 $this->notifyUser($expense->driver->user_id, 'operational_expense_approved', 'Bon disetujui', 'Bon operasional kamu sudah disetujui finance.', [
@@ -451,6 +619,152 @@ class DriverOperationalFundService
                 'fund_id' => $expense->driver_operational_fund_id,
             ], $expense->fund);
         }
+
+        return $expense->fresh(['costType', 'submitter', 'reviewer']);
+    }
+
+    public function voidFund(DriverOperationalFund $fund, string $reason): DriverOperationalFund
+    {
+        $this->assertCanUseBooking($fund->booking);
+
+        if ($fund->status === 'cancelled') {
+            throw new \InvalidArgumentException('Dana operasional ini sudah dibatalkan/void.');
+        }
+
+        return DB::transaction(function () use ($fund, $reason) {
+            if ($fund->fund_type !== 'salary' && in_array($fund->status, ['accepted', 'closed'])) {
+                if ($fund->driver_id) {
+                    $this->applyDriverBalance(
+                        driverId: $fund->driver_id,
+                        direction: 'debit',
+                        amount: (int) $fund->amount,
+                        bookingId: $fund->booking_id,
+                        fundId: $fund->id,
+                        expenseId: null,
+                        description: 'Void transfer dana operasional: ' . $reason
+                    );
+                }
+            }
+
+            $fund->update([
+                'status' => 'cancelled',
+                'cancelled_by' => Auth::id(),
+                'close_note' => $fund->close_note ? $fund->close_note . ' | Void: ' . $reason : 'Void: ' . $reason,
+            ]);
+
+            if ($fund->booking->is_operational_completed) {
+                $fund->booking->update(['is_operational_completed' => false]);
+            }
+
+            // Update saldo rekening (uang masuk kembali karena void deposit)
+            $account = PaymentAccount::lockForUpdate()->findOrFail($fund->payment_account_id);
+            $this->transactionService->applyDelta($account, (int) $fund->amount, [
+                'type' => 'driver_fund_void',
+                'amount' => (int) $fund->amount,
+                'description' => "Void deposit/gaji driver " . ($fund->driver?->nama ?? "Driver") . ": " . $reason,
+                'created_by' => Auth::id(),
+                'transaction_at' => now(),
+            ]);
+
+            return $fund->fresh($this->fundRelations);
+        });
+    }
+
+    public function requestVoidExpense(DriverOperationalExpense $expense, string $reason): DriverOperationalExpense
+    {
+        $this->assertCanUseBooking($expense->booking);
+
+        if ($expense->status === 'void_requested') {
+            throw new \InvalidArgumentException('Request void realisasi/bon ini sedang menunggu approval supervisor.');
+        }
+
+        if ($expense->status === 'rejected' && str_contains($expense->rejection_reason ?? '', '[VOID]')) {
+            throw new \InvalidArgumentException('Realisasi/bon ini sudah dibatalkan/void.');
+        }
+
+        if ($expense->status !== 'approved') {
+            throw new \InvalidArgumentException('Hanya realisasi/bon berstatus approved yang bisa divoid.');
+        }
+
+        $expense->update([
+            'status' => 'void_requested',
+            'void_reason' => $reason,
+            'void_requested_by' => Auth::id(),
+            'void_requested_at' => now(),
+            'void_approved_by' => null,
+            'void_approved_at' => null,
+            'void_rejected_by' => null,
+            'void_rejected_at' => null,
+            'void_rejection_note' => null,
+        ]);
+
+        return $expense->fresh(['costType', 'submitter', 'reviewer']);
+    }
+
+    public function approveVoidExpense(DriverOperationalExpense $expense): DriverOperationalExpense
+    {
+        $this->assertCanUseBooking($expense->booking);
+
+        if ($expense->status !== 'void_requested') {
+            throw new \InvalidArgumentException('Hanya request void realisasi/bon berstatus pending yang bisa disetujui.');
+        }
+
+        return DB::transaction(function () use ($expense) {
+            if ($expense->driver_id) {
+                $this->applyDriverBalance(
+                    driverId: $expense->driver_id,
+                    direction: 'credit',
+                    amount: (int) $expense->amount,
+                    bookingId: $expense->booking_id,
+                    fundId: $expense->driver_operational_fund_id,
+                    expenseId: $expense->id,
+                    description: 'Void realisasi/bon operasional: ' . $expense->void_reason
+                );
+            }
+
+            $expense->update([
+                'status' => 'rejected',
+                'reviewed_by' => Auth::id(),
+                'reviewed_at' => now(),
+                'rejection_reason' => '[VOID] ' . $expense->void_reason,
+                'void_approved_by' => Auth::id(),
+                'void_approved_at' => now(),
+            ]);
+
+            if ($expense->booking->is_operational_completed) {
+                $expense->booking->update(['is_operational_completed' => false]);
+            }
+
+            // Jika biaya operasional langsung, kembalikan uang ke saldo rekening
+            if ($expense->payment_account_id) {
+                $account = PaymentAccount::lockForUpdate()->findOrFail($expense->payment_account_id);
+                $this->transactionService->applyDelta($account, (int) $expense->amount, [
+                    'type' => 'driver_direct_expense_void',
+                    'amount' => (int) $expense->amount,
+                    'description' => "Void pengeluaran operasional langsung booking #{$expense->booking?->kode_booking}: " . $expense->void_reason,
+                    'created_by' => Auth::id(),
+                    'transaction_at' => now(),
+                ]);
+            }
+
+            return $expense->fresh(['costType', 'submitter', 'reviewer']);
+        });
+    }
+
+    public function rejectVoidExpense(DriverOperationalExpense $expense, ?string $note = null): DriverOperationalExpense
+    {
+        $this->assertCanUseBooking($expense->booking);
+
+        if ($expense->status !== 'void_requested') {
+            throw new \InvalidArgumentException('Hanya request void realisasi/bon berstatus pending yang bisa ditolak.');
+        }
+
+        $expense->update([
+            'status' => 'approved',
+            'void_rejected_by' => Auth::id(),
+            'void_rejected_at' => now(),
+            'void_rejection_note' => $note,
+        ]);
 
         return $expense->fresh(['costType', 'submitter', 'reviewer']);
     }
@@ -589,7 +903,9 @@ class DriverOperationalFundService
             ->where('status', 'closed')
             ->sum(fn ($fund) => (int) $fund->amount);
         $approvedExpenseTotal = $operationalFunds->sum(fn ($fund) => $fund->approvedExpenseTotal());
+        $approvedExpenseTotal += $booking->operationalExpenses->whereIn('status', ['approved', 'void_requested'])->where('type', 'expense')->sum(fn ($e) => (int) $e->amount);
         $approvedReturnTotal = $operationalFunds->sum(fn ($fund) => $fund->approvedReturnTotal());
+        $approvedReturnTotal += $booking->operationalExpenses->whereIn('status', ['approved', 'void_requested'])->where('type', 'return')->sum(fn ($e) => (int) $e->amount);
 
         $booking->booking_operational_total = $bookingOperationalTotal;
         $booking->all_in_total = $allInTotal;

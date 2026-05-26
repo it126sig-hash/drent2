@@ -4,14 +4,19 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\BookingPayment;
+use App\Models\PaymentAccount;
 use App\Services\BookingBillingService;
+use App\Services\PaymentAccountTransactionService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class BookingPaymentService
 {
-    public function __construct(private BookingBillingService $billingService)
-    {
+    public function __construct(
+        private BookingBillingService $billingService,
+        private PaymentAccountTransactionService $transactionService
+    ) {
     }
     /**
      * List payments for a booking.
@@ -29,25 +34,37 @@ class BookingPaymentService
      */
     public function create(Booking $booking, array $data): BookingPayment
     {
-        $data['booking_id'] = $booking->id;
-        $data['created_by'] = Auth::id();
-        $data['paid_at'] = $data['paid_at'] ?? now();
+        return DB::transaction(function () use ($booking, $data) {
+            $data['booking_id'] = $booking->id;
+            $data['created_by'] = Auth::id();
+            $data['paid_at'] = $data['paid_at'] ?? now();
 
-        $payment = BookingPayment::create($data);
+            $payment = BookingPayment::create($data);
 
-        if (($data['payment_type'] ?? null) === 'dp') {
-            $booking->update([
-                'status' => $booking->status === 'follow_up' ? 'confirm' : $booking->status,
-                'confirmed_by' => Auth::id(),
-                'confirmed_at' => now(),
+            if (($data['payment_type'] ?? null) === 'dp') {
+                $booking->update([
+                    'status' => $booking->status === 'follow_up' ? 'confirm' : $booking->status,
+                    'confirmed_by' => Auth::id(),
+                    'confirmed_at' => now(),
+                ]);
+            }
+
+            // Sync kolom cached_sisa_tagihan setelah pembayaran dicatat
+            $booking->load('payments'); // pastikan relasi segar
+            $this->billingService->updateCachedSisaTagihan($booking);
+
+            // Update saldo rekening (uang masuk)
+            $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+            $this->transactionService->applyDelta($account, (int) $payment->amount, [
+                'type' => 'booking_payment_in',
+                'amount' => (int) $payment->amount,
+                'description' => "Pembayaran booking #{$booking->kode_booking} ({$payment->payment_type})",
+                'created_by' => Auth::id(),
+                'transaction_at' => $payment->paid_at ?? now(),
             ]);
-        }
 
-        // Sync kolom cached_sisa_tagihan setelah pembayaran dicatat
-        $booking->load('payments'); // pastikan relasi segar
-        $this->billingService->updateCachedSisaTagihan($booking);
-
-        return $payment;
+            return $payment;
+        });
     }
 
     /**
@@ -130,31 +147,43 @@ class BookingPaymentService
 
     public function approveVoid(BookingPayment $payment): BookingPayment
     {
-        if ($payment->status !== 'void_requested') {
-            throw ValidationException::withMessages([
-                'payment' => ['Hanya pembayaran dengan status request void yang bisa di-approve.'],
+        return DB::transaction(function () use ($payment) {
+            if ($payment->status !== 'void_requested') {
+                throw ValidationException::withMessages([
+                    'payment' => ['Hanya pembayaran dengan status request void yang bisa di-approve.'],
+                ]);
+            }
+
+            if ($payment->void_requested_by === Auth::id() && Auth::user()?->role !== 'superadmin') {
+                throw ValidationException::withMessages([
+                    'payment' => ['Request void harus di-ACC oleh supervisor lain.'],
+                ]);
+            }
+
+            $payment->update([
+                'status' => 'voided',
+                'void_approved_by' => Auth::id(),
+                'void_approved_at' => now(),
             ]);
-        }
 
-        if ($payment->void_requested_by === Auth::id() && Auth::user()?->role !== 'superadmin') {
-            throw ValidationException::withMessages([
-                'payment' => ['Request void harus di-ACC oleh supervisor lain.'],
+            // Sync cache — void mengembalikan sisa tagihan booking
+            $booking = $payment->booking()->with(['bookingDetails.costs', 'payments'])->first();
+            if ($booking) {
+                $this->billingService->updateCachedSisaTagihan($booking);
+            }
+
+            // Kurangi saldo rekening (void = mengembalikan uang)
+            $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+            $this->transactionService->applyDelta($account, -(int) $payment->amount, [
+                'type' => 'booking_payment_void',
+                'amount' => (int) $payment->amount,
+                'description' => "Void pembayaran booking #{$booking->kode_booking} ({$payment->payment_type}): " . $payment->void_reason,
+                'created_by' => Auth::id(),
+                'transaction_at' => now(),
             ]);
-        }
 
-        $payment->update([
-            'status' => 'voided',
-            'void_approved_by' => Auth::id(),
-            'void_approved_at' => now(),
-        ]);
-
-        // Sync cache — void mengembalikan sisa tagihan booking
-        $booking = $payment->booking()->with(['bookingDetails.costs', 'payments'])->first();
-        if ($booking) {
-            $this->billingService->updateCachedSisaTagihan($booking);
-        }
-
-        return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);
+            return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);
+        });
     }
 
     public function rejectVoid(BookingPayment $payment, ?string $note = null): BookingPayment

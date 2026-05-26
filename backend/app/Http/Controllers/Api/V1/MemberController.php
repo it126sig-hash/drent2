@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreMemberRequest;
 use App\Http\Requests\UpdateMemberRequest;
+use App\Http\Requests\UpdateMemberStatusRequest;
+use App\Http\Requests\ExtendMemberRequest;
 use App\Http\Resources\MemberResource;
+use App\Http\Resources\MemberExtensionResource;
 use App\Models\Member;
 use App\Services\MemberService;
 use Illuminate\Http\Request;
@@ -70,5 +73,26 @@ class MemberController extends Controller
         }
 
         return response()->file(Storage::disk('local')->path($path));
+    }
+
+    public function updateStatus(UpdateMemberStatusRequest $request, Member $member)
+    {
+        $this->authorize('update', $member);
+        $member = $this->memberService->updateStatus($member, $request->validated()['status_member']);
+        return new MemberResource($member->load('customer'));
+    }
+
+    public function extend(ExtendMemberRequest $request, Member $member)
+    {
+        $this->authorize('update', $member);
+        $extension = $this->memberService->extendMember($member, $request->validated());
+        return new MemberExtensionResource($extension->load('creator'));
+    }
+
+    public function extensions(Member $member)
+    {
+        $this->authorize('view', $member);
+        $extensions = $this->memberService->getExtensions($member);
+        return MemberExtensionResource::collection($extensions);
     }
 }

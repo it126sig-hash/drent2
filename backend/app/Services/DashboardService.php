@@ -71,9 +71,13 @@ class DashboardService
 
     private function kpis(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId): array
     {
-        $unitQuery = $this->scopeTenantBranch(Unit::query(), $user, $branchId);
-        $availableUnits = (clone $unitQuery)->where('status', 'Aktif')->count();
-        $totalUnits = (clone $unitQuery)->count();
+        $openRentToRentBills = $this->scopeTenantBranch(RentToRentBill::query(), $user, $branchId)
+            ->whereNotIn('status', ['paid', 'void'])
+            ->whereColumn('paid_amount', '<', 'total_amount');
+        $openRentToRentAmount = (clone $openRentToRentBills)
+            ->get()
+            ->sum(fn (RentToRentBill $bill) => max(0, (int) $bill->total_amount - (int) $bill->paid_amount));
+        $openRentToRentCount = (clone $openRentToRentBills)->count();
 
         $activeBookingCount = $this->scopeTenantBranch(Booking::query(), $user, $branchId)
             ->whereIn('status', self::OPEN_BOOKING_STATUSES)
@@ -82,29 +86,28 @@ class DashboardService
         $completedBookingCount = $this->completedInPeriodQuery($dateFrom, $dateTo, $user, $branchId)->count();
         $revenueAmount = $this->paymentInPeriodQuery($dateFrom, $dateTo, $user, $branchId)->sum('amount');
 
-        $outstandingQuery = $this->outstandingInvoicesQuery($user, $branchId);
-        $outstandingAmount = (clone $outstandingQuery)
-            ->get()
-            ->sum(fn (Invoice $invoice) => max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount));
+        $outstandingQuery = $this->outstandingBookingsQuery($user, $branchId);
+        $outstandingAmount = (clone $outstandingQuery)->sum('cached_sisa_tagihan');
+
+        $notGeneratedInvoiceCount = $this->scopeTenantBranch(Booking::query(), $user, $branchId)
+            ->where('cached_sisa_tagihan', '>', 0)
+            ->where('status', '!=', 'batal')
+            ->whereDoesntHave('invoices', function (Builder $query) {
+                $query->whereNotIn('status', ['void', 'paid'])
+                    ->whereColumn('paid_amount', '<', 'total_amount');
+            })
+            ->count();
 
         return [
-            [
-                'key' => 'available_units',
-                'label' => 'Unit Tersedia',
-                'value' => $availableUnits,
-                'display_value' => "{$availableUnits} / {$totalUnits}",
-                'delta' => 'Siap jalan',
-                'icon' => 'pi pi-car',
-                'tone' => 'positive',
-            ],
             [
                 'key' => 'active_bookings',
                 'label' => 'Booking Aktif',
                 'value' => $activeBookingCount,
                 'display_value' => (string) $activeBookingCount,
                 'delta' => 'Follow up sampai rental unit',
-                'icon' => 'pi pi-calendar-check',
+                'icon' => 'pi pi-calendar',
                 'tone' => 'info',
+                'route' => '/bookings',
             ],
             [
                 'key' => 'completed_bookings',
@@ -114,6 +117,7 @@ class DashboardService
                 'delta' => 'Periode terpilih',
                 'icon' => 'pi pi-check-circle',
                 'tone' => 'neutral',
+                'route' => '/bookings',
             ],
             [
                 'key' => 'revenue',
@@ -123,15 +127,28 @@ class DashboardService
                 'delta' => 'Pembayaran periode ini',
                 'icon' => 'pi pi-wallet',
                 'tone' => 'positive',
+                'route' => '/finance/transactions',
             ],
             [
                 'key' => 'outstanding',
                 'label' => 'Piutang Berjalan',
                 'value' => (int) $outstandingAmount,
                 'display_value' => $this->formatCurrency((int) $outstandingAmount),
-                'delta' => (clone $outstandingQuery)->count().' invoice',
+                'delta' => (clone $outstandingQuery)->count().' transaksi',
                 'icon' => 'pi pi-exclamation-circle',
                 'tone' => 'warning',
+                'sub_value' => $notGeneratedInvoiceCount . ' transaksi belum dibuat invoice',
+                'route' => '/finance/receivables',
+            ],
+            [
+                'key' => 'rent_to_rent_debt',
+                'label' => 'Hutang Rent-to-Rent',
+                'value' => (int) $openRentToRentAmount,
+                'display_value' => $this->formatCurrency((int) $openRentToRentAmount),
+                'delta' => "{$openRentToRentCount} tagihan",
+                'icon' => 'pi pi-percentage',
+                'tone' => 'negative',
+                'route' => '/finance/rent-to-rent',
             ],
         ];
     }
@@ -159,7 +176,10 @@ class DashboardService
 
     private function armadaStatus(User $user, ?int $branchId): array
     {
-        $unitQuery = $this->scopeTenantBranch(Unit::query(), $user, $branchId);
+        $unitQuery = $this->scopeTenantBranch(Unit::query(), $user, $branchId)
+            ->whereDoesntHave('rentalOwner', function (Builder $query) {
+                $query->where('is_owner', false);
+            });
         $total = max(1, (clone $unitQuery)->count());
 
         $items = [
@@ -187,7 +207,7 @@ class DashboardService
 
     private function financeSnapshot(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId): array
     {
-        $outstandingInvoices = $this->outstandingInvoicesQuery($user, $branchId);
+        $outstandingBookings = $this->outstandingBookingsQuery($user, $branchId);
         $openRentToRentBills = $this->scopeTenantBranch(RentToRentBill::query(), $user, $branchId)
             ->whereNotIn('status', ['paid', 'void'])
             ->whereColumn('paid_amount', '<', 'total_amount');
@@ -211,10 +231,8 @@ class DashboardService
             ->all();
 
         return [
-            'outstanding_invoice_count' => (clone $outstandingInvoices)->count(),
-            'outstanding_invoice_amount' => (int) (clone $outstandingInvoices)
-                ->get()
-                ->sum(fn (Invoice $invoice) => max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount)),
+            'outstanding_count' => (clone $outstandingBookings)->count(),
+            'outstanding_amount' => (int) (clone $outstandingBookings)->sum('cached_sisa_tagihan'),
             'open_rent_to_rent_bill_count' => (clone $openRentToRentBills)->count(),
             'open_rent_to_rent_bill_amount' => (int) (clone $openRentToRentBills)
                 ->get()
@@ -407,11 +425,11 @@ class DashboardService
             ->whereHas('booking', fn (Builder $booking) => $this->scopeTenantBranch($booking, $user, $branchId));
     }
 
-    private function outstandingInvoicesQuery(User $user, ?int $branchId): Builder
+    private function outstandingBookingsQuery(User $user, ?int $branchId): Builder
     {
-        return $this->scopeTenantBranch(Invoice::query(), $user, $branchId)
-            ->whereNotIn('status', ['paid', 'void'])
-            ->whereColumn('paid_amount', '<', 'total_amount');
+        return $this->scopeTenantBranch(Booking::query(), $user, $branchId)
+            ->where('cached_sisa_tagihan', '>', 0)
+            ->whereNotIn('status', ['batal']);
     }
 
     private function overdueBookings(User $user, ?int $branchId): Collection

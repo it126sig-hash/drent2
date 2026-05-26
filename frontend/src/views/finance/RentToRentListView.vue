@@ -36,6 +36,8 @@ const {
   fetchDebts,
   fetchDebt,
   updateDebtAmount,
+  requestAmountChange,
+  cancelAmountChange,
   fetchBills,
   fetchBill,
   generateBill,
@@ -60,7 +62,8 @@ const showDebtDialog = ref(false)
 const showPaymentDialog = ref(false)
 const showVoidDialog = ref(false)
 const paymentAccountsLoaded = ref(false)
-const detailAmountForm = ref({ amount_override: null })
+const detailAmountForm = ref({ amount_override: null, reason: '' })
+const showCancelConfirm = ref(false)
 const voidForm = ref({ bill: null, void_reason: '' })
 const paymentForm = ref({
   payment_account_id: null,
@@ -117,6 +120,9 @@ const ownerOptions = computed(() => [
 const debtGroups = computed(() => {
   const groups = new Map()
   debts.value.forEach((debt) => {
+    if (Number(debt.remaining_amount || 0) <= 0 && filters.value.status !== 'paid') {
+      return
+    }
     const ownerId = debt.rental_owner?.id || 'unknown'
     if (!groups.has(ownerId)) {
       groups.set(ownerId, {
@@ -135,6 +141,32 @@ const debtGroups = computed(() => {
   })
 
   return [...groups.values()]
+})
+
+const computedSummary = computed(() => {
+  let totalAmount = 0
+  let paidAmount = 0
+  let remainingAmount = 0
+  const activeOwners = new Set()
+
+  debts.value.forEach((debt) => {
+    if (Number(debt.remaining_amount || 0) <= 0 && filters.value.status !== 'paid') {
+      return
+    }
+    totalAmount += Number(debt.total_amount || 0)
+    paidAmount += Number(debt.paid_amount || 0)
+    remainingAmount += Number(debt.remaining_amount || 0)
+    if (debt.rental_owner?.id) {
+      activeOwners.add(debt.rental_owner.id)
+    }
+  })
+
+  return {
+    total_amount: totalAmount,
+    paid_amount: paidAmount,
+    remaining_amount: remainingAmount,
+    owner_count: activeOwners.size,
+  }
 })
 
 watch(selectedRows, (rows) => {
@@ -259,19 +291,45 @@ const switchTab = (tab) => {
 
 const openDebtDetail = async (debt) => {
   await fetchDebt(debt.id)
-  detailAmountForm.value.amount_override = selectedDebt.value.amount_override ?? selectedDebt.value.default_amount ?? 0
+  if (selectedDebt.value.pending_amount_request) {
+    detailAmountForm.value.amount_override = selectedDebt.value.pending_amount_request.requested_amount_override
+    detailAmountForm.value.reason = selectedDebt.value.pending_amount_request.reason
+  } else {
+    detailAmountForm.value.amount_override = selectedDebt.value.amount_override ?? selectedDebt.value.default_amount ?? 0
+    detailAmountForm.value.reason = ''
+  }
   showDebtDialog.value = true
 }
 
 const submitDebtAmount = async () => {
   if (!selectedDebt.value?.id) return
-  await updateDebtAmount(selectedDebt.value.id, detailAmountForm.value.amount_override)
+  if (!detailAmountForm.value.reason || detailAmountForm.value.reason.trim().length < 5) {
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Alasan wajib diisi (minimal 5 karakter)', life: 3000 })
+    return
+  }
+  await requestAmountChange(selectedDebt.value.id, {
+    amount_override: detailAmountForm.value.amount_override,
+    reason: detailAmountForm.value.reason,
+  })
   showDebtDialog.value = false
 }
 
 const resetDebtAmount = async () => {
   if (!selectedDebt.value?.id) return
-  await updateDebtAmount(selectedDebt.value.id, null)
+  if (!detailAmountForm.value.reason || detailAmountForm.value.reason.trim().length < 5) {
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Alasan wajib diisi untuk melakukan reset (minimal 5 karakter)', life: 3000 })
+    return
+  }
+  await requestAmountChange(selectedDebt.value.id, {
+    amount_override: null,
+    reason: detailAmountForm.value.reason,
+  })
+  showDebtDialog.value = false
+}
+
+const handleCancelAmountChange = async () => {
+  if (!selectedDebt.value?.pending_amount_request?.id) return
+  await cancelAmountChange(selectedDebt.value.pending_amount_request.id)
   showDebtDialog.value = false
 }
 
@@ -547,19 +605,19 @@ onMounted(async () => {
       <div v-if="activeTab === 'debts'" class="summary-grid">
         <div class="summary-tile">
           <span>Total Rent to Rent</span>
-          <strong>{{ formatCurrency(summary.total_amount) }}</strong>
+          <strong>{{ formatCurrency(computedSummary.total_amount) }}</strong>
         </div>
         <div class="summary-tile">
           <span>Sudah Bayar</span>
-          <strong>{{ formatCurrency(summary.paid_amount) }}</strong>
+          <strong>{{ formatCurrency(computedSummary.paid_amount) }}</strong>
         </div>
         <div class="summary-tile">
           <span>Sisa Hutang</span>
-          <strong>{{ formatCurrency(summary.remaining_amount) }}</strong>
+          <strong>{{ formatCurrency(computedSummary.remaining_amount) }}</strong>
         </div>
         <div class="summary-tile">
           <span>Pemilik Rental</span>
-          <strong>{{ summary.owner_count || 0 }}</strong>
+          <strong>{{ computedSummary.owner_count }}</strong>
         </div>
       </div>
 
@@ -591,13 +649,13 @@ onMounted(async () => {
                   <i class="pi pi-wallet"></i>
                   Bayar
                 </button>
-                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['cancelled', 'paid'].includes(data.status)" @click="submitMarkDebtPaid(data)">
+                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(data.status)" @click="submitMarkDebtPaid(data)">
                   <i class="pi pi-check"></i>
                   Selesai
                 </button>
-                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="openDebtDetail(data)">
-                  <i class="pi pi-pencil"></i>
-                  Nominal
+                <button class="btn-pill btn-secondary btn-pill-compact" :class="{ 'warning-btn': data.pending_amount_request }" :disabled="actionLoading" @click="openDebtDetail(data)">
+                  <i class="pi" :class="data.pending_amount_request ? 'pi-clock' : 'pi-pencil'"></i>
+                  {{ data.pending_amount_request ? 'Pending ACC' : 'Nominal' }}
                 </button>
               </div>
             </template>
@@ -612,7 +670,8 @@ onMounted(async () => {
             <template #body="{ data }">
               <div class="amount-stack">
                 <strong>{{ formatCurrency(data.total_amount) }}</strong>
-                <span v-if="data.amount_override !== null">Manual override</span>
+                <span v-if="data.pending_amount_request" style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; width: fit-content; margin-top: 4px; display: inline-block;">Pending ACC: {{ data.pending_amount_request.requested_amount_override !== null ? formatCurrency(data.pending_amount_request.requested_amount_override) : 'Reset Live' }}</span>
+                <span v-else-if="data.amount_override !== null">Manual override</span>
                 <span v-else>Live dari master unit</span>
               </div>
             </template>
@@ -655,6 +714,9 @@ onMounted(async () => {
             </div>
             <div class="mobile-card-amount">
               <div><span>Total</span><strong>{{ formatCurrency(debt.total_amount) }}</strong></div>
+              <div v-if="debt.pending_amount_request" style="grid-column: span 2; margin-top: 4px;">
+                <span style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block;">Pending ACC: {{ debt.pending_amount_request.requested_amount_override !== null ? formatCurrency(debt.pending_amount_request.requested_amount_override) : 'Reset Live' }}</span>
+              </div>
               <div><span>Sisa</span><strong>{{ formatCurrency(debt.remaining_amount) }}</strong></div>
             </div>
             <div class="mobile-card-actions">
@@ -662,13 +724,13 @@ onMounted(async () => {
                 <i class="pi pi-wallet"></i>
                 Bayar
               </button>
-              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || debt.remaining_amount <= 0 || ['cancelled', 'paid'].includes(debt.status)" @click="submitMarkDebtPaid(debt)">
+              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(debt.status)" @click="submitMarkDebtPaid(debt)">
                 <i class="pi pi-check"></i>
                 Tag Paid
               </button>
-              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="openDebtDetail(debt)">
-                <i class="pi pi-pencil"></i>
-                Ubah Nominal
+              <button class="btn-pill btn-secondary btn-pill-compact" :class="{ 'warning-btn': debt.pending_amount_request }" :disabled="actionLoading" @click="openDebtDetail(debt)">
+                <i class="pi" :class="debt.pending_amount_request ? 'pi-clock' : 'pi-pencil'"></i>
+                {{ debt.pending_amount_request ? 'Pending ACC' : 'Ubah Nominal' }}
               </button>
             </div>
           </article>
@@ -1018,20 +1080,45 @@ onMounted(async () => {
         <aside class="detail-side">
           <div class="payment-total-panel">
             <div class="payment-total-row"><span>Default Live</span><strong>{{ formatCurrency(selectedDebt.default_amount) }}</strong></div>
+            <div v-if="selectedDebt.pricing_mode === 'all_in'" class="payment-total-row"><span>Harga Jual</span><strong>{{ formatCurrency(selectedDebt.selling_price) }}</strong></div>
             <div class="payment-total-row"><span>Total Tagihan</span><strong>{{ formatCurrency(selectedDebt.total_amount) }}</strong></div>
             <div class="payment-total-row"><span>Sudah Bayar</span><strong>{{ formatCurrency(selectedDebt.paid_amount) }}</strong></div>
             <div class="payment-total-row grand"><span>Sisa</span><strong>{{ formatCurrency(selectedDebt.remaining_amount) }}</strong></div>
           </div>
-          <div class="payment-form-panel">
-            <div class="section-label">Edit Harga Modal</div>
-            <fieldset class="form-fieldset">
+          <div class="payment-form-panel" style="display: flex; flex-direction: column; gap: 12px; padding: 12px;">
+            <div class="section-label" style="margin-bottom: 4px;">Edit Harga Modal</div>
+            
+            <div v-if="selectedDebt.pending_amount_request" class="pending-request-banner" style="background-color: #FDF4D9; color: #8C660A; border: 1px solid #D4A017; border-radius: 6px; padding: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+                <i class="pi pi-clock"></i> Menunggu ACC Supervisor
+              </div>
+              <div>
+                <strong>Nominal Baru:</strong> {{ selectedDebt.pending_amount_request.requested_amount_override !== null ? formatCurrency(selectedDebt.pending_amount_request.requested_amount_override) : 'Reset ke Live (Default)' }}
+              </div>
+              <div style="word-break: break-all;">
+                <strong>Alasan:</strong> {{ selectedDebt.pending_amount_request.reason }}
+              </div>
+              <div style="margin-top: 6px;">
+                <button class="btn-pill btn-secondary btn-pill-compact" style="background-color: #ffffff; border: 1px solid #CDD2DF; color: #1A1D2E; font-size: 11px; padding: 4px 8px;" :disabled="actionLoading" @click="handleCancelAmountChange">
+                  Batalkan Pengajuan
+                </button>
+              </div>
+            </div>
+
+            <fieldset class="form-fieldset" style="display: flex; flex-direction: column; gap: 4px; border: none; padding: 0; margin: 0; box-shadow: none;">
               <label>Nominal Manual</label>
-              <InputNumber v-model="detailAmountForm.amount_override" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" :disabled="!selectedDebt.can_edit_amount" />
-              <span class="field-hint">Kosongkan override dengan tombol reset untuk kembali mengikuti master unit.</span>
+              <InputNumber v-model="detailAmountForm.amount_override" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" :disabled="!selectedDebt.can_request_amount_change" />
             </fieldset>
-            <div class="table-actions">
-              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || !selectedDebt.can_edit_amount" @click="resetDebtAmount">Reset Live</button>
-              <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || !selectedDebt.can_edit_amount" @click="submitDebtAmount">Simpan</button>
+
+            <fieldset class="form-fieldset" style="display: flex; flex-direction: column; gap: 4px; border: none; padding: 0; margin: 0; box-shadow: none;">
+              <label>Alasan Perubahan (Min. 5 karakter)</label>
+              <Textarea v-model="detailAmountForm.reason" rows="3" class="w-full" placeholder="Tuliskan alasan pengajuan..." :disabled="!selectedDebt.can_request_amount_change" style="resize: vertical; font-family: inherit; font-size: 12px;" />
+              <span class="field-hint" style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">Pengajuan ini memerlukan persetujuan dari supervisor sebelum nominal baru diterapkan.</span>
+            </fieldset>
+
+            <div class="table-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
+              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || !selectedDebt.can_request_amount_change" @click="resetDebtAmount">Reset Live</button>
+              <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || !selectedDebt.can_request_amount_change" @click="submitDebtAmount">Simpan</button>
             </div>
           </div>
         </aside>
@@ -1066,6 +1153,7 @@ onMounted(async () => {
         </section>
         <aside class="detail-side">
           <div class="payment-total-panel">
+            <div v-if="paymentTarget.pricing_mode === 'all_in'" class="payment-total-row"><span>Harga Jual</span><strong>{{ formatCurrency(paymentTarget.selling_price) }}</strong></div>
             <div class="payment-total-row"><span>Total</span><strong>{{ formatCurrency(paymentTarget.total_amount) }}</strong></div>
             <div class="payment-total-row"><span>Sudah Bayar</span><strong>{{ formatCurrency(paymentTarget.paid_amount) }}</strong></div>
             <div class="payment-total-row grand"><span>Sisa</span><strong>{{ formatCurrency(paymentTarget.remaining_amount) }}</strong></div>
@@ -1554,5 +1642,14 @@ onMounted(async () => {
     width: 100%;
     justify-content: center;
   }
+}
+
+.warning-btn {
+  background-color: #FDF4D9 !important;
+  color: #8C660A !important;
+  border-color: #D4A017 !important;
+}
+.warning-btn:hover {
+  background-color: #fdf0c3 !important;
 }
 </style>

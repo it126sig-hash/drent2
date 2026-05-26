@@ -95,19 +95,42 @@ const onPageChange = (event) => {
 </script>
 
 <template>
-  <div class="view-container">
+  <div class="page-container city-management-page table-page-active">
     <ConfirmDialog />
 
-    <div class="header-section">
-      <div class="header-content">
-        <h1>List Kota</h1>
-        <p>Kelola pilihan kota untuk pelanggan dan booking</p>
+    <div class="page-header">
+      <div class="header-left">
+        <div>
+          <h1>List Kota</h1>
+          <p class="text-secondary text-xs">Kelola pilihan kota untuk pelanggan dan booking.</p>
+        </div>
       </div>
-      <Button v-if="canManage" label="Tambah Kota" icon="pi pi-plus" class="p-button-tosca" @click="openNew" />
+      <div class="header-actions">
+        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+          <i class="pi pi-plus"></i>
+          <span>Tambah Kota</span>
+        </button>
+      </div>
     </div>
 
-    <div class="content-card">
-      <DataTable :value="cities" :loading="loading" responsiveLayout="scroll" class="p-datatable-sm" stripedRows>
+    <div class="filter-bar surface-card">
+      <div class="filter-groups">
+        <div class="summary-tile-compact">
+          <i class="pi pi-map-marker text-info"></i>
+          <span>Total Kota</span>
+          <strong class="font-mono-numeric">{{ pagination.total || cities.length }}</strong>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-pill btn-secondary btn-pill-compact" type="button" :disabled="loading" @click="fetchAll">
+          <i class="pi pi-refresh"></i>
+          <span>Refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="table-shell list-tab-fill">
+      <DataTable :value="cities" :loading="loading" scrollable scrollHeight="flex" responsiveLayout="scroll" class="drent-datatable" stripedRows>
         <template #empty>
           <div class="empty-state">
             <i class="pi pi-map-marker"></i>
@@ -121,14 +144,18 @@ const onPageChange = (event) => {
         </Column>
         <Column field="is_active" header="Status" style="min-width:110px">
           <template #body="{ data }">
-            <Tag :severity="data.is_active ? 'success' : 'secondary'" :value="data.is_active ? 'Aktif' : 'Nonaktif'" />
+            <span class="drent-badge" :class="data.is_active ? 'success' : 'neutral'">{{ data.is_active ? 'Aktif' : 'Nonaktif' }}</span>
           </template>
         </Column>
         <Column header="Aksi" style="min-width:110px;text-align:center">
           <template #body="{ data }">
-            <div class="action-buttons">
-              <Button v-if="canManage" icon="pi pi-pencil" class="p-button-rounded p-button-text p-button-secondary" @click="openEdit(data)" v-tooltip.top="'Edit'" />
-              <Button v-if="canDelete" icon="pi pi-trash" class="p-button-rounded p-button-text p-button-danger" @click="confirmDelete(data)" v-tooltip.top="'Hapus'" />
+            <div class="action-pill-group">
+              <button v-if="canManage" class="action-btn" type="button" title="Edit" @click="openEdit(data)">
+                <i class="pi pi-pencil"></i>
+              </button>
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+                <i class="pi pi-trash"></i>
+              </button>
             </div>
           </template>
         </Column>
@@ -146,10 +173,10 @@ const onPageChange = (event) => {
       </div>
     </div>
 
-    <Dialog v-model:visible="showDialog" :header="form.id ? 'Edit Kota' : 'Tambah Kota'" modal :style="{ width: '460px' }">
+    <Dialog v-model:visible="showDialog" :header="form.id ? 'Edit Kota' : 'Tambah Kota'" modal class="custom-dialog" :style="{ width: '460px' }">
       <div class="form-grid">
         <div class="field">
-          <label>Nama kota <span class="req">*</span></label>
+          <label>Nama Kota <span class="req">*</span></label>
           <InputText v-model="form.nama" placeholder="Jakarta, Bandung, Surabaya..." class="w-full" :class="{ 'p-invalid': formErrors.nama }" />
           <small v-if="formErrors.nama" class="p-error">{{ formErrors.nama[0] }}</small>
         </div>
@@ -160,32 +187,87 @@ const onPageChange = (event) => {
         </div>
         <div class="field">
           <label>Status</label>
-          <ToggleButton v-model="form.is_active" onLabel="Aktif" offLabel="Nonaktif" onIcon="pi pi-check" offIcon="pi pi-times" />
+          <ToggleButton v-model="form.is_active" onLabel="Aktif" offLabel="Nonaktif" onIcon="pi pi-check" offIcon="pi pi-times" class="w-full" />
         </div>
       </div>
 
       <template #footer>
-        <Button label="Batal" icon="pi pi-times" class="p-button-text" :disabled="saving" @click="showDialog = false" />
-        <Button label="Simpan" icon="pi pi-check" class="p-button-tosca" :loading="saving" @click="save" />
+        <button class="app-dialog-button app-dialog-button-secondary" type="button" :disabled="saving" @click="showDialog = false">
+          <i class="pi pi-times"></i>
+          Batal
+        </button>
+        <button class="app-dialog-button app-dialog-button-primary" type="button" :disabled="saving" @click="save">
+          <i :class="saving ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
+          Simpan
+        </button>
       </template>
     </Dialog>
   </div>
 </template>
 
 <style scoped>
-.view-container { display: flex; flex-direction: column; gap: var(--space-2xl); }
-.header-section { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
-.header-content h1 { margin: 0; font-family: var(--font-headline); font-size: 20px; font-weight: 700; color: var(--text-primary); }
-.header-content p { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; }
-.content-card { overflow: hidden; background: var(--surface-default); border: 1px solid var(--surface-border); border-radius: var(--radius-default); box-shadow: var(--shadow-tile); }
+.city-management-page { background: var(--page-bg); }
+
+.summary-tile-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-tile);
+}
+
+.summary-tile-compact span {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.summary-tile-compact strong {
+  font-family: var(--font-headline);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
-.action-buttons { display: flex; justify-content: center; gap: var(--space-xs); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 0; color: var(--text-tertiary); }
 .empty-state i { font-size: 2.4rem; margin-bottom: var(--space-md); opacity: .7; }
 .form-grid { display: flex; flex-direction: column; gap: var(--space-lg); padding: var(--space-sm) 0; }
 .field { display: flex; flex-direction: column; gap: var(--space-sm); }
-.field label { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.field label { color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
-.p-button-tosca { background-color: #0D8091 !important; border-color: #0D8091 !important; color: #fff !important; }
+.action-btn-danger { color: var(--negative) !important; }
+
+/* Premium Drent Badge styling matching design.md rules */
+.drent-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.drent-badge.success {
+  background-color: #E6F6EC;
+  color: #147239;
+}
+
+.drent-badge.neutral {
+  background-color: #E4E8F3;
+  color: #4A5060;
+}
+
+.text-info {
+  color: var(--info-cyan);
+}
 </style>

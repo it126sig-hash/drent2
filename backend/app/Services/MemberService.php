@@ -64,6 +64,61 @@ class MemberService
         });
     }
 
+    public function updateStatus(Member $member, string $status)
+    {
+        return DB::transaction(function () use ($member, $status) {
+            $member->status_member = $status;
+            if ($status === 'Aktif') {
+                if (!$member->id_member) {
+                    $member->id_member = 'MBR-' . date('Y') . '-' . strtoupper(Str::random(4));
+                }
+                if (!$member->tanggal_aktif) {
+                    $member->tanggal_aktif = now();
+                }
+                if (!$member->tanggal_exp) {
+                    $member->tanggal_exp = now()->addYear();
+                }
+            }
+            $member->save();
+
+            $this->syncCustomerMembershipStatus($member->refresh());
+
+            return $member;
+        });
+    }
+
+    public function extendMember(Member $member, array $data)
+    {
+        return DB::transaction(function () use ($member, $data) {
+            $oldExp = $member->tanggal_exp;
+            
+            // Create extension record
+            $extension = $member->extensions()->create([
+                'old_exp_date' => $oldExp,
+                'new_exp_date' => $data['new_exp_date'],
+                'catatan' => $data['catatan'],
+                'created_by' => auth()->id(),
+            ]);
+
+            // Update member expiration date
+            $member->tanggal_exp = $data['new_exp_date'];
+            // If currently not active/pending, let's keep status_member as is, or if they extend they are active
+            if ($member->status_member !== 'Aktif') {
+                $member->status_member = 'Aktif';
+            }
+            $member->save();
+
+            $this->syncCustomerMembershipStatus($member->refresh());
+
+            return $extension;
+        });
+    }
+
+    public function getExtensions(Member $member)
+    {
+        return $member->extensions()->with('creator')->get();
+    }
+
     protected function syncCustomerMembershipStatus(Member $member): void
     {
         $member->loadMissing('customer');

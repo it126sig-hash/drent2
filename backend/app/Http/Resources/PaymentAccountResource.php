@@ -21,6 +21,7 @@ class PaymentAccountResource extends JsonResource
             'nama_bank'       => $this->nama_bank,
             'nomor_rekening'  => $this->nomor_rekening,
             'atas_nama'       => $this->atas_nama,
+            'current_balance' => (int) $this->current_balance,
             'is_active'       => (bool) $this->is_active,
             'created_at'      => $this->created_at?->toISOString(),
             'updated_at'      => $this->updated_at?->toISOString(),

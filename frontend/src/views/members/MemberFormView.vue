@@ -65,6 +65,7 @@ const form = ref({
 })
 
 const filteredCustomers = ref([])
+const searchingCustomers = ref(false)
 
 onMounted(async () => {
   if (isEdit.value) {
@@ -86,11 +87,14 @@ onMounted(async () => {
 })
 
 const searchCustomers = async (event) => {
+  searchingCustomers.value = true
   try {
     await fetchCustomers({ search: event.query })
     filteredCustomers.value = customers.value
   } catch (err) {
     console.error(err)
+  } finally {
+    searchingCustomers.value = false
   }
 }
 
@@ -170,45 +174,51 @@ const submitForm = async () => {
 </script>
 
 <template>
-  <div class="view-container">
-    <div class="header-section">
-      <div class="header-content">
-        <h1>{{ isEdit ? 'Edit Member' : 'Pendaftaran Member Baru' }}</h1>
-        <p>Lengkapi formulir pendaftaran member lepas kunci</p>
+  <div class="page-container">
+    <div class="detail-page-header flex justify-between items-center mb-4">
+      <div class="header-left flex items-center gap-3">
+        <Button 
+          icon="pi pi-arrow-left" 
+          class="p-button-rounded p-button-text p-button-secondary" 
+          @click="router.back()" 
+        />
+        <div>
+          <h1 class="page-title m-0 text-2xl font-bold text-[var(--text-primary)]">{{ isEdit ? 'Edit Member' : 'Pendaftaran Member Baru' }}</h1>
+          <p class="page-subtitle m-0 mt-1 text-[var(--text-secondary)]">Lengkapi formulir pendaftaran member lepas kunci</p>
+        </div>
       </div>
-      <Button 
-        label="Batal" 
-        icon="pi pi-times" 
-        class="p-button-outlined p-button-secondary" 
-        @click="router.back()" 
-      />
     </div>
 
-    <div class="form-layout">
-      <!-- Sidebar Tabs -->
-      <div class="form-sidebar">
-        <div 
-          v-for="(tab, index) in tabs" 
-          :key="index" 
-          class="tab-item" 
-          :class="{ 'active': activeTab === index }"
-          @click="activeTab = index"
-        >
-          <i :class="tab.icon"></i>
-          <span>{{ tab.label }}</span>
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mt-4">
+      <!-- Sidebar / Navigation -->
+      <div class="md:col-span-3">
+        <div class="app-card border border-[var(--surface-border)] bg-[var(--surface-default)] p-2 flex flex-col gap-1 rounded-lg">
+          <div 
+            v-for="(tab, index) in tabs" 
+            :key="index" 
+            class="tab-item p-3 rounded-lg cursor-pointer transition-colors duration-200 flex items-center gap-3 font-semibold"
+            :class="{ 'active': activeTab === index }"
+            @click="activeTab = index"
+          >
+            <i :class="tab.icon" class="text-xl"></i>
+            <span>{{ tab.label }}</span>
+          </div>
         </div>
       </div>
 
       <!-- Form Content -->
-      <div class="form-main">
-        <div class="form-card">
+      <div class="md:col-span-9">
+        <div class="app-card border border-[var(--surface-border)] bg-[var(--surface-default)] flex flex-col h-full rounded-lg">
           <!-- Section 1: Pelanggan & Survey -->
-          <div v-show="activeTab === 0" class="tab-content">
-            <h2 class="section-title">Informasi Dasar & Survey</h2>
-            <div class="form-body">
-              <div class="form-row">
-                <div class="form-group half">
-                  <label>Pelanggan <span class="text-red-500">*</span></label>
+          <div v-show="activeTab === 0" class="flex flex-col h-full">
+            <div class="app-section-header px-4 py-3 border-b border-[var(--surface-border)] flex items-center gap-2">
+              <i class="pi pi-info-circle text-[var(--text-primary)] text-xl"></i>
+              <span class="font-semibold text-lg text-[var(--text-primary)]">Informasi Dasar & Survey</span>
+            </div>
+            <div class="p-4 flex flex-col gap-4 flex-grow">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Pelanggan <span class="text-red-500">*</span></label>
                   <AutoComplete 
                     v-model="form.selectedCustomer" 
                     :suggestions="filteredCustomers" 
@@ -217,142 +227,156 @@ const submitForm = async () => {
                     optionLabel="nama" 
                     placeholder="Cari nama pelanggan..." 
                     :disabled="isEdit"
+                    :loading="searchingCustomers"
                     class="w-full"
                     inputClass="w-full"
                   >
                     <template #item="slotProps">
-                      <div class="customer-item">
+                      <div>
                         <div class="font-bold">{{ slotProps.item.nama }}</div>
-                        <small>{{ slotProps.item.kontak_1 }} - {{ slotProps.item.kota }}</small>
+                        <small class="text-[var(--text-secondary)]">{{ slotProps.item.kontak_1 }} - {{ slotProps.item.kota }}</small>
                       </div>
                     </template>
                   </AutoComplete>
                 </div>
-                <div class="form-group half">
-                  <label>Tanggal Survey</label>
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Tanggal Survey</label>
                   <Calendar v-model="form.tanggal_survey" dateFormat="yy-mm-dd" showIcon class="w-full" />
                 </div>
               </div>
-              <div class="form-group">
-                <label>Catatan Surveyor</label>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-[var(--text-secondary)]">Catatan Surveyor</label>
                 <Textarea v-model="form.catatan" rows="4" class="w-full" placeholder="Masukkan hasil survey lapangan..." />
               </div>
             </div>
           </div>
 
           <!-- Section 2: Identitas & Dokumen -->
-          <div v-show="activeTab === 1" class="tab-content">
-            <h2 class="section-title">Identitas & Dokumen</h2>
-            <div class="form-body">
-              <div class="form-row">
-                <div class="form-group third">
-                  <label>Tipe Identitas</label>
+          <div v-show="activeTab === 1" class="flex flex-col h-full">
+            <div class="app-section-header px-4 py-3 border-b border-[var(--surface-border)] flex items-center gap-2">
+              <i class="pi pi-id-card text-[var(--text-primary)] text-xl"></i>
+              <span class="font-semibold text-lg text-[var(--text-primary)]">Identitas & Dokumen</span>
+            </div>
+            <div class="p-4 flex flex-col gap-4 flex-grow">
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div class="md:col-span-4 flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Tipe Identitas</label>
                   <Dropdown v-model="form.identitas_type" :options="identitasOptions" class="w-full" />
                 </div>
-                <div class="form-group twothirds">
-                  <label>Foto Wajah</label>
-                  <FileUpload mode="basic" @select="onUploadFotoWajah" :auto="false" accept="image/*" chooseLabel="Pilih Foto" class="w-full" />
-                  <small v-if="isEdit && existingMember?.has_foto_wajah" class="text-green-600 block mt-1">✓ Foto sudah tersedia.</small>
+                <div class="md:col-span-8 flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Foto Wajah</label>
+                  <FileUpload mode="basic" @select="onUploadFotoWajah" :auto="false" accept="image/*" chooseLabel="Pilih Foto" class="w-full p-button-outlined p-button-secondary" />
+                  <small v-if="isEdit && existingMember?.has_foto_wajah" class="text-green-600 font-semibold">✓ Foto sudah tersedia.</small>
                 </div>
               </div>
-              <div class="form-row">
-                <div class="form-group half">
-                  <label>Dokumen Identitas (KTP/SIM)</label>
-                  <FileUpload mode="basic" @select="onUploadIdentitas" :auto="false" accept="image/*,application/pdf" chooseLabel="Pilih Dokumen" class="w-full" />
-                  <small v-if="isEdit && existingMember?.has_dokumen_identitas" class="text-green-600 block mt-1">✓ Dokumen identitas sudah tersedia.</small>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Dokumen Identitas (KTP/SIM)</label>
+                  <FileUpload mode="basic" @select="onUploadIdentitas" :auto="false" accept="image/*,application/pdf" chooseLabel="Pilih Dokumen" class="w-full p-button-outlined p-button-secondary" />
+                  <small v-if="isEdit && existingMember?.has_dokumen_identitas" class="text-green-600 font-semibold">✓ Dokumen identitas tersedia.</small>
                 </div>
-                <div class="form-group half">
-                  <label>Dokumen Pendukung (KK, dll)</label>
-                  <FileUpload mode="basic" @select="onUploadPendukung" :auto="false" :multiple="true" accept="image/*,application/pdf" chooseLabel="Pilih File" class="w-full" />
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Dokumen Pendukung (KK, dll)</label>
+                  <FileUpload mode="basic" @select="onUploadPendukung" :auto="false" :multiple="true" accept="image/*,application/pdf" chooseLabel="Pilih File" class="w-full p-button-outlined p-button-secondary" />
                 </div>
               </div>
             </div>
           </div>
 
           <!-- Section 3: Pekerjaan -->
-          <div v-show="activeTab === 2" class="tab-content">
-            <h2 class="section-title">Informasi Pekerjaan</h2>
-            <div class="form-body">
-              <div class="form-row">
-                <div class="form-group half">
-                  <label>Nama Kantor/Instansi</label>
+          <div v-show="activeTab === 2" class="flex flex-col h-full">
+            <div class="app-section-header px-4 py-3 border-b border-[var(--surface-border)] flex items-center gap-2">
+              <i class="pi pi-briefcase text-[var(--text-primary)] text-xl"></i>
+              <span class="font-semibold text-lg text-[var(--text-primary)]">Informasi Pekerjaan</span>
+            </div>
+            <div class="p-4 flex flex-col gap-4 flex-grow">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Nama Kantor/Instansi</label>
                   <InputText v-model="form.nama_kantor" class="w-full" />
                 </div>
-                <div class="form-group half">
-                  <label>Status Pekerjaan</label>
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Status Pekerjaan</label>
                   <Dropdown v-model="form.pekerjaan_status" :options="pekerjaanStatusOptions" class="w-full" />
                 </div>
               </div>
-              <div class="form-row">
-                <div class="form-group third">
-                  <label>Jabatan</label>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Jabatan</label>
                   <InputText v-model="form.jabatan" class="w-full" />
                 </div>
-                <div class="form-group third">
-                  <label>Nama Atasan</label>
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Nama Atasan</label>
                   <InputText v-model="form.nama_atasan" class="w-full" />
                 </div>
-                <div class="form-group third">
-                  <label>Kontak Kantor</label>
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Kontak Kantor</label>
                   <InputText v-model="form.kontak_kantor" class="w-full" />
                 </div>
               </div>
-              <div class="form-group">
-                <label>Alamat Kantor</label>
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-[var(--text-secondary)]">Alamat Kantor</label>
                 <Textarea v-model="form.alamat_kantor" rows="2" class="w-full" />
               </div>
             </div>
           </div>
 
           <!-- Section 4: Keluarga & Sosial -->
-          <div v-show="activeTab === 3" class="tab-content">
-            <h2 class="section-title">Informasi Keluarga & Sosial</h2>
-            <div class="form-body">
-              <div class="form-row">
-                <div class="form-group third">
-                  <label>Status Pernikahan</label>
+          <div v-show="activeTab === 3" class="flex flex-col h-full">
+            <div class="app-section-header px-4 py-3 border-b border-[var(--surface-border)] flex items-center gap-2">
+              <i class="pi pi-users text-[var(--text-primary)] text-xl"></i>
+              <span class="font-semibold text-lg text-[var(--text-primary)]">Informasi Keluarga & Sosial</span>
+            </div>
+            <div class="p-4 flex flex-col gap-4 flex-grow">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Status Pernikahan</label>
                   <Dropdown v-model="form.status_pernikahan" :options="statusPernikahanOptions" class="w-full" />
                 </div>
-                <div class="form-group third">
-                  <label>Keadaan Rumah</label>
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Keadaan Rumah</label>
                   <Dropdown v-model="form.rumah_status" :options="rumahStatusOptions" class="w-full" />
                 </div>
-                <div class="form-group third">
-                  <label>Lokasi Rumah</label>
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-semibold text-[var(--text-secondary)]">Lokasi Rumah</label>
                   <Dropdown v-model="form.rumah_lokasi" :options="rumahLokasiOptions" class="w-full" />
                 </div>
               </div>
 
-              <div class="form-row mt-4">
-                <div class="form-group half sub-section">
-                  <h3 class="subsection-title">Data Penanggung Jawab (PJ)</h3>
-                  <div class="form-group">
-                    <label>Nama PJ</label>
-                    <InputText v-model="form.pj_nama" class="w-full" />
-                  </div>
-                  <div class="form-group">
-                    <label>Kontak PJ</label>
-                    <InputText v-model="form.pj_kontak" class="w-full" />
-                  </div>
-                  <div class="form-group">
-                    <label>Hubungan</label>
-                    <InputText v-model="form.pj_hubungan" class="w-full" />
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                <div>
+                  <div class="app-muted-panel p-4 rounded-lg h-full flex flex-col gap-3">
+                    <span class="font-semibold text-[var(--text-primary)] border-b border-[var(--surface-border)] pb-2">Data Penanggung Jawab (PJ)</span>
+                    <div class="flex flex-col gap-2">
+                      <label class="text-sm font-semibold text-[var(--text-secondary)]">Nama PJ</label>
+                      <InputText v-model="form.pj_nama" class="w-full" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                      <label class="text-sm font-semibold text-[var(--text-secondary)]">Kontak PJ</label>
+                      <InputText v-model="form.pj_kontak" class="w-full" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                      <label class="text-sm font-semibold text-[var(--text-secondary)]">Hubungan</label>
+                      <InputText v-model="form.pj_hubungan" class="w-full" />
+                    </div>
                   </div>
                 </div>
 
-                <div class="form-group half sub-section">
-                  <h3 class="subsection-title">Data Orang Tua</h3>
-                  <div class="form-group">
-                    <label>Nama Orang Tua</label>
-                    <InputText v-model="form.ortu_nama" class="w-full" />
-                  </div>
-                  <div class="form-group">
-                    <label>Kontak Orang Tua</label>
-                    <InputText v-model="form.ortu_kontak" class="w-full" />
-                  </div>
-                  <div class="form-group">
-                    <label>Alamat Orang Tua</label>
-                    <Textarea v-model="form.ortu_alamat" rows="2" class="w-full" />
+                <div>
+                  <div class="app-muted-panel p-4 rounded-lg h-full flex flex-col gap-3">
+                    <span class="font-semibold text-[var(--text-primary)] border-b border-[var(--surface-border)] pb-2">Data Orang Tua</span>
+                    <div class="flex flex-col gap-2">
+                      <label class="text-sm font-semibold text-[var(--text-secondary)]">Nama Orang Tua</label>
+                      <InputText v-model="form.ortu_nama" class="w-full" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                      <label class="text-sm font-semibold text-[var(--text-secondary)]">Kontak Orang Tua</label>
+                      <InputText v-model="form.ortu_kontak" class="w-full" />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                      <label class="text-sm font-semibold text-[var(--text-secondary)]">Alamat Orang Tua</label>
+                      <Textarea v-model="form.ortu_alamat" rows="2" class="w-full" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -360,11 +384,11 @@ const submitForm = async () => {
           </div>
 
           <!-- Form Navigation Footer -->
-          <div class="form-footer">
+          <div class="px-4 py-3 border-t border-[var(--surface-border)] bg-[var(--card-bg)] flex justify-between items-center mt-auto rounded-b-lg">
             <Button 
               label="Sebelumnya" 
               icon="pi pi-arrow-left" 
-              class="p-button-text p-button-secondary" 
+              class="btn-pill btn-secondary" 
               @click="prevTab" 
               :disabled="activeTab === 0"
             />
@@ -374,14 +398,14 @@ const submitForm = async () => {
                 label="Selanjutnya" 
                 icon="pi pi-arrow-right" 
                 iconPos="right"
-                class="p-button-tosca" 
+                class="btn-pill btn-primary" 
                 @click="nextTab" 
               />
               <Button 
                 v-if="activeTab === tabs.length - 1"
                 label="Simpan Pendaftaran Member" 
                 icon="pi pi-check" 
-                class="p-button-tosca font-bold px-4" 
+                class="btn-pill btn-primary px-4" 
                 :loading="loading" 
                 @click="submitForm"
               />
@@ -394,204 +418,18 @@ const submitForm = async () => {
 </template>
 
 <style scoped>
-.view-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-}
-
-.header-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.header-content h1 {
-  font-size: 2rem;
-  font-weight: 800;
-  color: #1e293b;
-  margin: 0;
-}
-
-.header-content p {
-  color: #64748b;
-  margin-top: 5px;
-  font-size: 1.1rem;
-}
-
-/* Layout */
-.form-layout {
-  display: flex;
-  gap: 30px;
-  align-items: flex-start;
-}
-
-/* Sidebar Tabs */
-.form-sidebar {
-  width: 280px;
-  background-color: #ffffff;
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-}
-
 .tab-item {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 16px 20px;
-  border-radius: 12px;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  font-weight: 600;
+  color: var(--text-secondary, #64748b);
 }
-
-.tab-item i {
-  font-size: 1.2rem;
-}
-
 .tab-item:hover {
-  background-color: #f8fafc;
-  color: #1e293b;
-  transform: translateX(5px);
+  background-color: var(--surface-hover, #f1f5f9);
 }
-
 .tab-item.active {
-  background-color: #06b6d4;
+  background-color: var(--text-primary, #1e293b);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
 }
-
-/* Main Content */
-.form-main {
-  flex: 1;
-}
-
-.form-card {
-  background-color: #ffffff;
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
-}
-
-.section-title {
-  padding: 24px 30px;
-  background-color: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #1e293b;
-  margin: 0;
-}
-
-.form-body {
-  padding: 30px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.form-row {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1;
-}
-
-.form-group.half {
-  flex: 1 1 calc(50% - 10px);
-}
-
-.form-group.third {
-  flex: 1 1 calc(33.333% - 14px);
-}
-
-.form-group.twothirds {
-  flex: 1 1 calc(66.666% - 6px);
-}
-
-.form-group.sub-section {
-  background-color: #f8fafc;
-  padding: 20px;
-  border-radius: 12px;
-  border: 1px solid #f1f5f9;
-}
-
-.form-group label {
-  font-weight: 700;
-  color: #475569;
-  font-size: 0.95rem;
-}
-
-.subsection-title {
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: #0e7490;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #e0f2fe;
-}
-
-.form-footer {
-  padding: 24px 30px;
-  background-color: #f8fafc;
-  border-top: 1px solid #e2e8f0;
-  display: flex;
-  justify-content: space-between;
-}
-
-.p-button-tosca {
-  background-color: #06b6d4 !important;
-  border-color: #06b6d4 !important;
-}
-
-.p-button-tosca:hover {
-  background-color: #0891b2 !important;
-  border-color: #0891b2 !important;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.customer-item {
-  display: flex;
-  flex-direction: column;
-}
-
-@media (max-width: 992px) {
-  .form-layout {
-    flex-direction: column;
-  }
-  
-  .form-sidebar {
-    width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 10px;
-  }
-  
-  .tab-item {
-    white-space: nowrap;
-    padding: 12px 18px;
-  }
-
-  .form-group.half, .form-group.third, .form-group.twothirds {
-    flex: 1 1 100%;
-  }
+.app-muted-panel {
+  background-color: var(--page-bg, #f8fafc);
+  border: 1px solid var(--surface-border, #e2e8f0);
 }
 </style>

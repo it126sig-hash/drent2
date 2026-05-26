@@ -34,6 +34,28 @@ class UnitController extends Controller
     }
 
     /**
+     * Batch update city for units.
+     */
+    public function batchUpdateCity(Request $request)
+    {
+        $this->authorize('create', Unit::class);
+        
+        $request->validate([
+            'type' => 'required|in:by_ids,by_owner',
+            'city_id' => 'required|integer|exists:cities,id',
+            'ids' => 'required_if:type,by_ids|array',
+            'ids.*' => 'integer|exists:units,id',
+            'rental_owner_id' => 'required_if:type,by_owner|integer|exists:rental_owners,id',
+        ]);
+
+        $this->service->batchUpdateCity($request->all());
+
+        return response()->json([
+            'message' => 'Kota unit berhasil diperbarui secara batch.'
+        ]);
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store(StoreUnitRequest $request)
@@ -71,6 +93,27 @@ class UnitController extends Controller
         $this->authorize('delete', $unit);
         $this->service->delete($unit);
         return response()->noContent();
+    }
+
+    /**
+     * Check unit schedule conflicts for a given period.
+     */
+    public function checkSchedule(Request $request, Unit $unit)
+    {
+        $this->authorize('view', $unit);
+
+        $request->validate([
+            'tgl_sewa'    => 'required|date',
+            'tgl_kembali' => 'required|date|after_or_equal:tgl_sewa',
+        ]);
+
+        $conflicts = $this->service->checkScheduleConflict(
+            $unit,
+            $request->tgl_sewa,
+            $request->tgl_kembali
+        );
+
+        return response()->json(['data' => $conflicts]);
     }
 
     /**

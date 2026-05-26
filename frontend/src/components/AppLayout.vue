@@ -40,50 +40,54 @@ const menuSections = [
   {
     label: '',
     items: [
-      { label: 'Dashboard', icon: 'pi pi-home', route: '/' },
+      { label: 'Dashboard', icon: 'pi pi-home', route: '/', permission: 'dashboard.view' },
     ],
   },
   {
     label: 'Transaksi',
     items: [
-      { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings' },
-      { label: 'Request Supervisor', icon: 'pi pi-inbox', route: '/supervisor/requests', roles: ['superadmin', 'supervisor'] },
-      { label: 'Cek Fisik', icon: 'pi pi-check-square', route: '/physical-checks' },
+      { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings', permission: 'booking.view' },
+      { label: 'Request Supervisor', icon: 'pi pi-inbox', route: '/supervisor/requests', permission: 'booking.supervisor_request' },
+      { label: 'Cek Fisik', icon: 'pi pi-check-square', route: '/physical-checks', permission: 'physical_check.view' },
     ],
   },
   {
     label: 'Keuangan',
     items: [
-      { label: 'Piutang', icon: 'pi pi-wallet', route: '/finance/receivables', roles: ['superadmin', 'admin_branch', 'finance'] },
-      { label: 'Rent to Rent', icon: 'pi pi-building', route: '/finance/rent-to-rent', roles: ['superadmin', 'admin_branch', 'finance'] },
-      { label: 'Biaya Operasional', icon: 'pi pi-receipt', route: '/finance/operational-costs', roles: ['superadmin', 'admin_branch', 'finance'] },
-      { label: 'Operasional Driver', icon: 'pi pi-briefcase', route: '/driver/operational', roles: ['driver_tetap'] },
+      { label: 'Piutang', icon: 'pi pi-wallet', route: '/finance/receivables', permission: 'finance.receivable' },
+      { label: 'Rent to Rent', icon: 'pi pi-building', route: '/finance/rent-to-rent', permission: 'finance.rent_to_rent' },
+      { label: 'Biaya Operasional', icon: 'pi pi-receipt', route: '/finance/operational-costs', permission: 'finance.operational_cost' },
+      { label: 'List Transaksi', icon: 'pi pi-list', route: '/finance/transactions', permission: 'finance.transaction' },
+      { label: 'Mutasi Rekening', icon: 'pi pi-arrow-right-arrow-left', route: '/finance/account-mutations', permission: 'finance.account_mutation' },
+      { label: 'Laporan Bulanan', icon: 'pi pi-chart-bar', route: '/reports/transactions', permission: 'finance.monthly_report' },
+      { label: 'Operasional Driver', icon: 'pi pi-briefcase', route: '/driver/operational', permission: 'driver.operational' },
     ],
   },
   
   {
     label: 'Kendaraan',
     items: [
-      { label: 'Pemilik Rental', icon: 'pi pi-users', route: '/rental-owners' },
-      { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units' },
-      { label: 'Driver', icon: 'pi pi-id-card', route: '/drivers' },
+      { label: 'Pemilik Rental', icon: 'pi pi-users', route: '/rental-owners', permission: 'vehicle.rental_owner' },
+      { label: 'Unit Kendaraan', icon: 'pi pi-car', route: '/units', permission: 'vehicle.unit' },
+      { label: 'Driver', icon: 'pi pi-id-card', route: '/drivers', permission: 'vehicle.driver' },
     ],
   },
   {
     label: 'Pelanggan',
     items: [
-       { label: 'Pelanggan', icon: 'pi pi-users', route: '/customers' },
-      { label: 'Member', icon: 'pi pi-id-card', route: '/mdm/members' },
+       { label: 'Pelanggan', icon: 'pi pi-users', route: '/customers', permission: 'customer.view' },
+      { label: 'Member', icon: 'pi pi-id-card', route: '/mdm/members', permission: 'member.view' },
     ],
   },
   {
     label: 'Data Master',
     items: [
-      { label: 'Manajemen User', icon: 'pi pi-user-plus', route: '/users', roles: ['superadmin', 'admin_branch'] },
-      { label: 'Akun Pembayaran', icon: 'pi pi-credit-card', route: '/master/payment-accounts', roles: ['superadmin', 'admin_branch'] },
-      { label: 'List Kota', icon: 'pi pi-map-marker', route: '/master/cities', roles: ['superadmin', 'admin_branch', 'cs'] },
-      { label: 'Tipe Biaya', icon: 'pi pi-list', route: '/master/cost-types', roles: ['superadmin', 'admin_branch'] },
-      { label: 'Paket Harga', icon: 'pi pi-tag', route: '/master/pricing-packages', roles: ['superadmin', 'admin_branch'] },
+      { label: 'Manajemen User', icon: 'pi pi-user-plus', route: '/users', permission: 'master.user' },
+      { label: 'Akun Pembayaran', icon: 'pi pi-credit-card', route: '/master/payment-accounts', permission: 'master.payment_account' },
+      { label: 'List Kota', icon: 'pi pi-map-marker', route: '/master/cities', permission: 'master.city' },
+      { label: 'Tipe Biaya', icon: 'pi pi-list', route: '/master/cost-types', permission: 'master.cost_type' },
+      { label: 'Paket Harga', icon: 'pi pi-tag', route: '/master/pricing-packages', permission: 'master.pricing_package' },
+      { label: 'Manajemen Role', icon: 'pi pi-shield', route: '/settings/role-permissions', permission: 'master.role_management' },
     ],
   },
 ]
@@ -102,8 +106,8 @@ const isMenuItemActive = (targetRoute) => {
 }
 
 const canShowMenuItem = (item) => {
-    if (!item.roles) return true
-    return item.roles.includes(authStore.user?.role)
+    if (!item.permission) return true
+    return authStore.hasPermission(item.permission)
 }
 
 const filteredMenuSections = computed(() => {
@@ -236,7 +240,12 @@ const filteredMenuSections = computed(() => {
     <!-- Main Content -->
     <main class="layout-main">
       <div class="content-container">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <keep-alive>
+            <component :is="Component" v-if="route.meta.keepAlive" :key="route.name" />
+          </keep-alive>
+          <component :is="Component" v-if="!route.meta.keepAlive" :key="route.name" />
+        </RouterView>
       </div>
     </main>
 

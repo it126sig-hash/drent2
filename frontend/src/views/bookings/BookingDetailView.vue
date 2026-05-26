@@ -8,7 +8,8 @@ import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
 import { usePhysicalCheck } from '../../composables/usePhysicalCheck';
-import { getUnits } from '../../api/unit';
+import { useCity } from '../../composables/useCity';
+import { getUnits, checkUnitSchedule } from '../../api/unit';
 import { useAuthStore } from '../../stores/auth';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import { useToast } from 'primevue/usetoast';
@@ -40,12 +41,19 @@ const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount
 const { costTypes: costTypesMaster, fetchAll: fetchCostTypes } = useCostType();
 const { packages: pricingPackages, fetchAll: fetchPricingPackages } = usePricingPackage();
 const { requestCheck: requestPhysicalCheck, loading: physicalCheckLoading } = usePhysicalCheck();
+const { cities, fetchAll: fetchCities, loading: citiesLoading } = useCity();
 
 const booking = ref(null);
 const selectedUnitCache = ref(null);
 const unitSearchLoading = ref(false);
 const unitServerSearchTerm = ref('');
+const unitCityFilter = ref(null);
 let unitSearchTimer = null;
+let citySearchTimer = null;
+let driverSearchTimer = null;
+let accountSearchTimer = null;
+let costTypeSearchTimer = null;
+let pricingPackageSearchTimer = null;
 let unitSearchRequestId = 0;
 const showDetailDialog = ref(false);
 const showCostDialog = ref(false);
@@ -89,23 +97,7 @@ const accountOptions = computed(() =>
 );
 
 // Handle booking dialog (E3)
-const showHandleDialog = ref(false);
 const showHandleConfirmDialog = ref(false);
-const handleFormErrors = ref({});
-const handleForm = ref({
-  unit_id: null,
-  driver_id: null,
-  lama_sewa: null,
-  paket_sewa: 'harian',
-  harga_mobil: 0,
-  diskon_mobil: 0,
-  pricing_mode: 'non_all_in',
-  pricing_package_id: null,
-  harga_all_in: null,
-  costs: [],
-  alamat_penjemputan: '',
-  tujuan: '',
-});
 
 const bookingForm = ref({
   lama_sewa: 1,
@@ -205,10 +197,29 @@ const rememberUnitOption = (unit) => {
   }
 };
 
-const searchUnits = async (search = '') => {
+const debounceSearch = (timerName, callback, delay = 350) => {
+  if (timerName === 'unit' && unitSearchTimer) clearTimeout(unitSearchTimer);
+  if (timerName === 'pricingPackage' && pricingPackageSearchTimer) clearTimeout(pricingPackageSearchTimer);
+  if (timerName === 'city' && citySearchTimer) clearTimeout(citySearchTimer);
+  if (timerName === 'driver' && driverSearchTimer) clearTimeout(driverSearchTimer);
+  if (timerName === 'account' && accountSearchTimer) clearTimeout(accountSearchTimer);
+  if (timerName === 'costType' && costTypeSearchTimer) clearTimeout(costTypeSearchTimer);
+
+  const timer = setTimeout(callback, delay);
+  if (timerName === 'unit') unitSearchTimer = timer;
+  if (timerName === 'pricingPackage') pricingPackageSearchTimer = timer;
+  if (timerName === 'city') citySearchTimer = timer;
+  if (timerName === 'driver') driverSearchTimer = timer;
+  if (timerName === 'account') accountSearchTimer = timer;
+  if (timerName === 'costType') costTypeSearchTimer = timer;
+};
+
+const searchUnits = async (search = '', cityId = null) => {
   const requestId = ++unitSearchRequestId;
   const params = { per_page: 25 };
   if (search) params.search = search;
+  const activeCityId = cityId !== null ? cityId : unitCityFilter.value;
+  if (activeCityId !== null) params.city_id = activeCityId;
   unitSearchLoading.value = true;
 
   try {
@@ -227,10 +238,77 @@ const searchUnits = async (search = '') => {
 };
 
 const onUnitFilter = (event) => {
-  if (unitSearchTimer) clearTimeout(unitSearchTimer);
-  unitSearchTimer = setTimeout(() => {
-    searchUnits(String(event?.value || '').trim());
-  }, 350);
+  debounceSearch('unit', () => searchUnits(String(event?.value || '').trim()));
+};
+
+const cityOptions = computed(() =>
+  cities.value.map(c => ({ id: c.id, label: c.nama, value: c.id }))
+);
+
+const onKotaChange = (selectedValue) => {
+  const city = cityOptions.value.find(c => c.value === selectedValue);
+  if (city) {
+    unitCityFilter.value = city.id;
+    searchUnits('', city.id);
+  } else {
+    unitCityFilter.value = null;
+    searchUnits();
+  }
+};
+
+const clearUnitCityFilter = () => {
+  unitCityFilter.value = null;
+  searchUnits();
+};
+
+const searchCities = async (search = '') => {
+  const params = { per_page: 30, is_active: true };
+  if (search) params.search = search;
+  await fetchCities(params);
+};
+
+const onCityFilter = (event) => {
+  debounceSearch('city', () => searchCities(String(event?.value || '').trim()));
+};
+
+const searchDrivers = async (search = '') => {
+  const params = { per_page: 25 };
+  if (search) params.search = search;
+  await fetchDrivers(params);
+};
+
+const onDriverFilter = (event) => {
+  debounceSearch('driver', () => searchDrivers(String(event?.value || '').trim()));
+};
+
+const searchAccounts = async (search = '') => {
+  const params = { per_page: 25 };
+  if (search) params.search = search;
+  await fetchAccounts(params);
+};
+
+const onAccountFilter = (event) => {
+  debounceSearch('account', () => searchAccounts(String(event?.value || '').trim()));
+};
+
+const searchCostTypes = async (search = '') => {
+  const params = { per_page: 50, is_active: true };
+  if (search) params.search = search;
+  await fetchCostTypes(params);
+};
+
+const onCostTypeFilter = (event) => {
+  debounceSearch('costType', () => searchCostTypes(String(event?.value || '').trim()));
+};
+
+const searchPricingPackages = async (search = '') => {
+  const params = { per_page: 25, is_active: true };
+  if (search) params.search = search;
+  await fetchPricingPackages(params);
+};
+
+const onPricingPackageFilter = (event) => {
+  debounceSearch('pricingPackage', () => searchPricingPackages(String(event?.value || '').trim()));
 };
 
 const onUnitSelect = (unitId, applyPrice) => {
@@ -257,7 +335,7 @@ const getSignedCostAmount = (cost) => {
 
 const sumCosts = (costs = [], { discountsOnly = false } = {}) => {
   return (costs || []).reduce((sum, cost) => {
-    if (discountsOnly && cost?.type !== 'diskon') return sum;
+    if (discountsOnly && cost?.type !== 'diskon' && !(cost?.is_additional == 1 || cost?.is_additional === true)) return sum;
     return sum + getSignedCostAmount(cost);
   }, 0);
 };
@@ -266,138 +344,45 @@ const getBillableCostTotal = (pricingMode, costs = []) => {
   return sumCosts(costs, { discountsOnly: pricingMode === 'all_in' });
 };
 
-const applyPricingPackage = (target, packageId, costKey = 'costs', priceKey = 'harga_all_in') => {
+const applyPricingPackage = (target, packageId, costKey = 'costs', priceKey = 'harga_all_in', duration = 1) => {
   const pkg = findPricingPackage(packageId);
   if (!pkg) {
     target[priceKey] = null;
+    if (target[costKey]) {
+      target[costKey] = target[costKey].filter(cost => !cost._all_in_package_cost);
+    }
     return;
   }
 
   target[priceKey] = pkg.harga || null;
-  target[costKey] = packageCostItems(pkg);
-};
-
-const onHandlePackageChange = () => {
-  applyPricingPackage(handleForm.value, handleForm.value.pricing_package_id);
-};
-
-const onDetailPackageChange = () => {
-  applyPricingPackage(detailForm.value, detailForm.value.pricing_package_id);
-};
-
-const onExtendPackageChange = () => {
-  applyPricingPackage(extendForm.value, extendForm.value.pricing_package_id);
-};
-
-const onRollingOldPackageChange = () => {
-  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id_lama, 'costs_lama', 'harga_all_in_lama');
-};
-
-const onRollingNewPackageChange = () => {
-  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id);
-};
-
-const hargaSewa = computed(() => {
-  const { harga_mobil, diskon_mobil, lama_sewa } = handleForm.value;
-  return Math.max(0, ((harga_mobil || 0) - (diskon_mobil || 0)) * (lama_sewa || 0));
-});
-
-const totalBiayaOps = computed(() =>
-  getBillableCostTotal(handleForm.value.pricing_mode, handleForm.value.costs)
-);
-
-const grandTotalInternal = computed(() => hargaSewa.value + totalBiayaOps.value);
-
-const tagihanKonsumen = computed(() => {
-  if (handleForm.value.pricing_mode === 'all_in') {
-    const lama = handleForm.value.lama_sewa || 1;
-    if (handleForm.value.pricing_package_id) {
-      const pkg = pricingPackages.value.find(p => p.id === handleForm.value.pricing_package_id);
-      return ((pkg?.harga || handleForm.value.harga_all_in || 0) * lama) + totalBiayaOps.value;
-    }
-    return ((handleForm.value.harga_all_in || 0) * lama) + totalBiayaOps.value;
-  }
-  return grandTotalInternal.value;
-});
-
-const addCostRow = () => {
-  handleForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' });
-};
-
-const removeCostRow = (idx) => {
-  handleForm.value.costs.splice(idx, 1);
-};
-
-const onHandleUnitChange = (e) => {
-  onUnitSelect(e.value, (unit) => {
-    handleForm.value.harga_mobil = unit.harga_1_hari || 0;
+  target[costKey] = packageCostItems(pkg).map(item => {
+    const baseAmount = item.amount || 0;
+    return {
+      ...item,
+      amount: baseAmount * duration,
+      _auto_all_in_ops: true,
+      _all_in_base_amount: baseAmount,
+      _all_in_package_cost: true,
+    };
   });
 };
 
-const onCostTypeChange = (idx, typeId) => {
-  const ct = costTypesMaster.value.find(c => c.id === typeId);
-  if (ct) handleForm.value.costs[idx].label = ct.nama;
+const onDetailPackageChange = () => {
+  applyPricingPackage(detailForm.value, detailForm.value.pricing_package_id, 'costs', 'harga_all_in', detailForm.value.lama_sewa || 1);
 };
 
-const prepareHandleForm = () => {
-  handleFormErrors.value = {};
-  const detail = primaryUnitDetail.value || booking.value?.booking_details?.[0];
-  rememberUnitOption(detail?.unit ? mapUnitOption(detail.unit) : findUnitOption(detail?.unit_id));
-  handleForm.value = {
-    unit_id: detail?.unit_id || null,
-    driver_id: detail?.driver_id || null,
-    lama_sewa: detail?.lama_sewa || booking.value?.lama_sewa || 1,
-    paket_sewa: detail?.paket_sewa || booking.value?.paket_sewa || 'harian',
-    harga_mobil: detail?.harga_mobil || 0,
-    diskon_mobil: detail?.diskon_mobil || 0,
-    pricing_mode: detail?.pricing_mode || 'non_all_in',
-    pricing_package_id: detail?.pricing_package_id || null,
-    harga_all_in: detail?.harga_all_in || null,
-    costs: detail?.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '' })) || [],
-    alamat_penjemputan: booking.value?.alamat_penjemputan || '',
-    tujuan: booking.value?.tujuan || '',
-  };
+const onExtendPackageChange = () => {
+  applyPricingPackage(extendForm.value, extendForm.value.pricing_package_id, 'costs', 'harga_all_in', extendForm.value.lama_sewa || 1);
 };
 
-const openHandleDialog = () => {
-  prepareHandleForm();
-  showHandleDialog.value = true;
+const onRollingOldPackageChange = () => {
+  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id_lama, 'costs_lama', 'harga_all_in_lama', rollingForm.value.lama_sewa_lama || 1);
 };
 
-const submitHandle = async () => {
-  try {
-    if (hasZeroReadyUnitPrice.value) {
-      toast.add({
-        severity: 'warn',
-        summary: 'Harga unit belum diisi',
-        detail: 'Unit sudah ready, tetapi harga masih Rp0. Edit unit dan isi harga sebelum handle.',
-        life: 5000,
-      });
-      showHandleConfirmDialog.value = false;
-      return;
-    }
-
-    const selectedPackage = findPricingPackage(handleForm.value.pricing_package_id);
-    const payload = {
-      ...handleForm.value,
-      harga_all_in: handleForm.value.pricing_mode === 'all_in'
-        ? (handleForm.value.harga_all_in || selectedPackage?.harga || null)
-        : null,
-    };
-
-    await handle(booking.value.id, payload);
-    showHandleConfirmDialog.value = false;
-    showHandleDialog.value = false;
-    router.push({ name: 'BookingList' });
-  } catch (err) {
-    if (err.response?.data?.errors) {
-      handleFormErrors.value = err.response.data.errors;
-      showHandleConfirmDialog.value = false;
-      showHandleDialog.value = true;
-    }
-    console.error(err);
-  }
+const onRollingNewPackageChange = () => {
+  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id, 'costs', 'harga_all_in', rollingForm.value.lama_sewa || 1);
 };
+
 
 // Modification Dialogs
 const showExtendDialog = ref(false);
@@ -525,7 +510,7 @@ const extendTagihan = computed(() => {
 });
 
 // Rolling computed
-const rollingHargaSewa = computed(() => Math.max(0, ((rollingForm.value.harga_mobil||0) - (rollingForm.value.diskon_mobil||0)) * (rollingForm.value.lama_sewa||0)));
+const rollingHargaSewa = computed(() => Math.max(0, ((rollingForm.value.harga_mobil || 0) - (rollingForm.value.diskon_mobil || 0)) * (rollingForm.value.lama_sewa || 0)));
 const rollingTotalBiaya = computed(() => getBillableCostTotal(rollingForm.value.pricing_mode, rollingForm.value.costs));
 const rollingGrandTotal = computed(() => rollingHargaSewa.value + rollingTotalBiaya.value);
 const rollingTagihan = computed(() => {
@@ -727,7 +712,8 @@ const detailTransactionSeverity = (detail) => {
 const canEditDetailTransaction = (detail) => {
   const finalDetailStatuses = ['selesai', 'batal', 'cancelled', 'completed'];
   const finalBookingStatuses = ['selesai', 'batal', 'cancelled', 'completed'];
-  return ['extend', 'rolling'].includes(detail.detail_type)
+  const hasAdditionalCost = detail.costs?.some(c => c.is_additional);
+  return (['extend', 'rolling'].includes(detail.detail_type) || (detail.detail_type === 'initial' && hasAdditionalCost))
     && !finalDetailStatuses.includes(detail.status)
     && !finalBookingStatuses.includes(booking.value?.status);
 };
@@ -802,6 +788,7 @@ const cloneDetailCosts = (detail) => {
     label: c.label,
     amount: c.amount,
     keterangan: c.keterangan || '',
+    is_additional: c.is_additional ? 1 : 0,
   })) || [];
 };
 
@@ -904,6 +891,66 @@ const getInitialBookingDetail = () => {
   return booking.value?.booking_details?.find(detail => detail.detail_type === 'initial') || booking.value?.booking_details?.[0] || null;
 };
 
+const isInitializingDetailDialog = ref(false);
+
+const getUnitHargaByPaket = (unit, paket) => {
+  if (!unit) return 0;
+  switch (paket) {
+    case 'mingguan': return unit.harga_1_minggu || 0;
+    case 'bulanan': return unit.harga_1_bulan || 0;
+    default: return unit.harga_1_hari || 0;
+  }
+};
+
+const getUnitAllInByPaket = (unit, paket) => {
+  if (!unit) return null;
+  switch (paket) {
+    case 'mingguan': return unit.harga_all_in_1_minggu || null;
+    case 'bulanan': return unit.harga_all_in_1_bulan || null;
+    default: return unit.harga_all_in || null;
+  }
+};
+
+const getCityIdByName = (cityName) => {
+  if (!cityName) return null;
+  const city = cities.value.find(c => c.nama.toLowerCase() === cityName.toLowerCase());
+  return city ? city.id : null;
+};
+
+watch(
+  () => [
+    detailForm.value.unit_id,
+    detailForm.value.paket_sewa,
+    detailForm.value.pricing_mode,
+    detailForm.value.pricing_package_id,
+    unitOptions.value
+  ],
+  ([unitId, paket, pricingMode, packageId]) => {
+    const hasValidPrice = pricingMode === 'all_in'
+      ? (detailForm.value.harga_all_in && detailForm.value.harga_all_in > 0)
+      : (detailForm.value.harga_mobil && detailForm.value.harga_mobil > 0);
+
+    if (isInitializingDetailDialog.value && hasValidPrice) return;
+
+    const unit = findUnitOption(unitId);
+    if (!unit) return;
+
+    if (pricingMode === 'non_all_in') {
+      detailForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
+    } else if (pricingMode === 'all_in') {
+      detailForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
+      if (!packageId) {
+        detailForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
+      } else {
+        const pkg = findPricingPackage(packageId);
+        if (pkg) {
+          detailForm.value.harga_all_in = pkg.harga || 0;
+        }
+      }
+    }
+  }
+);
+
 watch(
   () => [detailForm.value.tgl_sewa, detailForm.value.lama_sewa, detailForm.value.paket_sewa],
   () => {
@@ -928,6 +975,110 @@ watch(
   }
 );
 
+const syncAllInOperationalCosts = (target, duration, costKey = 'costs', packageIdKey = 'pricing_package_id') => {
+  if (target.pricing_mode !== 'all_in') {
+    if (target[costKey]) {
+      target[costKey] = target[costKey].filter(cost => !cost._all_in_package_cost);
+    }
+    return;
+  }
+
+  const pkg = findPricingPackage(target[packageIdKey]);
+  if (!pkg) return;
+
+  const packageItems = packageCostItems(pkg);
+  const getPackageCostKeyLocal = (c) => `${c.cost_type_id}_${c.type}_${c.label}`;
+  const packageKeys = new Set(packageItems.map(getPackageCostKeyLocal));
+
+  if (!target[costKey]) {
+    target[costKey] = [];
+  }
+
+  target[costKey] = target[costKey].filter(cost => {
+    if (cost._auto_all_in_ops) return packageKeys.has(getPackageCostKeyLocal(cost));
+    return true;
+  });
+
+  packageItems.forEach(item => {
+    const key = getPackageCostKeyLocal(item);
+    const existing = target[costKey].find(cost =>
+      cost._all_in_package_cost && getPackageCostKeyLocal(cost) === key
+    );
+
+    if (existing) {
+      if (existing._auto_all_in_ops) {
+        existing._all_in_base_amount = item.amount || 0;
+        existing.amount = (item.amount || 0) * duration;
+      }
+      return;
+    }
+
+    const baseAmount = item.amount || 0;
+    target[costKey].push({
+      ...item,
+      amount: baseAmount * duration,
+      _auto_all_in_ops: true,
+      _all_in_base_amount: baseAmount,
+      _all_in_package_cost: true,
+    });
+  });
+};
+
+const onCostAmountUpdate = (cost, value, duration) => {
+  if (!cost._auto_all_in_ops) return;
+  if (value !== (cost._all_in_base_amount || 0) * duration) {
+    delete cost._auto_all_in_ops;
+    cost._manual_all_in_ops = true;
+  }
+};
+
+watch(
+  () => [
+    detailForm.value.pricing_mode,
+    detailForm.value.pricing_package_id,
+    detailForm.value.lama_sewa,
+  ],
+  () => {
+    if (isInitializingDetailDialog.value) return;
+    syncAllInOperationalCosts(detailForm.value, detailForm.value.lama_sewa || 1, 'costs', 'pricing_package_id');
+  }
+);
+
+
+
+watch(
+  () => [
+    extendForm.value.pricing_mode,
+    extendForm.value.pricing_package_id,
+    extendForm.value.lama_sewa,
+  ],
+  () => {
+    syncAllInOperationalCosts(extendForm.value, extendForm.value.lama_sewa || 1, 'costs', 'pricing_package_id');
+  }
+);
+
+watch(
+  () => [
+    rollingForm.value.pricing_mode,
+    rollingForm.value.pricing_package_id,
+    rollingForm.value.lama_sewa,
+  ],
+  () => {
+    syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa || 1, 'costs', 'pricing_package_id');
+  }
+);
+
+watch(
+  () => [
+    rollingForm.value.pricing_mode_lama,
+    rollingForm.value.pricing_package_id_lama,
+    rollingForm.value.lama_sewa_lama,
+  ],
+  () => {
+    syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa_lama || 1, 'costs_lama', 'pricing_package_id_lama');
+  }
+);
+
 const showActionError = (err, fallback) => {
   const detail = err.response?.data?.message || fallback;
   toast.add({ severity: 'error', summary: 'Gagal', detail, life: 5000 });
@@ -948,13 +1099,25 @@ const loadBooking = async () => {
 onMounted(async () => {
   loadBooking();
   searchUnits();
-  fetchDrivers({ per_page: 100 });
-  fetchAccounts({ per_page: 100 });
-  fetchCostTypes({ per_page: 100 });
-  fetchPricingPackages({ per_page: 100 });
+  searchCities();
+  searchDrivers();
+  searchAccounts();
+  searchCostTypes();
+  searchPricingPackages();
 });
 
-const openDetailDialog = (detail = null) => {
+const openDetailDialog = async (detail = null) => {
+  isInitializingDetailDialog.value = true;
+  showDetailDialog.value = true;
+
+  const cityId = getCityIdByName(booking.value?.kota);
+  unitCityFilter.value = cityId;
+  await searchUnits('', cityId);
+
+  if (detail && detail.driver && !drivers.value.some(d => d.id === detail.driver.id)) {
+    drivers.value = [detail.driver, ...drivers.value];
+  }
+
   detailDialogMode.value = detail?.detail_type === 'extend'
     ? 'edit_extend'
     : detail?.detail_type === 'rolling'
@@ -962,21 +1125,43 @@ const openDetailDialog = (detail = null) => {
       : 'detail';
   const initial = getInitialBookingDetail();
   if (detail) {
-    rememberUnitOption(detail.unit ? mapUnitOption(detail.unit) : findUnitOption(detail.unit_id));
+    const cachedUnit = detail.unit ? mapUnitOption(detail.unit) : null;
+    rememberUnitOption(cachedUnit || findUnitOption(detail.unit_id));
     editingDetailId.value = detail.id;
+
+    const unitObj = cachedUnit
+      || findUnitOption(detail.unit_id)
+      || (selectedUnitCache.value?.id === detail.unit_id ? selectedUnitCache.value : null);
+
+    let hargaMobilVal = detail.harga_mobil || 0;
+    let hargaAllInVal = detail.harga_all_in || null;
+
+    if (unitObj && hargaMobilVal <= 0) {
+      const mode = detail.pricing_mode || 'non_all_in';
+      const paket = detail.paket_sewa || booking.value?.paket_sewa || 'harian';
+      if (mode === 'non_all_in') {
+        hargaMobilVal = getUnitHargaByPaket(unitObj, paket);
+      } else if (mode === 'all_in') {
+        hargaMobilVal = getUnitHargaByPaket(unitObj, 'harian');
+        if (!detail.pricing_package_id && (!hargaAllInVal || hargaAllInVal <= 0)) {
+          hargaAllInVal = getUnitAllInByPaket(unitObj, paket);
+        }
+      }
+    }
+
     detailForm.value = {
       unit_id: detail.unit_id,
       driver_id: detail.driver_id,
       tgl_sewa: detail.tgl_sewa ? new Date(detail.tgl_sewa) : null,
       tgl_kembali: detail.tgl_kembali ? new Date(detail.tgl_kembali) : null,
-      harga_mobil: detail.harga_mobil,
+      harga_mobil: hargaMobilVal,
       diskon_mobil: detail.diskon_mobil,
       lama_sewa: detail.lama_sewa || booking.value?.lama_sewa || 1,
       paket_sewa: detail.paket_sewa || booking.value?.paket_sewa || 'harian',
       pricing_mode: detail.pricing_mode || 'non_all_in',
       pricing_package_id: detail.pricing_package_id || null,
-      harga_all_in: detail.harga_all_in || null,
-      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '' })) || [],
+      harga_all_in: hargaAllInVal,
+      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '', is_additional: c.is_additional ? 1 : 0 })) || [],
       detail_type: detail.detail_type
     };
   } else {
@@ -997,7 +1182,25 @@ const openDetailDialog = (detail = null) => {
       detail_type: 'initial'
     };
   }
-  showDetailDialog.value = true;
+
+  setTimeout(() => {
+    isInitializingDetailDialog.value = false;
+
+    const form = detailForm.value;
+    if (form.unit_id && (form.harga_mobil || 0) <= 0) {
+      const unitObj = findUnitOption(form.unit_id);
+      if (unitObj) {
+        if (form.pricing_mode === 'non_all_in') {
+          form.harga_mobil = getUnitHargaByPaket(unitObj, form.paket_sewa);
+        } else {
+          form.harga_mobil = getUnitHargaByPaket(unitObj, 'harian');
+          if (!form.pricing_package_id && (!form.harga_all_in || form.harga_all_in <= 0)) {
+            form.harga_all_in = getUnitAllInByPaket(unitObj, form.paket_sewa);
+          }
+        }
+      }
+    }
+  }, 50);
 };
 
 const openPrimaryUnitDialog = () => {
@@ -1154,35 +1357,53 @@ const onRollingNewCostTypeChange = (idx, typeId) => {
 };
 
 const addDetailCostRow = () => {
-  detailForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' });
+  detailForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: 0 });
 };
 
 const removeDetailCostRow = (idx) => {
   detailForm.value.costs.splice(idx, 1);
 };
 
-const submitDetail = async () => {
+const confirmScheduleConflict = (conflictMessage, onConfirm) => {
+  confirm.require({
+    message: conflictMessage,
+    header: 'Peringatan Jadwal Bentrok',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'OK (Lanjutkan)',
+    rejectLabel: 'Batal',
+    acceptClass: 'p-button-danger',
+    accept: () => onConfirm(),
+  });
+};
+
+const validateUnitSchedule = async (unitId, startDate, endDate, onProceed) => {
+  if (!unitId || !startDate || !endDate) return onProceed();
+
   try {
-    if (detailForm.value.tgl_sewa && detailForm.value.tgl_kembali && detailForm.value.tgl_kembali < detailForm.value.tgl_sewa) {
-      toast.add({
-        severity: 'warn',
-        summary: 'Tanggal tidak valid',
-        detail: 'Tanggal kembali tidak boleh kurang dari tanggal sewa.',
-        life: 3500,
-      });
-      return;
-    }
+    const payload = {
+      unit_id: unitId,
+      tgl_sewa: formatLocalDateTime(startDate),
+      tgl_kembali: formatLocalDateTime(endDate)
+    };
+    if (booking.value?.id) payload.exclude_booking_id = booking.value.id;
 
-    if (['extend', 'edit_extend'].includes(detailDialogMode.value) && extendMinStartDate.value && detailForm.value.tgl_sewa < extendMinStartDate.value) {
-      toast.add({
-        severity: 'warn',
-        summary: 'Tanggal tidak valid',
-        detail: 'Tanggal sewa extend minimal H+1 dari tanggal kembali terakhir.',
-        life: 3500,
-      });
-      return;
+    const response = await checkUnitSchedule(payload);
+    if (!response.data.available) {
+      confirmScheduleConflict(
+        'Unit sudah dijadwalkan/sedang berjalan pada tanggal tersebut. Tetap gunakan unit ini?',
+        onProceed
+      );
+    } else {
+      onProceed();
     }
+  } catch (err) {
+    console.error('Failed to check unit schedule', err);
+    onProceed();
+  }
+};
 
+const doSubmitDetail = async () => {
+  try {
     const selectedPackage = findPricingPackage(detailForm.value.pricing_package_id);
     const payload = {
       ...detailForm.value,
@@ -1205,6 +1426,35 @@ const submitDetail = async () => {
   } catch (err) {
     console.error(err);
   }
+};
+
+const submitDetail = async () => {
+  if (detailForm.value.tgl_sewa && detailForm.value.tgl_kembali && detailForm.value.tgl_kembali < detailForm.value.tgl_sewa) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Tanggal tidak valid',
+      detail: 'Tanggal kembali tidak boleh kurang dari tanggal sewa.',
+      life: 3500,
+    });
+    return;
+  }
+
+  if (['extend', 'edit_extend'].includes(detailDialogMode.value) && extendMinStartDate.value && detailForm.value.tgl_sewa < extendMinStartDate.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Tanggal tidak valid',
+      detail: 'Tanggal sewa extend minimal H+1 dari tanggal kembali terakhir.',
+      life: 3500,
+    });
+    return;
+  }
+
+  await validateUnitSchedule(
+    detailForm.value.unit_id,
+    detailForm.value.tgl_sewa,
+    detailForm.value.tgl_kembali,
+    doSubmitDetail
+  );
 };
 
 const submitBookingEdit = async () => {
@@ -1351,8 +1601,43 @@ const onHandle = () => {
     });
     return;
   }
-  prepareHandleForm();
   showHandleConfirmDialog.value = true;
+};
+
+const submitHandle = async () => {
+  try {
+    const primaryDetail = booking.value?.booking_details?.[0];
+    if (!primaryDetail) {
+      toast.add({ severity: 'error', summary: 'Gagal', detail: 'Data detail booking tidak ditemukan.', life: 3000 });
+      return;
+    }
+
+    const payload = {
+      unit_id: primaryDetail.unit_id,
+      driver_id: primaryDetail.driver_id,
+      lama_sewa: primaryDetail.lama_sewa || booking.value?.lama_sewa || 1,
+      paket_sewa: primaryDetail.paket_sewa || booking.value?.paket_sewa || 'harian',
+      harga_mobil: primaryDetail.harga_mobil || 0,
+      diskon_mobil: primaryDetail.diskon_mobil || 0,
+      pricing_mode: primaryDetail.pricing_mode || 'non_all_in',
+      pricing_package_id: primaryDetail.pricing_package_id || null,
+      harga_all_in: primaryDetail.harga_all_in || null,
+      costs: primaryDetail.costs?.map(c => ({
+        cost_type_id: c.cost_type_id,
+        type: c.type || 'biaya',
+        label: c.label,
+        amount: c.amount,
+        keterangan: c.keterangan || '',
+        is_additional: c.is_additional ? 1 : 0
+      })) || [],
+    };
+
+    await handle(booking.value.id, payload);
+    showHandleConfirmDialog.value = false;
+    loadBooking();
+  } catch (err) {
+    showActionError(err, 'Gagal memproses handle booking');
+  }
 };
 
 const openPaymentDialog = () => {
@@ -1559,7 +1844,6 @@ const getDialogStateMap = () => ({
   showCheckoutDialog,
   showCompleteDialog,
   showHandleConfirmDialog,
-  showHandleDialog,
   showDetailDialog,
   showCostDialog,
   showExtendDialog,
@@ -1577,7 +1861,6 @@ const dialogTitles = {
   showCheckoutDialog: 'Konfirmasi Checkout',
   showCompleteDialog: 'Konfirmasi Selesai Sewa',
   showHandleConfirmDialog: 'Konfirmasi Handle Booking',
-  showHandleDialog: 'Handle Booking',
   showDetailDialog: 'Unit & Driver',
   showCostDialog: 'Biaya Operasional',
   showExtendDialog: 'Perpanjang Sewa',
@@ -1632,58 +1915,34 @@ const auditUserName = (user) => user?.name || '-';
           <div class="flex flex-wrap items-center gap-3 mb-1">
             <h1 class="detail-title">Booking #{{ booking?.kode_booking || '...' }}</h1>
             <BookingStatusBadge v-if="booking" :status="booking.status" />
-            <span
-              v-if="booking?.is_overdue"
-              class="overdue-chip"
-            >
+            <span v-if="booking?.is_overdue" class="overdue-chip">
               <i class="pi pi-exclamation-triangle text-[10px]"></i> Terlambat Kembali
             </span>
           </div>
           <p class="detail-subtitle">
             <i class="pi pi-clock"></i>
-            {{ booking?.created_at ? new Date(booking.created_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : '-' }}
+            {{ booking?.created_at ? new Date(booking.created_at).toLocaleString('id-ID', {
+              dateStyle: 'long',
+              timeStyle: 'short'
+            }) : '-' }}
           </p>
         </div>
       </div>
 
       <div class="header-actions detail-action-bar">
-        <Button
-          v-if="booking && ['follow_up', 'confirm'].includes(booking.status)"
-          label="Handle Booking"
-          icon="pi pi-check-circle"
-          class="detail-primary-action"
-          @click="onHandle"
-          :loading="loading"
+        <Button v-if="booking && ['follow_up', 'confirm'].includes(booking.status)" label="Handle Booking"
+          icon="pi pi-check-circle" class="detail-primary-action" @click="onHandle" :loading="loading"
           :disabled="!canHandleBooking"
-          :title="canHandleBooking ? 'Handle booking' : 'Isi unit kendaraan terlebih dahulu'"
-        />
-        <Button
-          v-if="booking && booking.status === 'waiting_list'"
-          label="Checkout"
-          icon="pi pi-sign-out"
-          class="detail-primary-action"
-          @click="openCheckoutDialog"
-          :loading="loading"
-        />
-        <Button
-          v-if="booking && booking.status === 'rental_unit'"
-          label="Selesai"
-          icon="pi pi-flag-fill"
-          class="detail-primary-action"
-          @click="openCompleteDialog"
-          :loading="loading"
-        />
-        <Button
-          v-if="booking && !['selesai','batal','cancelled'].includes(booking.status)"
-          label="Batalkan"
-          icon="pi pi-ban"
-          severity="danger"
-          outlined
-          class="detail-secondary-action"
-          @click="openBatalDialog"
-          :loading="loading"
-        />
-        <Button label="Print" icon="pi pi-print" severity="secondary" outlined class="detail-secondary-action" disabled />
+          :title="canHandleBooking ? 'Handle booking' : 'Isi unit kendaraan terlebih dahulu'" />
+        <Button v-if="booking && booking.status === 'waiting_list'" label="Checkout" icon="pi pi-sign-out"
+          class="detail-primary-action" @click="openCheckoutDialog" :loading="loading" />
+        <Button v-if="booking && booking.status === 'rental_unit'" label="Selesai" icon="pi pi-flag-fill"
+          class="detail-primary-action" @click="openCompleteDialog" :loading="loading" />
+        <Button v-if="booking && !['selesai', 'batal', 'cancelled'].includes(booking.status)" label="Batalkan"
+          icon="pi pi-ban" severity="danger" outlined class="detail-secondary-action" @click="openBatalDialog"
+          :loading="loading" />
+        <Button label="Print" icon="pi pi-print" severity="secondary" outlined class="detail-secondary-action"
+          disabled />
       </div>
     </div>
 
@@ -1710,9 +1969,11 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h2 class="text-base font-bold text-slate-800">Informasi Booking</h2>
             </div>
-            <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold" @click="openEditBookingDialog" v-if="!['selesai','batal','cancelled', 'rental_unit', 'waiting_list'].includes(booking.status)" />
+            <Button label="Edit Booking" icon="pi pi-pencil" size="small" text class="text-blue-600 font-semibold"
+              @click="openEditBookingDialog"
+              v-if="!['selesai', 'batal', 'cancelled', 'rental_unit', 'waiting_list'].includes(booking.status)" />
           </div>
-          <div class="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
+          <div class="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-x-6 gap-y-5">
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Pelanggan</span>
               <span class="text-sm font-bold text-slate-800">{{ booking.customer?.nama }}</span>
@@ -1720,7 +1981,9 @@ const auditUserName = (user) => user?.name || '-';
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Status Member</span>
               <div>
-                <Tag :value="booking.customer?.status" :severity="booking.customer?.status === 'Blacklist' ? 'danger' : 'info'" class="px-2.5 py-0.5 text-xs font-semibold rounded-md" />
+                <Tag :value="booking.customer?.status"
+                  :severity="booking.customer?.status === 'Blacklist' ? 'danger' : 'info'"
+                  class="px-2.5 py-0.5 text-xs font-semibold rounded-md" />
               </div>
             </div>
             <div class="flex flex-col gap-1">
@@ -1732,23 +1995,30 @@ const auditUserName = (user) => user?.name || '-';
               <span class="text-sm font-medium text-slate-700">{{ booking.alamat_penjemputan || 'Office' }}</span>
             </div>
             <div class="flex flex-col gap-1">
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kota Sewa</span>
+              <span class="text-sm font-medium text-slate-700">{{ booking.kota || '-' }}</span>
+            </div>
+            <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Booking Oleh</span>
               <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.created_by_user) }}</span>
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Confirm / DP Oleh</span>
               <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.confirmed_by_user) }}</span>
-              <span v-if="booking.confirmed_at" class="text-xs text-slate-400">{{ formatDateTime(booking.confirmed_at) }}</span>
+              <span v-if="booking.confirmed_at" class="text-xs text-slate-400">{{ formatDateTime(booking.confirmed_at)
+              }}</span>
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Handle Oleh</span>
               <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.handled_by_user) }}</span>
-              <span v-if="booking.handled_at" class="text-xs text-slate-400">{{ formatDateTime(booking.handled_at) }}</span>
+              <span v-if="booking.handled_at" class="text-xs text-slate-400">{{ formatDateTime(booking.handled_at)
+              }}</span>
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Checkout Oleh</span>
               <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.checked_out_by_user) }}</span>
-              <span v-if="booking.checked_out_at" class="text-xs text-slate-400">{{ formatDateTime(booking.checked_out_at) }}</span>
+              <span v-if="booking.checked_out_at" class="text-xs text-slate-400">{{
+                formatDateTime(booking.checked_out_at) }}</span>
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Dikembalikan</span>
@@ -1757,7 +2027,8 @@ const auditUserName = (user) => user?.name || '-';
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Selesai Oleh</span>
               <span class="text-sm font-medium text-slate-700">{{ auditUserName(booking.completed_by_user) }}</span>
-              <span v-if="booking.completed_at" class="text-xs text-slate-400">{{ formatDateTime(booking.completed_at) }}</span>
+              <span v-if="booking.completed_at" class="text-xs text-slate-400">{{ formatDateTime(booking.completed_at)
+              }}</span>
             </div>
           </div>
         </div>
@@ -1770,22 +2041,27 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div>
               <h2 class="text-base font-bold text-slate-800">Acuan Biaya Booking</h2>
-              <p class="text-xs text-slate-500 mt-0.5">Breakdown ini dipakai sebagai rujukan saat handle, pembayaran, extend, dan rolling.</p>
+              <p class="text-xs text-slate-500 mt-0.5">Breakdown ini dipakai sebagai rujukan saat handle, pembayaran,
+                extend, dan rolling.</p>
             </div>
           </div>
 
           <div class="p-6 flex flex-col gap-4">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div class="app-muted-panel p-4">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Harga Dealing Awal</span>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Harga Dealing
+                  Awal</span>
                 <span class="text-lg font-bold text-slate-900">{{ formatCurrency(booking.harga_dealing || 0) }}</span>
               </div>
               <div class="app-muted-panel p-4">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DP Tercatat</span>
-                <span class="text-lg font-bold text-emerald-700">{{ formatCurrency(totalDpPayments || booking.dp || 0) }}</span>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">DP
+                  Tercatat</span>
+                <span class="text-lg font-bold text-emerald-700">{{ formatCurrency(totalDpPayments || booking.dp || 0)
+                }}</span>
               </div>
               <div class="app-muted-panel p-4">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Final Backend</span>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Final
+                  Backend</span>
                 <span class="text-lg font-bold text-slate-900">{{ formatCurrency(bookingTotalTagihan) }}</span>
               </div>
             </div>
@@ -1809,106 +2085,98 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h2 class="text-base font-bold text-slate-800">Unit Kendaraan & Driver</h2>
             </div>
-            <Button
-              :label="unitActionLabel"
-              :icon="unitActionIcon"
-              size="small"
+            <Button :label="unitActionLabel" :icon="unitActionIcon" size="small"
               class="bg-emerald-600 hover:bg-emerald-700 border-none font-semibold rounded-lg px-3.5 py-2 text-white text-xs shadow-sm transition-all"
-              @click="openPrimaryUnitDialog"
-              v-if="['follow_up', 'confirm','waiting_list'].includes(booking.status)"
-            />
+              @click="openPrimaryUnitDialog" v-if="['follow_up', 'confirm', 'waiting_list'].includes(booking.status)" />
           </div>
 
           <div class="p-6">
-            <div v-if="!validDetails.length" class="text-center py-14 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
+            <div v-if="!validDetails.length"
+              class="text-center py-14 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
               <i class="pi pi-inbox text-5xl text-slate-200 mb-3"></i>
               <p class="text-slate-400 font-semibold">Belum ada unit kendaraan yang di-assign.</p>
               <p class="text-slate-300 text-sm mt-1">Klik tombol Tambah Unit untuk memulai.</p>
             </div>
 
             <div v-else class="flex flex-col gap-5">
-              <div
-                v-if="hasZeroReadyUnitPrice"
-                class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 flex items-start gap-3"
-              >
+              <div v-if="hasZeroReadyUnitPrice"
+                class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 flex items-start gap-3">
                 <i class="pi pi-exclamation-triangle mt-0.5 text-amber-600"></i>
                 <div>
                   <p class="font-bold">Harga unit ready masih Rp0</p>
                   <p class="mt-0.5">Isi harga unit terlebih dahulu sebelum booking di-handle.</p>
                 </div>
               </div>
-              <div
-                v-for="detail in validDetails"
-                :key="detail.id"
-                class="rounded-xl border overflow-hidden transition-colors"
-                :class="detail.detail_type === 'extend'
+              <div v-for="detail in validDetails" :key="detail.id"
+                class="rounded-xl border overflow-hidden transition-colors" :class="detail.detail_type === 'extend'
                   ? 'border-amber-200 hover:border-amber-300 bg-amber-50/20'
                   : detail.detail_type === 'rolling'
                     ? 'border-sky-200 hover:border-sky-300 bg-sky-50/20'
-                  : 'border-slate-100 hover:border-slate-200'"
-              >
-                <div
-                  v-if="detail.detail_type === 'extend'"
-                  class="px-5 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700"
-                >
+                    : 'border-slate-100 hover:border-slate-200'">
+                <div v-if="detail.detail_type === 'extend'"
+                  class="px-5 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700">
                   <i class="pi pi-calendar-plus text-[11px]"></i>
                   Ada Transaksi Extend
                 </div>
-                <div
-                  v-else-if="detail.detail_type === 'rolling'"
-                  class="px-5 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-700"
-                >
+                <div v-else-if="detail.detail_type === 'rolling'"
+                  class="px-5 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-700">
                   <i class="pi pi-sync text-[11px]"></i>
                   Ada Transaksi Rolling
                 </div>
                 <!-- Unit Header -->
-                <div class="p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-slate-50/40">
+                <div
+                  class="p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-slate-50/40">
                   <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-                    
+
                     <div>
                       <div class="flex items-center gap-2">
                         <h3 class="text-lg font-bold text-slate-800">
-                          {{ detail.unit ? `${detail.unit.merk} ${detail.unit.tipe}` : detail.unit_placeholder || 'Placeholder Unit' }}
+                          {{ detail.unit ? `${detail.unit.merk} ${detail.unit.tipe}` : detail.unit_placeholder ||
+                            'Placeholder Unit' }}
                         </h3>
-                        <Tag
-                          :value="detailTransactionLabel(detail)"
-                          :severity="detailTransactionSeverity(detail)"
-                          class="rounded-md text-[10px] font-bold"
-                        />
+                        <Tag :value="detailTransactionLabel(detail)" :severity="detailTransactionSeverity(detail)"
+                          class="rounded-md text-[10px] font-bold" />
                       </div>
                       <div class="flex items-center gap-2 mt-1">
-                        <span class="inline-block bg-slate-800 text-white font-mono text-xs font-semibold px-2 py-0.5 rounded tracking-wider">{{ detail.unit?.no_polisi || 'PLACEHOLDER' }}</span>
-                        <span class="text-[11px] font-semibold text-slate-500 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md">
-                          <i class="pi pi-user text-[9px] text-slate-400"></i> {{ detail.unit?.rental_owner?.nama || detail.unit_placeholder || 'Internal' }}
+                        <span
+                          class="inline-block bg-slate-800 text-white font-mono text-xs font-semibold px-2 py-0.5 rounded tracking-wider">{{
+                            detail.unit?.no_polisi || 'PLACEHOLDER' }}</span>
+                        <span
+                          class="text-[11px] font-semibold text-slate-500 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md">
+                          <i class="pi pi-user text-[9px] text-slate-400"></i> {{ detail.unit?.rental_owner?.nama ||
+                            detail.unit_placeholder || 'Internal' }}
+                        </span>
+                        <span v-if="detail.unit?.kota?.nama"
+                          class="text-[11px] font-semibold text-slate-500 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md">
+                          <i class="pi pi-map-marker text-[9px] text-slate-400"></i> {{ detail.unit.kota.nama }}
                         </span>
                       </div>
                       <div class="flex flex-wrap items-center gap-2 mt-3 text-xs font-semibold text-slate-500">
-                        <span class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">
+                        <span
+                          class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">
                           <i class="pi pi-calendar-plus text-blue-500 text-[10px]"></i>
                           {{ formatDateTime(detail.tgl_sewa) }}
                         </span>
                         <i class="pi pi-arrow-right text-slate-300 text-[10px]"></i>
-                        <span class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">
+                        <span
+                          class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-100 shadow-sm">
                           <i class="pi pi-calendar-minus text-rose-500 text-[10px]"></i>
                           {{ formatDateTime(detail.tgl_kembali) }}
                         </span>
                       </div>
                       <div class="flex flex-wrap items-center gap-2 mt-2 text-[11px] font-semibold">
-                        <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md border border-blue-100">
+                        <span
+                          class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md border border-blue-100">
                           <i class="pi pi-wallet text-[9px]"></i>
                           Harga Mobil: {{ formatCurrency(detail.harga_mobil || 0) }}
                         </span>
-                        <span
-                          v-if="detail.diskon_mobil > 0"
-                          class="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 px-2.5 py-1 rounded-md border border-rose-100"
-                        >
+                        <span v-if="detail.diskon_mobil > 0"
+                          class="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 px-2.5 py-1 rounded-md border border-rose-100">
                           <i class="pi pi-tag text-[9px]"></i>
                           Diskon: {{ formatCurrency(detail.diskon_mobil) }}
                         </span>
-                        <span
-                          v-if="detail.pricing_mode === 'all_in'"
-                          class="inline-flex items-center gap-1.5 bg-cyan-50 text-cyan-700 px-2.5 py-1 rounded-md border border-cyan-100"
-                        >
+                        <span v-if="detail.pricing_mode === 'all_in'"
+                          class="inline-flex items-center gap-1.5 bg-cyan-50 text-cyan-700 px-2.5 py-1 rounded-md border border-cyan-100">
                           <i class="pi pi-check-circle text-[9px]"></i>
                           All In: {{ formatCurrency(detail.harga_all_in || 0) }}
                         </span>
@@ -1916,27 +2184,25 @@ const auditUserName = (user) => user?.name || '-';
                     </div>
                   </div>
 
-                  <div class="w-full lg:w-auto bg-slate-900 p-4 rounded-xl border border-slate-700 text-right lg:min-w-[220px] shadow-lg shadow-slate-200/70 mt-4 lg:mt-0">
+                  <div
+                    class="w-full lg:w-auto bg-slate-900 p-4 rounded-xl border border-slate-700 text-right lg:min-w-[220px] shadow-lg shadow-slate-200/70 mt-4 lg:mt-0">
                     <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest block mb-0.5">
                       {{ detail.pricing_mode === 'all_in' ? 'Total Tagihan Unit' : 'Total Unit + Ops' }}
                     </span>
-                    <span class="text-xl font-bold text-white">{{ formatCurrency(detailUnitTotalWithCosts(detail)) }}</span>
+                    <span class="text-xl font-bold text-white">{{ formatCurrency(detailUnitTotalWithCosts(detail))
+                    }}</span>
                     <div class="text-[11px] font-semibold text-sky-200 mt-1">
                       {{ detailUnitPriceDescription(detail) }}
                     </div>
                     <div class="text-[11px] font-semibold text-slate-300 mt-0.5">
-                      {{ detail.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya Ops' }}: {{ formatCurrency(detailBillableCostTotal(detail)) }}
+                      {{ detail.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya Ops' }}: {{
+                        formatCurrency(detailBillableCostTotal(detail)) }}
                     </div>
-                    <Button
-                      v-if="canEditDetailTransaction(detail)"
-                      :label="detail.detail_type === 'rolling' ? 'Edit Rolling' : 'Edit Extend'"
-                      icon="pi pi-pencil"
-                      size="small"
-                      outlined
-                      :severity="detail.detail_type === 'rolling' ? 'info' : 'warning'"
-                      class="mt-3 rounded-lg font-semibold text-xs px-3 py-1.5"
-                      @click="openDetailDialog(detail)"
-                    />
+                    <Button v-if="canEditDetailTransaction(detail)"
+                      :label="detail.detail_type === 'rolling' ? 'Edit Rolling' : (detail.detail_type === 'extend' ? 'Edit Extend' : 'Edit Transaksi Awal')"
+                      icon="pi pi-pencil" size="small" outlined
+                      :severity="detail.detail_type === 'rolling' ? 'info' : (detail.detail_type === 'extend' ? 'warning' : 'success')"
+                      class="mt-3 rounded-lg font-semibold text-xs px-3 py-1.5" @click="openDetailDialog(detail)" />
                   </div>
                 </div>
 
@@ -1948,26 +2214,34 @@ const auditUserName = (user) => user?.name || '-';
                         <i class="pi pi-id-card text-sm"></i>
                       </div>
                       <div>
-                        <span class="text-[10px] font-semibold text-slate-400 uppercase block leading-none mb-0.5">Driver</span>
-                        <span class="text-sm font-bold text-slate-700">{{ detail.driver?.nama || 'Lepas Kunci' }}</span>
+                        <span
+                          class="text-[10px] font-semibold text-slate-400 uppercase block leading-none mb-0.5">Driver</span>
+                        <div class="flex items-center gap-2">
+                          <span class="text-sm font-bold text-slate-700">{{ detail.driver?.nama || 'Lepas Kunci'
+                          }}</span>
+                          <span v-if="detail.driver?.kota"
+                            class="text-[10px] font-semibold text-slate-500 flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded">
+                            <i class="pi pi-map-marker text-[8px] text-slate-400"></i> {{ detail.driver.kota }}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                  
+
                   </div>
 
-                  <div v-if="detail.costs?.length" class="mt-4 bg-white rounded-lg border border-slate-100 overflow-hidden">
+                  <div v-if="detail.costs?.length"
+                    class="mt-4 bg-white rounded-lg border border-slate-100 overflow-hidden">
                     <DataTable :value="detail.costs" class="p-datatable-sm custom-mini-table">
                       <Column field="type" header="TIPE">
                         <template #body="{ data }">
                           <div class="flex items-center gap-1.5">
-                            <span
-                              class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
-                              :class="data.type === 'diskon' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'"
-                            >
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                              :class="data.type === 'diskon' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'">
                               {{ data.type || 'biaya' }}
                             </span>
-                            <Tag v-if="data.is_additional" value="Di luar deal" severity="warning" class="text-[10px]" />
+                            <Tag v-if="data.is_additional" value="Di luar deal" severity="warning"
+                              class="text-[10px]" />
                           </div>
                         </template>
                       </Column>
@@ -1981,10 +2255,8 @@ const auditUserName = (user) => user?.name || '-';
                       </Column>
                       <Column field="amount" header="JUMLAH" class="text-right">
                         <template #body="{ data }">
-                          <span
-                            class="text-sm font-bold"
-                            :class="data.type === 'diskon' ? 'text-rose-600' : 'text-slate-800'"
-                          >
+                          <span class="text-sm font-bold"
+                            :class="data.type === 'diskon' ? 'text-rose-600' : 'text-slate-800'">
                             {{ formatSignedCostAmount(data) }}
                           </span>
                         </template>
@@ -2007,38 +2279,14 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div class="p-6">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Button 
-                label="Perpanjang (Extend)" 
-                icon="pi pi-calendar-plus" 
-                severity="warning" 
-                outlined 
-                class="rounded-xl font-semibold text-sm py-3"
-                @click="openExtendDialog"
-              />
-              <Button 
-                label="Ganti Unit (Rolling)" 
-                icon="pi pi-sync" 
-                severity="warning" 
-                outlined 
-                class="rounded-xl font-semibold text-sm py-3"
-                @click="openRollingDialog"
-              />
-              <Button 
-                label="Stop Early" 
-                icon="pi pi-stop-circle" 
-                severity="danger" 
-                outlined 
-                class="rounded-xl font-semibold text-sm py-3"
-                @click="openStopEarlyDialog"
-              />
-              <Button 
-                label="Biaya/Diskon +" 
-                icon="pi pi-plus-circle" 
-                severity="info" 
-                outlined 
-                class="rounded-xl font-semibold text-sm py-3"
-                @click="openAdditionalCostDialog"
-              />
+              <Button label="Perpanjang (Extend)" icon="pi pi-calendar-plus" severity="warning" outlined
+                class="rounded-xl font-semibold text-sm py-3" @click="openExtendDialog" />
+              <Button label="Ganti Unit (Rolling)" icon="pi pi-sync" severity="warning" outlined
+                class="rounded-xl font-semibold text-sm py-3" @click="openRollingDialog" />
+              <Button label="Stop Early" icon="pi pi-stop-circle" severity="danger" outlined
+                class="rounded-xl font-semibold text-sm py-3" @click="openStopEarlyDialog" />
+              <Button label="Biaya/Diskon +" icon="pi pi-plus-circle" severity="info" outlined
+                class="rounded-xl font-semibold text-sm py-3" @click="openAdditionalCostDialog" />
             </div>
           </div>
         </div>
@@ -2066,16 +2314,14 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div class="summary-divider"></div>
             <div class="summary-balance">
-              <span
-                :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'"
-              >Sisa Tagihan</span>
-              <strong
-                :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'"
-              >{{ formatCurrency(bookingSisaTagihan) }}</strong>
+              <span :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'">Sisa Tagihan</span>
+              <strong :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'">{{ formatCurrency(bookingSisaTagihan)
+              }}</strong>
             </div>
             <div class="summary-status">
               <span>Status Pembayaran</span>
-              <Tag :value="isPaidOff ? 'Lunas' : 'Belum Lunas'" :severity="isPaidOff ? 'success' : 'warning'" class="rounded-md" />
+              <Tag :value="isPaidOff ? 'Lunas' : 'Belum Lunas'" :severity="isPaidOff ? 'success' : 'warning'"
+                class="rounded-md" />
             </div>
           </div>
         </div>
@@ -2089,14 +2335,9 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h3 class="text-sm font-bold text-slate-800">Pembayaran</h3>
             </div>
-            <Button
-              label="Tambah"
-              icon="pi pi-plus"
-              size="small"
+            <Button label="Tambah" icon="pi pi-plus" size="small"
               class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
-              @click="openPaymentDialog"
-              v-if="!['cancelled', 'batal', 'selesai'].includes(booking.status)"
-            />
+              @click="openPaymentDialog" v-if="!['cancelled', 'batal', 'selesai'].includes(booking.status)" />
           </div>
 
           <div v-if="!booking.payments?.length" class="p-6 text-center text-slate-400">
@@ -2105,80 +2346,57 @@ const auditUserName = (user) => user?.name || '-';
           </div>
 
           <div v-else class="divide-y divide-slate-50">
-            <div
-              v-for="p in booking.payments"
-              :key="p.id"
-              class="px-5 py-3.5 flex items-start justify-between gap-3"
-              :class="{ 'bg-rose-50/60': p.status === 'voided', 'bg-amber-50/60': p.status === 'void_requested' }"
-            >
+            <div v-for="p in booking.payments" :key="p.id" class="px-5 py-3.5 flex items-start justify-between gap-3"
+              :class="{ 'bg-rose-50/60': p.status === 'voided', 'bg-amber-50/60': p.status === 'void_requested' }">
               <div class="flex flex-col gap-0.5 min-w-0">
                 <div class="flex flex-wrap gap-1.5">
-                  <span class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit"
-                    :class="{
-                      'bg-blue-100 text-blue-700': p.payment_type === 'dp',
-                      'bg-amber-100 text-amber-700': p.payment_type === 'cicilan',
-                      'bg-emerald-100 text-emerald-700': p.payment_type === 'pelunasan',
-                    }"
-                  >{{ p.payment_type }}</span>
-                  <span
-                    v-if="p.status && p.status !== 'active'"
-                    class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit"
-                    :class="{
+                  <span class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit" :class="{
+                    'bg-blue-100 text-blue-700': p.payment_type === 'dp',
+                    'bg-amber-100 text-amber-700': p.payment_type === 'cicilan',
+                    'bg-emerald-100 text-emerald-700': p.payment_type === 'pelunasan',
+                  }">{{ p.payment_type }}</span>
+                  <span v-if="p.status && p.status !== 'active'"
+                    class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit" :class="{
                       'bg-amber-100 text-amber-700': p.status === 'void_requested',
                       'bg-rose-100 text-rose-700': p.status === 'voided',
-                    }"
-                  >{{ paymentStatusLabel(p.status) }}</span>
+                    }">{{ paymentStatusLabel(p.status) }}</span>
                 </div>
                 <span class="text-xs text-slate-500 truncate">
                   {{ p.paid_at ? new Date(p.paid_at).toLocaleDateString('id-ID', { dateStyle: 'medium' }) : '-' }}
                 </span>
                 <span v-if="p.catatan" class="text-xs text-slate-400 italic truncate">{{ p.catatan }}</span>
-                <span v-if="p.void_reason" class="text-xs text-rose-500 truncate">Alasan void: {{ p.void_reason }}</span>
+                <span v-if="p.void_reason" class="text-xs text-rose-500 truncate">Alasan void: {{ p.void_reason
+                }}</span>
                 <span v-if="p.void_requester" class="text-xs text-amber-600 truncate">
                   Request void oleh {{ p.void_requester.name }}
                   <span v-if="p.void_requested_at">
-                    pada {{ new Date(p.void_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }}
+                    pada {{ new Date(p.void_requested_at).toLocaleString('id-ID', {
+                      dateStyle: 'medium', timeStyle:
+                        'short'
+                    })
+                    }}
                   </span>
                 </span>
-                <span v-if="p.status === 'voided' && p.void_approver" class="text-xs text-rose-500 truncate">Di-ACC oleh {{ p.void_approver.name }}</span>
-                <span v-if="p.void_rejection_note" class="text-xs text-slate-400 truncate">Catatan penolakan: {{ p.void_rejection_note }}</span>
+                <span v-if="p.status === 'voided' && p.void_approver" class="text-xs text-rose-500 truncate">Di-ACC oleh
+                  {{
+                    p.void_approver.name }}</span>
+                <span v-if="p.void_rejection_note" class="text-xs text-slate-400 truncate">Catatan penolakan: {{
+                  p.void_rejection_note }}</span>
               </div>
               <div class="flex flex-col items-end gap-2">
-                <span
-                  class="text-sm font-bold whitespace-nowrap"
-                  :class="p.status === 'voided' ? 'text-rose-500 line-through' : 'text-slate-800'"
-                >{{ formatCurrency(p.amount) }}</span>
+                <span class="text-sm font-bold whitespace-nowrap"
+                  :class="p.status === 'voided' ? 'text-rose-500 line-through' : 'text-slate-800'">{{
+                    formatCurrency(p.amount)
+                  }}</span>
                 <div class="flex flex-wrap justify-end gap-1.5">
                   <Button
                     v-if="(!p.status || p.status === 'active') && !['cancelled', 'batal', 'selesai'].includes(booking.status)"
-                    label="Void"
-                    icon="pi pi-ban"
-                    size="small"
-                    severity="danger"
-                    text
-                    class="text-xs px-2 py-1"
-                    @click="openVoidPaymentDialog(p)"
-                  />
-                  <Button
-                    v-if="p.status === 'void_requested' && canApprovePaymentVoid"
-                    label="ACC"
-                    icon="pi pi-check"
-                    size="small"
-                    severity="success"
-                    text
-                    class="text-xs px-2 py-1"
-                    @click="approveVoidRequest(p)"
-                  />
-                  <Button
-                    v-if="p.status === 'void_requested' && canApprovePaymentVoid"
-                    label="Tolak"
-                    icon="pi pi-times"
-                    size="small"
-                    severity="danger"
-                    text
-                    class="text-xs px-2 py-1"
-                    @click="openRejectVoidDialog(p)"
-                  />
+                    label="Void" icon="pi pi-ban" size="small" severity="danger" text class="text-xs px-2 py-1"
+                    @click="openVoidPaymentDialog(p)" />
+                  <Button v-if="p.status === 'void_requested' && canApprovePaymentVoid" label="ACC" icon="pi pi-check"
+                    size="small" severity="success" text class="text-xs px-2 py-1" @click="approveVoidRequest(p)" />
+                  <Button v-if="p.status === 'void_requested' && canApprovePaymentVoid" label="Tolak" icon="pi pi-times"
+                    size="small" severity="danger" text class="text-xs px-2 py-1" @click="openRejectVoidDialog(p)" />
                 </div>
               </div>
             </div>
@@ -2198,7 +2416,9 @@ const auditUserName = (user) => user?.name || '-';
       </div>
     </div>
 
-    <Dialog :visible="showEditBookingDialog" @update:visible="onDialogVisibleChange('showEditBookingDialog', $event)" header="Edit Data Booking" :style="{ width: '620px' }" modal :breakpoints="{ '680px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showEditBookingDialog" @update:visible="onDialogVisibleChange('showEditBookingDialog', $event)"
+      header="Edit Data Booking" :style="{ width: '620px' }" modal :breakpoints="{ '680px': '95vw' }"
+      class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
           Konsumen tidak dapat diubah dari halaman ini.
@@ -2210,11 +2430,13 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-xs font-semibold text-slate-600">Paket Sewa</label>
-            <Dropdown v-model="bookingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
+            <Dropdown v-model="bookingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value"
+              class="w-full" />
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-xs font-semibold text-slate-600">Harga Dealing</label>
-            <InputNumber v-model="bookingForm.harga_dealing" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+            <InputNumber v-model="bookingForm.harga_dealing" mode="currency" currency="IDR" locale="id-ID"
+              class="w-full" />
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-xs font-semibold text-slate-600">DP</label>
@@ -2222,7 +2444,8 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div v-if="bookingForm.dp > 0" class="flex flex-col gap-1.5 sm:col-span-2">
             <label class="text-xs font-semibold text-slate-600">Rekening DP</label>
-            <Dropdown v-model="bookingForm.rekening_dp_id" :options="accountOptions" optionLabel="name" optionValue="id" placeholder="Pilih akun pembayaran" class="w-full" />
+            <Dropdown v-model="bookingForm.rekening_dp_id" :options="accountOptions" optionLabel="name" optionValue="id"
+              placeholder="Pilih akun pembayaran" class="w-full" />
           </div>
           <div class="flex flex-col gap-1.5 sm:col-span-2">
             <label class="text-xs font-semibold text-slate-600">Tujuan</label>
@@ -2240,47 +2463,46 @@ const auditUserName = (user) => user?.name || '-';
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showEditBookingDialog')" />
-          <Button label="Simpan" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" @click="submitBookingEdit" :loading="loading" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showEditBookingDialog')" />
+          <Button label="Simpan" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary"
+            @click="submitBookingEdit" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Checkout (E4) ======= -->
-    <Dialog :visible="showCheckoutDialog" @update:visible="onDialogVisibleChange('showCheckoutDialog', $event)" header="Konfirmasi Checkout" :style="{ width: '420px' }" modal class="custom-dialog">
+    <Dialog :visible="showCheckoutDialog" @update:visible="onDialogVisibleChange('showCheckoutDialog', $event)"
+      header="Konfirmasi Checkout" :style="{ width: '420px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex items-start gap-4 p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
-          <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
+          <div
+            class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
             <i class="pi pi-sign-out text-lg"></i>
           </div>
           <div>
             <p class="font-bold text-slate-800 mb-1">Unit akan di-checkout sekarang</p>
-            <p class="text-sm text-slate-500">Status booking akan berubah ke <strong>Rental Unit</strong> dan status unit menjadi <strong>Out</strong>.</p>
+            <p class="text-sm text-slate-500">Status booking akan berubah ke <strong>Rental Unit</strong> dan status
+              unit
+              menjadi <strong>Out</strong>.</p>
           </div>
         </div>
         <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl flex flex-col gap-2">
           <div class="flex items-center justify-between gap-3">
             <span class="text-xs font-bold text-slate-500 uppercase">Status cek fisik keberangkatan</span>
-            <Tag
-              :value="physicalCheckStatusLabel(departurePhysicalCheck.status)"
-              :severity="physicalCheckSeverity(departurePhysicalCheck.status)"
-              class="rounded-md"
-            />
+            <Tag :value="physicalCheckStatusLabel(departurePhysicalCheck.status)"
+              :severity="physicalCheckSeverity(departurePhysicalCheck.status)" class="rounded-md" />
           </div>
           <p v-if="departureCheckDone" class="text-sm text-emerald-700 font-semibold">
             Cek fisik sudah dilakukan. Checkout bisa dilanjutkan.
           </p>
           <p v-else class="text-sm text-slate-500">
-            Jika memilih lakukan cek fisik, sistem akan membuat request dan checkout belum diproses sampai hasil cek fisik disimpan.
+            Jika memilih lakukan cek fisik, sistem akan membuat request dan checkout belum diproses sampai hasil cek
+            fisik
+            disimpan.
           </p>
-          <Button
-            v-if="!departureCheckDone"
-            label="Buka Cek Fisik"
-            icon="pi pi-camera"
-            size="small"
-            outlined
-            @click="openPhysicalCheckForm('departure')"
-          />
+          <Button v-if="!departureCheckDone" label="Buka Cek Fisik" icon="pi pi-camera" size="small" outlined
+            @click="openPhysicalCheckForm('departure')" />
         </div>
         <div class="p-4 bg-amber-50 border border-amber-100 rounded-xl">
           <p class="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
@@ -2303,28 +2525,28 @@ const auditUserName = (user) => user?.name || '-';
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCheckoutDialog')" />
-          <Button
-            :label="!checkoutSkip && !departureCheckDone ? 'Buat Request Cek Fisik' : 'Proses Checkout'"
-            icon="pi pi-sign-out"
-            class="app-dialog-button app-dialog-button-primary"
-            @click="submitCheckout"
-            :loading="loading || physicalCheckLoading"
-          />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showCheckoutDialog')" />
+          <Button :label="!checkoutSkip && !departureCheckDone ? 'Buat Request Cek Fisik' : 'Proses Checkout'"
+            icon="pi pi-sign-out" class="app-dialog-button app-dialog-button-primary" @click="submitCheckout"
+            :loading="loading || physicalCheckLoading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Selesai / Complete (E4) ======= -->
-    <Dialog :visible="showCompleteDialog" @update:visible="onDialogVisibleChange('showCompleteDialog', $event)" header="Konfirmasi Selesai Sewa" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showCompleteDialog" @update:visible="onDialogVisibleChange('showCompleteDialog', $event)"
+      header="Konfirmasi Selesai Sewa" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex items-start gap-4 p-4 bg-violet-50 border border-violet-100 rounded-xl">
-          <div class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 flex-shrink-0">
+          <div
+            class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 flex-shrink-0">
             <i class="pi pi-flag-fill text-lg"></i>
           </div>
           <div>
             <p class="font-bold text-slate-800 mb-1">Sewa akan diselesaikan</p>
-            <p class="text-sm text-slate-500">Status booking berubah ke <strong>Selesai</strong> dan status unit kembali menjadi <strong>Aktif</strong>.</p>
+            <p class="text-sm text-slate-500">Status booking berubah ke <strong>Selesai</strong> dan status unit kembali
+              menjadi <strong>Aktif</strong>.</p>
           </div>
         </div>
         <div class="flex flex-col gap-1.5">
@@ -2334,26 +2556,19 @@ const auditUserName = (user) => user?.name || '-';
         <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl flex flex-col gap-2">
           <div class="flex items-center justify-between gap-3">
             <span class="text-xs font-bold text-slate-500 uppercase">Status cek fisik kembali</span>
-            <Tag
-              :value="physicalCheckStatusLabel(returnPhysicalCheck.status)"
-              :severity="physicalCheckSeverity(returnPhysicalCheck.status)"
-              class="rounded-md"
-            />
+            <Tag :value="physicalCheckStatusLabel(returnPhysicalCheck.status)"
+              :severity="physicalCheckSeverity(returnPhysicalCheck.status)" class="rounded-md" />
           </div>
           <p v-if="returnCheckDone" class="text-sm text-emerald-700 font-semibold">
             Cek fisik pengembalian sudah dilakukan. Sewa bisa diselesaikan.
           </p>
           <p v-else class="text-sm text-slate-500">
-            Jika memilih lakukan cek fisik, sistem akan membuat request dan status belum menjadi selesai sampai hasil cek fisik disimpan.
+            Jika memilih lakukan cek fisik, sistem akan membuat request dan status belum menjadi selesai sampai hasil
+            cek
+            fisik disimpan.
           </p>
-          <Button
-            v-if="!returnCheckDone"
-            label="Buka Cek Fisik"
-            icon="pi pi-camera"
-            size="small"
-            outlined
-            @click="openPhysicalCheckForm('return')"
-          />
+          <Button v-if="!returnCheckDone" label="Buka Cek Fisik" icon="pi pi-camera" size="small" outlined
+            @click="openPhysicalCheckForm('return')" />
         </div>
         <div class="p-4 bg-amber-50 border border-amber-100 rounded-xl">
           <p class="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
@@ -2376,20 +2591,18 @@ const auditUserName = (user) => user?.name || '-';
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCompleteDialog')" />
-          <Button
-            :label="!completeSkip && !returnCheckDone ? 'Buat Request Cek Fisik' : 'Selesaikan Sewa'"
-            icon="pi pi-flag-fill"
-            class="app-dialog-button app-dialog-button-primary"
-            @click="submitComplete"
-            :loading="loading || physicalCheckLoading"
-            :disabled="!completeReturnedAt"
-          />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showCompleteDialog')" />
+          <Button :label="!completeSkip && !returnCheckDone ? 'Buat Request Cek Fisik' : 'Selesaikan Sewa'"
+            icon="pi pi-flag-fill" class="app-dialog-button app-dialog-button-primary" @click="submitComplete"
+            :loading="loading || physicalCheckLoading" :disabled="!completeReturnedAt" />
         </div>
       </template>
     </Dialog>
 
-    <Dialog :visible="showHandleConfirmDialog" @update:visible="onDialogVisibleChange('showHandleConfirmDialog', $event)" header="Konfirmasi Handle Booking" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showHandleConfirmDialog"
+      @update:visible="onDialogVisibleChange('showHandleConfirmDialog', $event)" header="Konfirmasi Handle Booking"
+      :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-4 pt-2">
         <div class="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl">
           <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 flex-shrink-0">
@@ -2397,209 +2610,83 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div>
             <p class="font-bold text-slate-800 mb-1">Ubah status ke Waiting List?</p>
-            <p class="text-sm text-slate-500">Detail unit, driver, jadwal, dan biaya diisi lewat modal Tambah Unit. Pastikan data kendaraan sudah disimpan.</p>
+            <p class="text-sm text-slate-500">Detail unit, driver, jadwal, dan biaya diisi lewat modal Tambah Unit.
+              Pastikan
+              data kendaraan sudah disimpan.</p>
           </div>
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showHandleConfirmDialog')" />
-          <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="app-dialog-button app-dialog-button-primary" @click="submitHandle" :loading="loading" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showHandleConfirmDialog')" />
+          <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="app-dialog-button app-dialog-button-primary"
+            @click="submitHandle" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
-    <!-- ======= DIALOG: Handle Booking (E3) ======= -->
-    <Dialog :visible="showHandleDialog" @update:visible="onDialogVisibleChange('showHandleDialog', $event)" header="Handle Booking" :style="{ width: '760px' }" modal :breakpoints="{ '800px': '95vw' }" class="custom-dialog">
-      <div class="flex flex-col gap-6 pt-2">
-
-        <!-- Unit & Driver -->
-        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Unit & Driver</legend>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Unit Kendaraan *</label>
-              <Dropdown v-model="handleForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit..." filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onHandleUnitChange" class="w-full" :class="{ 'p-invalid': handleFormErrors.unit_id }" />
-              <small class="p-error" v-if="handleFormErrors.unit_id">{{ handleFormErrors.unit_id[0] }}</small>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Driver <span class="text-slate-400 font-normal">(opsional)</span></label>
-              <Dropdown v-model="handleForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / Pilih driver" filter showClear class="w-full" />
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- Durasi -->
-        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Durasi Sewa</legend>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Lama Sewa *</label>
-              <InputNumber v-model="handleForm.lama_sewa" :min="1" placeholder="Jumlah" class="w-full" :class="{ 'p-invalid': handleFormErrors.lama_sewa }" />
-              <small class="p-error" v-if="handleFormErrors.lama_sewa">{{ handleFormErrors.lama_sewa[0] }}</small>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Paket Sewa *</label>
-              <Dropdown v-model="handleForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- Harga & Pricing Mode -->
-        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan</legend>
-          <div class="flex flex-col gap-4 mt-2">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-600">Harga Mobil / Periode *</label>
-                <InputNumber v-model="handleForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" :class="{ 'p-invalid': handleFormErrors.harga_mobil }" />
-                <small class="p-error" v-if="handleFormErrors.harga_mobil">{{ handleFormErrors.harga_mobil[0] }}</small>
-              </div>
-              <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-600">Diskon <span class="text-slate-400 font-normal">(opsional)</span></label>
-                <InputNumber v-model="handleForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
-              </div>
-            </div>
-
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Mode Pricing *</label>
-              <SelectButton v-model="handleForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
-            </div>
-
-            <!-- All In section -->
-            <div v-if="handleForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-cyan-700">Pricing Package <span class="text-slate-400 font-normal">(opsional, atau isi manual)</span></label>
-                <Dropdown v-model="handleForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onHandlePackageChange" />
-              </div>
-              <div v-if="!handleForm.pricing_package_id" class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-cyan-700">Harga All In (Override) *</label>
-                <InputNumber v-model="handleForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" class="w-full" :class="{ 'p-invalid': handleFormErrors.harga_all_in }" />
-                <small class="p-error" v-if="handleFormErrors.harga_all_in">{{ handleFormErrors.harga_all_in[0] }}</small>
-              </div>
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- Biaya Operasional -->
-        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional</legend>
-          <div class="flex flex-col gap-3 mt-2">
-            <div v-if="!handleForm.costs.length" class="text-center text-sm text-slate-400 py-3">
-              Belum ada biaya. Klik + untuk menambah.
-            </div>
-            <div v-for="(cost, idx) in handleForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-start">
-              <div class="col-span-4">
-                <Dropdown
-                  v-model="cost.cost_type_id"
-                  :options="costTypeOptions"
-                  optionLabel="label"
-                  optionValue="id"
-                  placeholder="Tipe..."
-                  class="w-full"
-                  showClear
-                  @change="onCostTypeChange(idx, cost.cost_type_id)"
-                />
-              </div>
-              <div class="col-span-3">
-                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
-              </div>
-              <div class="col-span-3">
-                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
-              </div>
-              <div class="col-span-1">
-                <InputText
-                  v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description"
-                  v-model="cost.keterangan"
-                  placeholder="Detail..."
-                  class="w-full text-xs"
-                  title="Keterangan wajib untuk tipe ini"
-                />
-              </div>
-              <div class="col-span-1 flex items-start pt-1">
-                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="removeCostRow(idx)" />
-              </div>
-            </div>
-            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="addCostRow" />
-          </div>
-        </fieldset>
-
-        <!-- Lokasi -->
-        <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Lokasi</legend>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Alamat Penjemputan</label>
-              <Textarea v-model="handleForm.alamat_penjemputan" rows="2" class="w-full" />
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Tujuan</label>
-              <Textarea v-model="handleForm.tujuan" rows="2" class="w-full" />
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- Kalkulasi Real-time -->
-        <div class="bg-slate-900 rounded-xl p-4 text-white">
-          <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Kalkulasi Real-time</p>
-          <div class="flex flex-col gap-2 text-sm">
-            <div class="flex justify-between">
-              <span class="text-white/60">Harga Sewa <span class="text-white/40 text-xs">({{ handleForm.lama_sewa || 0 }} × {{ formatCurrency((handleForm.harga_mobil||0) - (handleForm.diskon_mobil||0)) }})</span></span>
-              <span class="font-semibold">{{ formatCurrency(hargaSewa) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-white/60">{{ handleForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Total Biaya Ops' }}</span>
-              <span class="font-semibold">{{ formatCurrency(totalBiayaOps) }}</span>
-            </div>
-            <div class="h-px bg-white/10 my-1"></div>
-            <div class="flex justify-between text-white/60">
-              <span>Grand Total Internal</span>
-              <span class="font-semibold text-white">{{ formatCurrency(grandTotalInternal) }}</span>
-            </div>
-            <div class="flex justify-between items-center mt-1">
-              <span class="font-bold text-cyan-300">Tagihan Konsumen</span>
-              <span class="text-xl font-bold text-cyan-300">{{ formatCurrency(tagihanKonsumen) }}</span>
-            </div>
-            <p v-if="handleForm.pricing_mode === 'all_in'" class="text-[10px] text-slate-500 mt-1">* Tagihan konsumen = harga All In dikurangi item diskon. Item biaya operasional lain hanya menjadi catatan internal.</p>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showHandleDialog')" />
-          <Button label="Proses Handle" icon="pi pi-check-circle" class="app-dialog-button app-dialog-button-primary" @click="submitHandle" :loading="loading" />
-        </div>
-      </template>
-    </Dialog>
 
     <!-- ======= DIALOG: Tambah/Edit Unit & Driver ======= -->
-    <Dialog :visible="showDetailDialog" @update:visible="onDialogVisibleChange('showDetailDialog', $event)" :header="detailDialogHeader" :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }" class="custom-dialog">
-      <div class="flex flex-col gap-6 pt-2">
+    <Dialog :visible="showDetailDialog" @update:visible="onDialogVisibleChange('showDetailDialog', $event)"
+      :header="detailDialogHeader" :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }"
+      class="custom-dialog">
+      
+      <div v-if="isInitializingDetailDialog" class="p-8 flex flex-col items-center justify-center gap-4">
+        <i class="pi pi-spinner pi-spin text-4xl text-slate-400"></i>
+        <span class="text-sm text-slate-500 font-medium">Memuat data...</span>
+      </div>
+
+      <div v-else class="flex flex-col gap-6 pt-2">
         <!-- Section: Kendaraan & Driver -->
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Kendaraan & Driver</legend>
           <div class="flex flex-col gap-4 mt-1">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                <i class="pi pi-map-marker text-slate-400 text-[11px]"></i> Kota Booking
+              </label>
+              <InputText :value="booking?.kota || '-'" class="w-full bg-slate-50" readonly />
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-car text-slate-400 text-[11px]"></i> Unit Kendaraan
               </label>
-              <Dropdown v-model="detailForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit kendaraan" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onUnitChange" class="w-full">
+              <div v-if="unitCityFilter" class="unit-city-filter-chip">
+                <i class="pi pi-map-marker" />
+                <span>Filter kota: {{ booking?.kota || '-' }}</span>
+                <Button icon="pi pi-times" text rounded size="small" class="chip-clear-btn"
+                  @click="clearUnitCityFilter" />
+              </div>
+              <Dropdown v-model="detailForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id"
+                placeholder="Pilih unit kendaraan" filter
+                :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
+                :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onUnitChange"
+                class="w-full">
                 <template #option="{ option }">
                   <div class="flex items-center justify-between gap-3">
                     <div class="flex flex-col">
                       <span class="font-semibold text-slate-800">{{ option.merk }} {{ option.tipe }}</span>
-                      <span class="text-xs text-slate-500">{{ option.no_polisi }} - {{ option.rental_owner?.nama || 'Internal' }}</span>
+                      <span class="text-xs text-slate-500">{{ option.no_polisi }} - {{ option.rental_owner?.nama ||
+                        'Internal' }}</span>
                     </div>
-                    <Tag :value="option.status" :severity="option.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+                    <Tag :value="option.status" :severity="option.status === 'Aktif' ? 'success' : 'warning'"
+                      class="rounded-md" />
                   </div>
                 </template>
               </Dropdown>
               <div v-if="selectedDetailUnit" class="app-muted-panel p-3 text-sm">
                 <div class="grid grid-cols-3 gap-2">
-                  <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{ selectedDetailUnit.no_polisi }}</strong></div>
-                  <div><span class="text-slate-400 block text-xs">Pemilik</span><strong>{{ selectedDetailUnit.rental_owner?.nama || 'Internal' }}</strong></div>
-                  <div><span class="text-slate-400 block text-xs">Status</span><Tag :value="selectedDetailUnit.status" :severity="selectedDetailUnit.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" /></div>
+                  <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{
+                    selectedDetailUnit.no_polisi
+                      }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Pemilik</span><strong>{{
+                    selectedDetailUnit.rental_owner?.nama || 'Internal' }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Status</span>
+                    <Tag :value="selectedDetailUnit.status"
+                      :severity="selectedDetailUnit.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -2608,7 +2695,8 @@ const auditUserName = (user) => user?.name || '-';
                 <i class="pi pi-id-card text-slate-400 text-[11px]"></i> Driver
                 <span class="text-slate-300 font-normal">(opsional)</span>
               </label>
-              <Dropdown v-model="detailForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / Pilih driver" filter showClear class="w-full">
+              <Dropdown v-model="detailForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id"
+                placeholder="Lepas kunci / Pilih driver" filter @filter="onDriverFilter" showClear class="w-full">
                 <template #option="{ option }">
                   <div class="flex flex-col">
                     <span class="font-semibold text-slate-800">{{ option.nama }}</span>
@@ -2618,9 +2706,12 @@ const auditUserName = (user) => user?.name || '-';
               </Dropdown>
               <div v-if="selectedDetailDriver" class="app-muted-panel p-3 text-sm">
                 <div class="grid grid-cols-3 gap-2">
-                  <div><span class="text-slate-400 block text-xs">Driver</span><strong>{{ selectedDetailDriver.nama }}</strong></div>
-                  <div><span class="text-slate-400 block text-xs">Kota</span><strong>{{ selectedDetailDriver.kota || '-' }}</strong></div>
-                  <div><span class="text-slate-400 block text-xs">Kontak / SIM</span><strong>{{ selectedDetailDriver.kontak_1 || '-' }} / {{ selectedDetailDriver.no_sim || '-' }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Driver</span><strong>{{ selectedDetailDriver.nama
+                      }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Kota</span><strong>{{ selectedDetailDriver.kota || '-'
+                      }}</strong></div>
+                  <div><span class="text-slate-400 block text-xs">Kontak / SIM</span><strong>{{
+                    selectedDetailDriver.kontak_1 || '-' }} / {{ selectedDetailDriver.no_sim || '-' }}</strong></div>
                 </div>
               </div>
             </div>
@@ -2635,44 +2726,25 @@ const auditUserName = (user) => user?.name || '-';
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-calendar-plus text-blue-500 text-[11px]"></i> Mulai Sewa
               </label>
-              <Calendar
-                v-model="detailForm.tgl_sewa"
-                showTime
-                hourFormat="24"
-                dateFormat="dd M yy"
-                :minDate="extendMinStartDate"
-                class="w-full"
-                @date-select="setDetailStartDate"
-              />
+              <Calendar v-model="detailForm.tgl_sewa" showTime hourFormat="24" dateFormat="dd M yy"
+                :minDate="extendMinStartDate" class="w-full" @date-select="setDetailStartDate" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-calendar-minus text-rose-500 text-[11px]"></i> Selesai Sewa
               </label>
-              <Calendar
-                v-model="detailForm.tgl_kembali"
-                showTime
-                hourFormat="24"
-                dateFormat="dd M yy"
-                :minDate="detailForm.tgl_sewa"
-                class="w-full"
-                @date-select="setDetailReturnDate"
-              />
+              <Calendar v-model="detailForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy"
+                :minDate="detailForm.tgl_sewa" class="w-full" @date-select="setDetailReturnDate" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Lama Sewa</label>
-              <Dropdown
-                v-model="detailForm.lama_sewa"
-                :options="lamaSewaOptions"
-                optionLabel="label"
-                optionValue="value"
-                filter
-                class="w-full"
-              />
+              <Dropdown v-model="detailForm.lama_sewa" :options="lamaSewaOptions" optionLabel="label"
+                optionValue="value" filter class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Paket Sewa</label>
-              <Dropdown v-model="detailForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
+              <Dropdown v-model="detailForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value"
+                class="w-full" />
             </div>
           </div>
         </fieldset>
@@ -2685,23 +2757,31 @@ const auditUserName = (user) => user?.name || '-';
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> Harga Mobil
               </label>
-              <InputNumber v-model="detailForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <InputNumber v-model="detailForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID"
+                class="w-full bg-slate-50" readonly />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-percentage text-orange-500 text-[11px]"></i> Diskon
               </label>
-              <InputNumber v-model="detailForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <InputNumber v-model="detailForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID"
+                class="w-full" />
             </div>
           </div>
           <div class="mt-4 flex flex-col gap-3">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Mode Pricing</label>
-              <SelectButton v-model="detailForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
+              <SelectButton v-model="detailForm.pricing_mode" :options="pricingModeOptions" optionLabel="label"
+                optionValue="value" class="w-full" />
             </div>
-            <div v-if="detailForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" @change="onDetailPackageChange" />
-              <InputNumber v-if="!detailForm.pricing_package_id" v-model="detailForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In per paket sewa" class="w-full" />
+            <div v-if="detailForm.pricing_mode === 'all_in'"
+              class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
+              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label"
+                optionValue="id" placeholder="Pilih paket All In..." filter @filter="onPricingPackageFilter" showClear
+                class="w-full" @change="onDetailPackageChange" />
+              <InputNumber v-if="!detailForm.pricing_package_id" v-model="detailForm.harga_all_in" mode="currency"
+                currency="IDR" locale="id-ID" placeholder="Harga All In per paket sewa" class="w-full bg-slate-50"
+                readonly />
               <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
@@ -2710,26 +2790,28 @@ const auditUserName = (user) => user?.name || '-';
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional</legend>
           <div class="flex flex-col gap-3 mt-3">
-            <div v-if="!detailForm.costs.length" class="text-center text-sm text-slate-400 py-5 border border-dashed border-slate-200 rounded-lg bg-white">
+            <div v-if="!detailForm.costs.length"
+              class="text-center text-sm text-slate-400 py-5 border border-dashed border-slate-200 rounded-lg bg-white">
               Belum ada biaya operasional.
             </div>
-            <div
-              v-for="(cost, idx) in detailForm.costs"
-              :key="idx"
-              class="rounded-lg border border-slate-200 bg-white p-3"
-            >
+            <div v-for="(cost, idx) in detailForm.costs" :key="idx"
+              class="rounded-lg border border-slate-200 bg-white p-3">
               <div class="flex items-center justify-between gap-3 mb-3">
                 <span class="text-xs font-bold text-slate-500">Item {{ idx + 1 }}</span>
-                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="removeDetailCostRow(idx)" />
+                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0"
+                  @click="removeDetailCostRow(idx)" />
               </div>
               <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
                 <div class="md:col-span-4 flex flex-col gap-1.5">
                   <label class="text-[11px] font-semibold text-slate-500">Tipe Master</label>
-                  <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Pilih tipe" showClear class="w-full" @change="onDetailCostTypeChange(idx, cost.cost_type_id)" />
+                  <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id"
+                    placeholder="Pilih tipe" filter @filter="onCostTypeFilter" showClear class="w-full"
+                    @change="onDetailCostTypeChange(idx, cost.cost_type_id)" />
                 </div>
                 <div class="md:col-span-3 flex flex-col gap-1.5">
                   <label class="text-[11px] font-semibold text-slate-500">Biaya / Diskon</label>
-                  <Dropdown v-model="cost.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                  <Dropdown v-model="cost.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value"
+                    class="w-full" />
                 </div>
                 <div class="md:col-span-5 flex flex-col gap-1.5">
                   <label class="text-[11px] font-semibold text-slate-500">Keterangan</label>
@@ -2737,50 +2819,60 @@ const auditUserName = (user) => user?.name || '-';
                 </div>
                 <div class="md:col-span-4 flex flex-col gap-1.5">
                   <label class="text-[11px] font-semibold text-slate-500">Nominal</label>
-                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full"
+                    @update:modelValue="(val) => onCostAmountUpdate(cost, val, detailForm.lama_sewa || 1)" />
                 </div>
-                <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" class="md:col-span-8 flex flex-col gap-1.5">
+                <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description"
+                  class="md:col-span-8 flex flex-col gap-1.5">
                   <label class="text-[11px] font-semibold text-slate-500">Detail Tambahan</label>
                   <InputText v-model="cost.keterangan" placeholder="Detail sesuai tipe biaya" class="w-full" />
                 </div>
               </div>
             </div>
-            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="addDetailCostRow" />
+            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small"
+              class="text-blue-600 font-semibold self-start" @click="addDetailCostRow" />
           </div>
         </fieldset>
 
         <div class="bg-slate-900 rounded-xl p-4 text-white">
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Kalkulasi Unit</p>
           <div class="flex flex-col gap-2 text-sm">
-            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(detailHargaSewa) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{
+              formatCurrency(detailHargaSewa) }}</span></div>
             <div class="flex justify-between">
-              <span class="text-white/60">{{ detailForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya/Diskon Ops' }}</span>
+              <span class="text-white/60">{{ detailForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' :
+                'Biaya/Diskon Ops' }}</span>
               <span :class="detailTotalBiayaOps < 0 ? 'text-rose-300' : ''">
-                {{ detailTotalBiayaOps < 0 ? '-' : '' }}{{ formatCurrency(Math.abs(detailTotalBiayaOps)) }}
-              </span>
+                {{ detailTotalBiayaOps < 0 ? '-' : '' }}{{ formatCurrency(Math.abs(detailTotalBiayaOps)) }} </span>
             </div>
             <div class="h-px bg-white/10 my-1"></div>
-            <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span class="text-lg font-bold text-cyan-300">{{ formatCurrency(detailTagihanKonsumen) }}</span></div>
+            <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span
+                class="text-lg font-bold text-cyan-300">{{ formatCurrency(detailTagihanKonsumen) }}</span></div>
           </div>
         </div>
       </div>
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4 btn-secondary" @click="requestCloseDialog('showDetailDialog')" />
-          <Button :label="detailSubmitLabel" icon="pi pi-check" :class="detailSubmitButtonClass" @click="submitDetail" :loading="loading" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4 btn-secondary"
+            @click="requestCloseDialog('showDetailDialog')" />
+          <Button :label="detailSubmitLabel" icon="pi pi-check" :class="detailSubmitButtonClass" @click="submitDetail"
+            :loading="loading" :disabled="isInitializingDetailDialog" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Biaya Operasional ======= -->
-    <Dialog :visible="showCostDialog" @update:visible="onDialogVisibleChange('showCostDialog', $event)" :header="editingCostId ? 'Edit Biaya Operasional' : 'Tambah Biaya Operasional'" :style="{ width: '460px' }" modal :breakpoints="{ '640px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showCostDialog" @update:visible="onDialogVisibleChange('showCostDialog', $event)"
+      :header="editingCostId ? 'Edit Biaya Operasional' : 'Tambah Biaya Operasional'" :style="{ width: '460px' }" modal
+      :breakpoints="{ '640px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
             <i class="pi pi-list text-slate-400 text-[11px]"></i> Tipe Biaya
           </label>
-          <Dropdown v-model="costForm.type" :options="costTypes" optionLabel="label" optionValue="value" class="w-full" />
+          <Dropdown v-model="costForm.type" :options="costTypes" optionLabel="label" optionValue="value"
+            class="w-full" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
@@ -2798,25 +2890,36 @@ const auditUserName = (user) => user?.name || '-';
 
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCostDialog')" />
-          <Button :label="editingCostId ? 'Simpan Perubahan' : 'Tambahkan'" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitCost" :loading="loading" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showCostDialog')" />
+          <Button :label="editingCostId ? 'Simpan Perubahan' : 'Tambahkan'" icon="pi pi-check"
+            class="app-dialog-button app-dialog-button-primary" @click="submitCost" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Perpanjang (Extend) — E5 Revamp ======= -->
-    <Dialog v-if="false" :visible="showExtendDialog" @update:visible="onDialogVisibleChange('showExtendDialog', $event)" header="Perpanjang Sewa (Extend)" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }" class="custom-dialog">
+    <Dialog v-if="false" :visible="showExtendDialog" @update:visible="onDialogVisibleChange('showExtendDialog', $event)"
+      header="Perpanjang Sewa (Extend)" :style="{ width: '700px' }" modal :breakpoints="{ '750px': '95vw' }"
+      class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Unit & Driver</legend>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Kendaraan *</label>
-              <Dropdown v-model="extendForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { extendForm.harga_mobil = unit.harga_1_hari || 0; })" class="w-full" />
+              <Dropdown v-model="extendForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id"
+                placeholder="Pilih unit" filter
+                :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
+                :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter"
+                @change="e => onUnitSelect(e.value, unit => { extendForm.harga_mobil = unit.harga_1_hari || 0; })"
+                class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Driver <span class="text-slate-400 font-normal">(opsional)</span></label>
-              <Dropdown v-model="extendForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / Pilih driver" filter showClear class="w-full" />
+              <label class="text-xs font-semibold text-slate-600">Driver <span
+                  class="text-slate-400 font-normal">(opsional)</span></label>
+              <Dropdown v-model="extendForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id"
+                placeholder="Lepas kunci / Pilih driver" filter showClear class="w-full" />
             </div>
           </div>
         </fieldset>
@@ -2837,27 +2940,36 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Paket *</label>
-              <Dropdown v-model="extendForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
+              <Dropdown v-model="extendForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value"
+                class="w-full" />
             </div>
           </div>
         </fieldset>
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan</legend>
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan
+          </legend>
           <div class="flex flex-col gap-3 mt-2">
             <div class="grid grid-cols-2 gap-3">
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-                <InputNumber v-model="extendForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <InputNumber v-model="extendForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID"
+                  class="w-full" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Diskon</label>
-                <InputNumber v-model="extendForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <InputNumber v-model="extendForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID"
+                  class="w-full" />
               </div>
             </div>
-            <SelectButton v-model="extendForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
-            <div v-if="extendForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="extendForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onExtendPackageChange" />
-              <InputNumber v-if="!extendForm.pricing_package_id" v-model="extendForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+            <SelectButton v-model="extendForm.pricing_mode" :options="pricingModeOptions" optionLabel="label"
+              optionValue="value" class="w-full" />
+            <div v-if="extendForm.pricing_mode === 'all_in'"
+              class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
+              <Dropdown v-model="extendForm.pricing_package_id" :options="packageOptions" optionLabel="label"
+                optionValue="id" placeholder="Pilih paket..." showClear class="w-full"
+                @change="onExtendPackageChange" />
+              <InputNumber v-if="!extendForm.pricing_package_id" v-model="extendForm.harga_all_in" mode="currency"
+                currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
             </div>
           </div>
         </fieldset>
@@ -2866,44 +2978,65 @@ const auditUserName = (user) => user?.name || '-';
           <div class="flex flex-col gap-2 mt-2">
             <div v-if="!extendForm.costs.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.</div>
             <div v-for="(cost, idx) in extendForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onCostTypeChange(idx, cost.cost_type_id)" /></div>
-              <div class="col-span-4"><InputText v-model="cost.label" placeholder="Keterangan" class="w-full" /></div>
-              <div class="col-span-3"><InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" /></div>
-              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="extendForm.costs.splice(idx,1)" /></div>
+              <div class="col-span-4">
+                <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id"
+                  placeholder="Tipe" class="w-full" showClear @change="onCostTypeChange(idx, cost.cost_type_id)" />
+              </div>
+              <div class="col-span-4">
+                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
+              </div>
+              <div class="col-span-3">
+                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full"
+                  @update:modelValue="(val) => onCostAmountUpdate(cost, val, extendForm.lama_sewa || 1)" />
+              </div>
+              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small"
+                  class="w-7 h-7 p-0" @click="extendForm.costs.splice(idx, 1)" /></div>
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="extendForm.costs.push({cost_type_id:null,label:'',amount:0,keterangan:''})" />
+            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start"
+              @click="extendForm.costs.push({ cost_type_id: null, label: '', amount: 0, keterangan: '' })" />
           </div>
         </fieldset>
         <div class="bg-slate-900 rounded-xl p-4 text-white">
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Kalkulasi</p>
           <div class="flex flex-col gap-1.5 text-sm">
-            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(extendHargaSewa) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">{{ extendForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya Ops' }}</span><span>{{ formatCurrency(extendTotalBiaya) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{
+              formatCurrency(extendHargaSewa) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">{{ extendForm.pricing_mode === 'all_in' ?
+              'Diskon Ops Dihitung' : 'Biaya Ops' }}</span><span>{{ formatCurrency(extendTotalBiaya) }}</span></div>
             <div class="h-px bg-white/10 my-1"></div>
-            <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span class="text-lg font-bold text-cyan-300">{{ formatCurrency(extendTagihan) }}</span></div>
+            <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span
+                class="text-lg font-bold text-cyan-300">{{ formatCurrency(extendTagihan) }}</span></div>
           </div>
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showExtendDialog')" />
-          <Button label="Proses Extend" icon="pi pi-check" class="app-dialog-button app-dialog-button-warning" @click="submitExtend" :loading="loading" />
+          <Button label="Proses Extend" icon="pi pi-check" class="app-dialog-button app-dialog-button-warning"
+            @click="submitExtend" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Ganti Unit (Rolling) — E5 Revamp ======= -->
-    <Dialog :visible="showRollingDialog" @update:visible="onDialogVisibleChange('showRollingDialog', $event)" :header="rollingStep === 1 ? 'Ganti Unit (Rolling) - Step 1: Koreksi Unit Lama' : 'Ganti Unit (Rolling) - Step 2: Pilih Unit Baru'" :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }" class="custom-dialog">
+    <Dialog :visible="showRollingDialog" @update:visible="onDialogVisibleChange('showRollingDialog', $event)"
+      :header="rollingStep === 1 ? 'Ganti Unit (Rolling) - Step 1: Koreksi Unit Lama' : 'Ganti Unit (Rolling) - Step 2: Pilih Unit Baru'"
+      :style="{ width: '760px' }" modal :breakpoints="{ '820px': '95vw' }" class="custom-dialog">
       <!-- Step indicator -->
       <div class="flex items-center gap-2 mb-4">
         <div class="flex items-center gap-1.5">
-          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" :class="rollingStep >= 1 ? 'bg-sky-600 text-white' : 'bg-slate-200 text-slate-400'">1</div>
-          <span class="text-xs font-semibold" :class="rollingStep === 1 ? 'text-sky-700' : 'text-slate-400'">Koreksi Unit Lama</span>
+          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+            :class="rollingStep >= 1 ? 'bg-sky-600 text-white' : 'bg-slate-200 text-slate-400'">1</div>
+          <span class="text-xs font-semibold" :class="rollingStep === 1 ? 'text-sky-700' : 'text-slate-400'">Koreksi
+            Unit
+            Lama</span>
         </div>
         <div class="flex-1 h-px bg-slate-200"></div>
         <div class="flex items-center gap-1.5">
-          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" :class="rollingStep >= 2 ? 'bg-sky-600 text-white' : 'bg-slate-200 text-slate-400'">2</div>
-          <span class="text-xs font-semibold" :class="rollingStep === 2 ? 'text-sky-700' : 'text-slate-400'">Unit Baru</span>
+          <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+            :class="rollingStep >= 2 ? 'bg-sky-600 text-white' : 'bg-slate-200 text-slate-400'">2</div>
+          <span class="text-xs font-semibold" :class="rollingStep === 2 ? 'text-sky-700' : 'text-slate-400'">Unit
+            Baru</span>
         </div>
       </div>
 
@@ -2914,15 +3047,22 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Transaksi Aktif *</label>
-              <Dropdown v-model="rollingForm.booking_detail_id" :options="activeDetails" optionLabel="unit.no_polisi" optionValue="id" placeholder="Pilih unit aktif" class="w-full" @change="onRollingDetailChange(rollingForm.booking_detail_id)" />
+              <Dropdown v-model="rollingForm.booking_detail_id" :options="activeDetails" optionLabel="unit.no_polisi"
+                optionValue="id" placeholder="Pilih unit aktif" class="w-full"
+                @change="onRollingDetailChange(rollingForm.booking_detail_id)" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Lama *</label>
-              <Dropdown v-model="rollingForm.unit_id_lama" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" class="w-full" @filter="onUnitFilter" @change="onRollingOldUnitChange" />
+              <Dropdown v-model="rollingForm.unit_id_lama" :options="unitOptions" optionLabel="no_polisi"
+                optionValue="id" placeholder="Pilih unit" filter
+                :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
+                :loading="unitsLoading || unitSearchLoading" class="w-full" @filter="onUnitFilter"
+                @change="onRollingOldUnitChange" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
-              <Dropdown v-model="rollingForm.driver_id_lama" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
+              <Dropdown v-model="rollingForm.driver_id_lama" :options="drivers" optionLabel="nama" optionValue="id"
+                placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
             </div>
           </div>
         </fieldset>
@@ -2932,66 +3072,97 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Mulai</label>
-              <Calendar v-model="rollingForm.tgl_sewa_lama" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
+              <Calendar v-model="rollingForm.tgl_sewa_lama" showTime hourFormat="24" dateFormat="dd M yy" class="w-full"
+                disabled />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Kembali</label>
-              <Calendar v-model="rollingForm.tgl_kembali_lama" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
+              <Calendar v-model="rollingForm.tgl_kembali_lama" showTime hourFormat="24" dateFormat="dd M yy"
+                class="w-full" disabled />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Lama Sewa *</label>
-              <InputNumber v-model="rollingForm.lama_sewa_lama" :min="1" :max="Math.max(1, (rollingForm.lama_sewa_original || 1) - 1)" placeholder="Jml" class="w-full" />
+              <InputNumber v-model="rollingForm.lama_sewa_lama" :min="1"
+                :max="Math.max(1, (rollingForm.lama_sewa_original || 1) - 1)" placeholder="Jml" class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Paket *</label>
-              <Dropdown v-model="rollingForm.paket_sewa_lama" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" />
+              <Dropdown v-model="rollingForm.paket_sewa_lama" :options="paketOptions" optionLabel="label"
+                optionValue="value" class="w-full" />
             </div>
           </div>
         </fieldset>
 
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan Lama</legend>
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan Lama
+          </legend>
           <div class="flex flex-col gap-3 mt-2">
             <div class="grid grid-cols-2 gap-3">
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-                <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID"
+                  class="w-full" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Diskon</label>
-                <InputNumber v-model="rollingForm.diskon_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <InputNumber v-model="rollingForm.diskon_mobil_lama" mode="currency" currency="IDR" locale="id-ID"
+                  class="w-full" />
               </div>
             </div>
-            <SelectButton v-model="rollingForm.pricing_mode_lama" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
-            <div v-if="rollingForm.pricing_mode_lama === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingOldPackageChange" />
-              <InputNumber v-if="!rollingForm.pricing_package_id_lama" v-model="rollingForm.harga_all_in_lama" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+            <SelectButton v-model="rollingForm.pricing_mode_lama" :options="pricingModeOptions" optionLabel="label"
+              optionValue="value" class="w-full" />
+            <div v-if="rollingForm.pricing_mode_lama === 'all_in'"
+              class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
+              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label"
+                optionValue="id" placeholder="Pilih paket..." showClear class="w-full"
+                @change="onRollingOldPackageChange" />
+              <InputNumber v-if="!rollingForm.pricing_package_id_lama" v-model="rollingForm.harga_all_in_lama"
+                mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
             </div>
           </div>
         </fieldset>
 
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional Lama</legend>
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional Lama
+          </legend>
           <div class="flex flex-col gap-2 mt-2">
-            <div v-if="!rollingForm.costs_lama.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.</div>
-            <div v-for="(cost, idx) in rollingForm.costs_lama" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingOldCostTypeChange(idx, cost.cost_type_id)" /></div>
-              <div class="col-span-4"><InputText v-model="cost.label" placeholder="Keterangan" class="w-full" /></div>
-              <div class="col-span-3"><InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" /></div>
-              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs_lama.splice(idx,1)" /></div>
+            <div v-if="!rollingForm.costs_lama.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs_lama.push({cost_type_id:null,type:'biaya',label:'',amount:0,keterangan:''})" />
+            <div v-for="(cost, idx) in rollingForm.costs_lama" :key="idx" class="grid grid-cols-12 gap-2 items-center">
+              <div class="col-span-4">
+                <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id"
+                  placeholder="Tipe" class="w-full" showClear
+                  @change="onRollingOldCostTypeChange(idx, cost.cost_type_id)" />
+              </div>
+              <div class="col-span-4">
+                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
+              </div>
+              <div class="col-span-3">
+                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full"
+                  @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa_lama || 1)" />
+              </div>
+              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small"
+                  class="w-7 h-7 p-0" @click="rollingForm.costs_lama.splice(idx, 1)" /></div>
+            </div>
+            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start"
+              @click="rollingForm.costs_lama.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' })" />
           </div>
         </fieldset>
 
         <div class="bg-slate-900 rounded-xl p-4 text-white">
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Kalkulasi Koreksi</p>
           <div class="flex flex-col gap-1.5 text-sm">
-            <div class="flex justify-between"><span class="text-white/60">Harga Sewa Lama</span><span>{{ formatCurrency(rollingOldHargaSewa) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">{{ rollingForm.pricing_mode_lama === 'all_in' ? 'Diskon Ops Lama Dihitung' : 'Biaya Ops Lama' }}</span><span>{{ formatCurrency(rollingOldTotalBiaya) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">Sisa Lama Sewa Rolling</span><span>{{ rollingForm.lama_sewa || 0 }} {{ rollingForm.paket_sewa }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Harga Sewa Lama</span><span>{{
+              formatCurrency(rollingOldHargaSewa) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">{{ rollingForm.pricing_mode_lama === 'all_in'
+              ?
+              'Diskon Ops Lama Dihitung' : 'Biaya Ops Lama' }}</span><span>{{ formatCurrency(rollingOldTotalBiaya)
+                }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Sisa Lama Sewa Rolling</span><span>{{
+              rollingForm.lama_sewa || 0 }} {{ rollingForm.paket_sewa }}</span></div>
             <div class="h-px bg-white/10 my-1"></div>
-            <div class="flex justify-between"><span class="font-bold text-sky-300">Tagihan Unit Lama</span><span class="text-lg font-bold text-sky-300">{{ formatCurrency(rollingOldTagihan) }}</span></div>
+            <div class="flex justify-between"><span class="font-bold text-sky-300">Tagihan Unit Lama</span><span
+                class="text-lg font-bold text-sky-300">{{ formatCurrency(rollingOldTagihan) }}</span></div>
           </div>
         </div>
       </div>
@@ -3003,49 +3174,67 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-2 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Baru *</label>
-              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { rollingForm.harga_mobil = unit.harga_1_hari || 0; })" class="w-full" />
+              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id"
+                placeholder="Pilih unit baru" filter
+                :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
+                :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter"
+                @change="e => onUnitSelect(e.value, unit => { rollingForm.harga_mobil = unit.harga_1_hari || 0; })"
+                class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
-              <Dropdown v-model="rollingForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
+              <Dropdown v-model="rollingForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id"
+                placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
             </div>
           </div>
         </fieldset>
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
-          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Durasi & Harga Baru</legend>
+          <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Durasi & Harga Baru
+          </legend>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Mulai</label>
-              <Calendar v-model="rollingForm.tgl_sewa" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
+              <Calendar v-model="rollingForm.tgl_sewa" showTime hourFormat="24" dateFormat="dd M yy" class="w-full"
+                disabled />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Kembali</label>
-              <Calendar v-model="rollingForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
+              <Calendar v-model="rollingForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy" class="w-full"
+                disabled />
             </div>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Lama Sewa</label>
-              <Dropdown v-model="rollingForm.lama_sewa" :options="lamaSewaOptions" optionLabel="label" optionValue="value" placeholder="Lama" class="w-full" disabled />
+              <Dropdown v-model="rollingForm.lama_sewa" :options="lamaSewaOptions" optionLabel="label"
+                optionValue="value" placeholder="Lama" class="w-full" disabled />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Paket</label>
-              <Dropdown v-model="rollingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" disabled />
+              <Dropdown v-model="rollingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value"
+                class="w-full" disabled />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-              <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID"
+                class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Diskon</label>
-              <InputNumber v-model="rollingForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <InputNumber v-model="rollingForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID"
+                class="w-full" />
             </div>
           </div>
           <div class="mt-3">
-            <SelectButton v-model="rollingForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
-            <div v-if="rollingForm.pricing_mode === 'all_in'" class="flex flex-col gap-2 mt-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingNewPackageChange" />
-              <InputNumber v-if="!rollingForm.pricing_package_id" v-model="rollingForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+            <SelectButton v-model="rollingForm.pricing_mode" :options="pricingModeOptions" optionLabel="label"
+              optionValue="value" class="w-full" />
+            <div v-if="rollingForm.pricing_mode === 'all_in'"
+              class="flex flex-col gap-2 mt-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
+              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label"
+                optionValue="id" placeholder="Pilih paket..." showClear class="w-full"
+                @change="onRollingNewPackageChange" />
+              <InputNumber v-if="!rollingForm.pricing_package_id" v-model="rollingForm.harga_all_in" mode="currency"
+                currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
             </div>
           </div>
         </fieldset>
@@ -3054,21 +3243,35 @@ const auditUserName = (user) => user?.name || '-';
           <div class="flex flex-col gap-2 mt-2">
             <div v-if="!rollingForm.costs.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.</div>
             <div v-for="(cost, idx) in rollingForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4"><Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingNewCostTypeChange(idx, cost.cost_type_id)" /></div>
-              <div class="col-span-4"><InputText v-model="cost.label" placeholder="Keterangan" class="w-full" /></div>
-              <div class="col-span-3"><InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" /></div>
-              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs.splice(idx,1)" /></div>
+              <div class="col-span-4">
+                <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id"
+                  placeholder="Tipe" class="w-full" showClear
+                  @change="onRollingNewCostTypeChange(idx, cost.cost_type_id)" />
+              </div>
+              <div class="col-span-4">
+                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
+              </div>
+              <div class="col-span-3">
+                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full"
+                  @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa || 1)" />
+              </div>
+              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small"
+                  class="w-7 h-7 p-0" @click="rollingForm.costs.splice(idx, 1)" /></div>
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs.push({cost_type_id:null,type:'biaya',label:'',amount:0,keterangan:''})" />
+            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start"
+              @click="rollingForm.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: 0 })" />
           </div>
         </fieldset>
         <div class="bg-slate-900 rounded-xl p-4 text-white">
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">Kalkulasi Unit Baru</p>
           <div class="flex flex-col gap-1.5 text-sm">
-            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{ formatCurrency(rollingHargaSewa) }}</span></div>
-            <div class="flex justify-between"><span class="text-white/60">{{ rollingForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' : 'Biaya Ops' }}</span><span>{{ formatCurrency(rollingTotalBiaya) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{
+              formatCurrency(rollingHargaSewa) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">{{ rollingForm.pricing_mode === 'all_in' ?
+              'Diskon Ops Dihitung' : 'Biaya Ops' }}</span><span>{{ formatCurrency(rollingTotalBiaya) }}</span></div>
             <div class="h-px bg-white/10 my-1"></div>
-            <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span class="text-lg font-bold text-cyan-300">{{ formatCurrency(rollingTagihan) }}</span></div>
+            <div class="flex justify-between"><span class="font-bold text-cyan-300">Tagihan Konsumen</span><span
+                class="text-lg font-bold text-cyan-300">{{ formatCurrency(rollingTagihan) }}</span></div>
           </div>
         </div>
       </div>
@@ -3076,19 +3279,25 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showRollingDialog')" />
-          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="app-dialog-button app-dialog-button-info" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
-          <Button v-if="rollingStep === 2" label="Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
-          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-info" @click="submitRolling" :loading="loading" />
+          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right"
+            class="app-dialog-button app-dialog-button-info"
+            @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
+          <Button v-if="rollingStep === 2" label="Kembali" icon="pi pi-arrow-left" text class="text-slate-500"
+            @click="rollingStep = 1" />
+          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check"
+            class="app-dialog-button app-dialog-button-info" @click="submitRolling" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Stop Early ======= -->
-    <Dialog :visible="showStopEarlyDialog" @update:visible="onDialogVisibleChange('showStopEarlyDialog', $event)" header="Hentikan Sewa Awal (Stop Early)" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showStopEarlyDialog" @update:visible="onDialogVisibleChange('showStopEarlyDialog', $event)"
+      header="Hentikan Sewa Awal (Stop Early)" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Pilih Unit</label>
-          <Dropdown v-model="stopEarlyForm.booking_detail_id" :options="activeDetails" optionLabel="unit.no_polisi" optionValue="id" placeholder="Pilih unit" class="w-full" />
+          <Dropdown v-model="stopEarlyForm.booking_detail_id" :options="activeDetails" optionLabel="unit.no_polisi"
+            optionValue="id" placeholder="Pilih unit" class="w-full" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Tanggal Stop</label>
@@ -3096,19 +3305,22 @@ const auditUserName = (user) => user?.name || '-';
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600 text-rose-500">Nominal Refund / Diskon (Rp)</label>
-          <InputNumber v-model="stopEarlyForm.refund_amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+          <InputNumber v-model="stopEarlyForm.refund_amount" mode="currency" currency="IDR" locale="id-ID"
+            class="w-full" />
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showStopEarlyDialog')" />
-          <Button label="Proses Stop" icon="pi pi-check" class="app-dialog-button app-dialog-button-danger" @click="submitStopEarly" :loading="loading" />
+          <Button label="Proses Stop" icon="pi pi-check" class="app-dialog-button app-dialog-button-danger"
+            @click="submitStopEarly" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Batalkan Booking (E5) ======= -->
-    <Dialog :visible="showBatalDialog" @update:visible="onDialogVisibleChange('showBatalDialog', $event)" header="Batalkan Booking" :style="{ width: '440px' }" modal class="custom-dialog">
+    <Dialog :visible="showBatalDialog" @update:visible="onDialogVisibleChange('showBatalDialog', $event)"
+      header="Batalkan Booking" :style="{ width: '440px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-xl">
           <div class="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0">
@@ -3116,64 +3328,70 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div>
             <p class="font-bold text-slate-800 mb-0.5">Booking akan dibatalkan</p>
-            <p class="text-sm text-slate-500">Status berubah ke <strong>Batal</strong>. Jika ada pembayaran yang sudah masuk, isi nominal refund di bawah.</p>
+            <p class="text-sm text-slate-500">Status berubah ke <strong>Batal</strong>. Jika ada pembayaran yang sudah
+              masuk, isi nominal refund di bawah.</p>
           </div>
         </div>
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Nominal Refund <span class="text-slate-400 font-normal">(opsional)</span></label>
+          <label class="text-xs font-semibold text-slate-600">Nominal Refund <span
+              class="text-slate-400 font-normal">(opsional)</span></label>
           <InputNumber v-model="batalForm.refund_amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
         </div>
         <div v-if="batalForm.refund_amount > 0" class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Akun Pembayaran Refund *</label>
-          <Dropdown v-model="batalForm.payment_account_id" :options="accountOptions" optionLabel="name" optionValue="id" placeholder="Pilih akun..." class="w-full" />
+          <Dropdown v-model="batalForm.payment_account_id" :options="accountOptions" optionLabel="name" optionValue="id"
+            placeholder="Pilih akun..." class="w-full" />
         </div>
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Keterangan Pembatalan <span class="text-slate-400 font-normal">(opsional)</span></label>
+          <label class="text-xs font-semibold text-slate-600">Keterangan Pembatalan <span
+              class="text-slate-400 font-normal">(opsional)</span></label>
           <Textarea v-model="batalForm.refund_keterangan" rows="2" placeholder="Alasan pembatalan..." class="w-full" />
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showBatalDialog')" />
-          <Button label="Ya, Batalkan Booking" icon="pi pi-ban" class="app-dialog-button app-dialog-button-danger" @click="submitBatal" :loading="loading" />
+          <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showBatalDialog')" />
+          <Button label="Ya, Batalkan Booking" icon="pi pi-ban" class="app-dialog-button app-dialog-button-danger"
+            @click="submitBatal" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Tambah Pembayaran ======= -->
-    <Dialog :visible="showPaymentDialog" @update:visible="onDialogVisibleChange('showPaymentDialog', $event)" header="Tambah Pembayaran" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showPaymentDialog" @update:visible="onDialogVisibleChange('showPaymentDialog', $event)"
+      header="Tambah Pembayaran" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Tipe Pembayaran *</label>
-          <Dropdown v-model="paymentForm.payment_type" :options="paymentTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+          <Dropdown v-model="paymentForm.payment_type" :options="paymentTypeOptions" optionLabel="label"
+            optionValue="value" class="w-full" />
           <small class="p-error" v-if="paymentFormErrors.payment_type">{{ paymentFormErrors.payment_type[0] }}</small>
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Akun Tujuan Pembayaran *</label>
-          <Dropdown v-model="paymentForm.payment_account_id" :options="accountOptions" optionLabel="name" optionValue="id" placeholder="Pilih akun..." class="w-full" :class="{ 'p-invalid': paymentFormErrors.payment_account_id }" />
-          <small class="p-error" v-if="paymentFormErrors.payment_account_id">{{ paymentFormErrors.payment_account_id[0] }}</small>
+          <Dropdown v-model="paymentForm.payment_account_id" :options="accountOptions" optionLabel="name"
+            optionValue="id" placeholder="Pilih akun..." filter @filter="onAccountFilter" class="w-full"
+            :class="{ 'p-invalid': paymentFormErrors.payment_account_id }" />
+          <small class="p-error" v-if="paymentFormErrors.payment_account_id">{{ paymentFormErrors.payment_account_id[0]
+          }}</small>
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Nominal *</label>
-          <InputNumber v-model="paymentForm.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" :class="{ 'p-invalid': paymentFormErrors.amount }" />
+          <InputNumber v-model="paymentForm.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full"
+            :class="{ 'p-invalid': paymentFormErrors.amount }" />
           <small class="p-error" v-if="paymentFormErrors.amount">{{ paymentFormErrors.amount[0] }}</small>
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Tanggal Pembayaran *</label>
-          <Calendar
-            v-model="paymentForm.paid_at"
-            dateFormat="dd M yy"
-            showIcon
-            showTime
-            hourFormat="24"
-            class="w-full"
-            :class="{ 'p-invalid': paymentFormErrors.paid_at }"
-          />
+          <Calendar v-model="paymentForm.paid_at" dateFormat="dd M yy" showIcon showTime hourFormat="24" class="w-full"
+            :class="{ 'p-invalid': paymentFormErrors.paid_at }" />
           <small class="p-error" v-if="paymentFormErrors.paid_at">{{ paymentFormErrors.paid_at[0] }}</small>
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Catatan (opsional)</label>
-          <Textarea v-model="paymentForm.catatan" rows="2" placeholder="Transfer via BCA, bukti sudah dikirim WA..." class="w-full" />
+          <Textarea v-model="paymentForm.catatan" rows="2" placeholder="Transfer via BCA, bukti sudah dikirim WA..."
+            class="w-full" />
         </div>
         <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm">
           <div class="flex justify-between text-slate-500 mb-1">
@@ -3182,7 +3400,8 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div v-if="paymentForm.amount" class="flex justify-between text-slate-500">
             <span>Sisa setelah pembayaran ini</span>
-            <span class="font-bold" :class="(bookingSisaTagihan - paymentForm.amount) <= 0 ? 'text-emerald-600' : 'text-amber-600'">
+            <span class="font-bold"
+              :class="(bookingSisaTagihan - paymentForm.amount) <= 0 ? 'text-emerald-600' : 'text-amber-600'">
               {{ formatCurrency(Math.max(0, bookingSisaTagihan - paymentForm.amount)) }}
             </span>
           </div>
@@ -3190,26 +3409,25 @@ const auditUserName = (user) => user?.name || '-';
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showPaymentDialog')" />
-          <Button
-            label="Simpan Pembayaran"
-            icon="pi pi-check"
-            class="app-dialog-button app-dialog-button-primary"
-            @click="submitPayment"
-            :loading="loading || paymentConfirming || paymentSubmitting"
-            :disabled="isPaymentSubmitDisabled"
-          />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showPaymentDialog')" />
+          <Button label="Simpan Pembayaran" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary"
+            @click="submitPayment" :loading="loading || paymentConfirming || paymentSubmitting"
+            :disabled="isPaymentSubmitDisabled" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Request Void Pembayaran ======= -->
-    <Dialog :visible="showVoidPaymentDialog" @update:visible="onDialogVisibleChange('showVoidPaymentDialog', $event)" header="Request Void Pembayaran" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showVoidPaymentDialog" @update:visible="onDialogVisibleChange('showVoidPaymentDialog', $event)"
+      header="Request Void Pembayaran" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="p-3 bg-rose-50 rounded-xl border border-rose-100 text-sm">
           <div class="flex justify-between text-slate-500 mb-1">
             <span>Pembayaran</span>
-            <span class="font-bold text-rose-600">{{ selectedVoidPayment ? formatCurrency(selectedVoidPayment.amount) : '-' }}</span>
+            <span class="font-bold text-rose-600">{{ selectedVoidPayment ? formatCurrency(selectedVoidPayment.amount) :
+              '-'
+            }}</span>
           </div>
           <div class="flex justify-between text-slate-500">
             <span>Tipe</span>
@@ -3218,67 +3436,68 @@ const auditUserName = (user) => user?.name || '-';
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Alasan Void *</label>
-          <Textarea
-            v-model="voidPaymentForm.void_reason"
-            rows="3"
-            placeholder="Jelaskan kenapa pembayaran perlu di-void..."
-            class="w-full"
-            :class="{ 'p-invalid': voidPaymentFormErrors.void_reason }"
-          />
-          <small class="p-error" v-if="voidPaymentFormErrors.void_reason">{{ voidPaymentFormErrors.void_reason[0] }}</small>
+          <Textarea v-model="voidPaymentForm.void_reason" rows="3"
+            placeholder="Jelaskan kenapa pembayaran perlu di-void..." class="w-full"
+            :class="{ 'p-invalid': voidPaymentFormErrors.void_reason }" />
+          <small class="p-error" v-if="voidPaymentFormErrors.void_reason">{{ voidPaymentFormErrors.void_reason[0]
+          }}</small>
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showVoidPaymentDialog')" />
-          <Button label="Kirim Request" icon="pi pi-send" class="app-dialog-button app-dialog-button-danger" @click="submitVoidPaymentRequest" :loading="loading" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showVoidPaymentDialog')" />
+          <Button label="Kirim Request" icon="pi pi-send" class="app-dialog-button app-dialog-button-danger"
+            @click="submitVoidPaymentRequest" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Tolak Void Pembayaran ======= -->
-    <Dialog :visible="showRejectVoidDialog" @update:visible="onDialogVisibleChange('showRejectVoidDialog', $event)" header="Tolak Void Pembayaran" :style="{ width: '440px' }" modal class="custom-dialog">
+    <Dialog :visible="showRejectVoidDialog" @update:visible="onDialogVisibleChange('showRejectVoidDialog', $event)"
+      header="Tolak Void Pembayaran" :style="{ width: '440px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Catatan Penolakan</label>
-          <Textarea v-model="rejectVoidForm.void_rejection_note" rows="3" placeholder="Opsional, misalnya pembayaran sudah cocok dengan mutasi bank..." class="w-full" />
+          <Textarea v-model="rejectVoidForm.void_rejection_note" rows="3"
+            placeholder="Opsional, misalnya pembayaran sudah cocok dengan mutasi bank..." class="w-full" />
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
-          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRejectVoidDialog')" />
-          <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger" @click="submitRejectVoid" :loading="loading" />
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4"
+            @click="requestCloseDialog('showRejectVoidDialog')" />
+          <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger"
+            @click="submitRejectVoid" :loading="loading" />
         </div>
       </template>
     </Dialog>
 
     <!-- ======= DIALOG: Additional Cost/Discount ======= -->
-    <Dialog :visible="showAdditionalCostDialog" @update:visible="onDialogVisibleChange('showAdditionalCostDialog', $event)" header="Tambah Biaya/Diskon Tambahan" :style="{ width: '460px' }" modal class="custom-dialog">
+    <Dialog :visible="showAdditionalCostDialog"
+      @update:visible="onDialogVisibleChange('showAdditionalCostDialog', $event)" header="Tambah Biaya/Diskon Tambahan"
+      :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Tipe Biaya/Diskon *</label>
-          <Dropdown
-            v-model="additionalCostForm.cost_type_id"
-            :options="costTypeOptions"
-            optionLabel="label"
-            optionValue="id"
-            placeholder="Pilih dari master cost type"
-            filter
-            class="w-full"
-            @change="onAdditionalCostTypeChange(additionalCostForm.cost_type_id)"
-          />
+          <Dropdown v-model="additionalCostForm.cost_type_id" :options="costTypeOptions" optionLabel="label"
+            optionValue="id" placeholder="Pilih dari master cost type" filter class="w-full"
+            @change="onAdditionalCostTypeChange(additionalCostForm.cost_type_id)" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Jenis Transaksi *</label>
-          <Dropdown v-model="additionalCostForm.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+          <Dropdown v-model="additionalCostForm.type" :options="additionalTypeOptions" optionLabel="label"
+            optionValue="value" class="w-full" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Catatan</label>
-          <InputText v-model="additionalCostForm.keterangan" placeholder="Misal: Denda keterlambatan di luar kesepakatan awal" class="w-full" />
+          <InputText v-model="additionalCostForm.keterangan"
+            placeholder="Misal: Denda keterlambatan di luar kesepakatan awal" class="w-full" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Nominal</label>
-          <InputNumber v-model="additionalCostForm.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+          <InputNumber v-model="additionalCostForm.amount" mode="currency" currency="IDR" locale="id-ID"
+            class="w-full" />
         </div>
         <div class="p-3 rounded-lg bg-amber-50 border border-amber-100 text-sm text-amber-800">
           <span class="font-semibold">Di luar kesepakatan awal.</span>
@@ -3288,14 +3507,9 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showAdditionalCostDialog')" />
-          <Button
-            label="Simpan"
-            icon="pi pi-check"
-            class="app-dialog-button app-dialog-button-primary"
-            @click="submitAdditionalCost"
-            :loading="loading"
-            :disabled="!additionalCostForm.cost_type_id || !additionalCostForm.amount"
-          />
+          <Button label="Simpan" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary"
+            @click="submitAdditionalCost" :loading="loading"
+            :disabled="!additionalCostForm.cost_type_id || !additionalCostForm.amount" />
         </div>
       </template>
     </Dialog>
@@ -3303,13 +3517,50 @@ const auditUserName = (user) => user?.name || '-';
 </template>
 
 <style scoped>
+/* ── City filter chip ─────────────────────────────────── */
+.unit-city-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #E1F4F6;
+  border: 1px solid #B0DDE4;
+  border-radius: 9999px;
+  color: #085A66;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  align-self: flex-start;
+  margin-bottom: 2px;
+}
+
+.unit-city-filter-chip i {
+  font-size: 11px;
+}
+
+:deep(.chip-clear-btn.p-button) {
+  width: 18px !important;
+  height: 18px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  color: #085A66 !important;
+  font-size: 9px;
+}
+
 .booking-detail-container {
   animation: fadeIn 0.35s ease-out;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .detail-page-header {
@@ -3736,6 +3987,7 @@ fieldset legend {
 }
 
 @media (min-width: 1024px) {
+
   .loading-grid,
   .detail-grid {
     grid-template-columns: minmax(0, 2fr) minmax(320px, 0.95fr);
@@ -3790,10 +4042,9 @@ fieldset legend {
     padding: var(--space-lg) !important;
   }
 
-  .app-card > .p-6,
-  .app-card > div.p-6 {
+  .app-card>.p-6,
+  .app-card>div.p-6 {
     padding: var(--space-lg) !important;
   }
 }
 </style>
-

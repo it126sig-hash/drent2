@@ -4,27 +4,28 @@ namespace App\Policies;
 
 use App\Models\RentToRentBill;
 use App\Models\User;
+use App\Services\PermissionService;
 
 class RentToRentBillPolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance'], true);
+        if ($user->role === 'superadmin') return true;
+        return app(PermissionService::class)->hasPermission($user, 'finance.rent_to_rent');
     }
 
     public function view(User $user, RentToRentBill $bill): bool
     {
-        if ($user->role === 'superadmin') {
-            return true;
-        }
+        if ($user->role === 'superadmin') return true;
 
-        return in_array($user->role, ['admin_branch', 'finance'], true)
+        return app(PermissionService::class)->hasPermission($user, 'finance.rent_to_rent')
             && $user->branch_id === $bill->branch_id;
     }
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance'], true);
+        if ($user->role === 'superadmin') return true;
+        return app(PermissionService::class)->hasPermission($user, 'finance.rent_to_rent');
     }
 
     public function update(User $user, RentToRentBill $bill): bool

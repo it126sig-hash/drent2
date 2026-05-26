@@ -4,6 +4,7 @@ import memberApi from '../api/member'
 export const useMember = () => {
     const members = ref([])
     const member = ref(null)
+    const extensions = ref([])
     const loading = ref(false)
     const error = ref(null)
     const pagination = ref({
@@ -94,9 +95,54 @@ export const useMember = () => {
         }
     }
 
+    const updateStatus = async (id, status) => {
+        loading.value = true
+        error.value = null
+        try {
+            const response = await memberApi.updateStatus(id, status)
+            member.value = response.data.data
+            return response.data.data
+        } catch (err) {
+            error.value = err.response?.data?.message || 'Gagal memperbarui status member'
+            throw err
+        } finally {
+            loading.value = false
+        }
+    }
+
+    const extendMember = async (id, data) => {
+        loading.value = true
+        error.value = null
+        try {
+            const response = await memberApi.extend(id, data)
+            return response.data.data
+        } catch (err) {
+            error.value = err.response?.data?.message || 'Gagal memperpanjang masa aktif member'
+            throw err
+        } finally {
+            loading.value = false
+        }
+    }
+
+    const fetchExtensions = async (id) => {
+        loading.value = true
+        error.value = null
+        try {
+            const response = await memberApi.getExtensions(id)
+            extensions.value = response.data.data
+            return response.data.data
+        } catch (err) {
+            error.value = err.response?.data?.message || 'Gagal memuat history perpanjang member'
+            throw err
+        } finally {
+            loading.value = false
+        }
+    }
+
     return {
         members,
         member,
+        extensions,
         loading,
         error,
         pagination,
@@ -104,6 +150,9 @@ export const useMember = () => {
         fetchDetail,
         store,
         update,
-        activate
+        activate,
+        updateStatus,
+        extendMember,
+        fetchExtensions
     }
 }

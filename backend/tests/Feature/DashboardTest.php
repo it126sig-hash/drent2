@@ -74,9 +74,15 @@ class DashboardTest extends TestCase
         $response = $this->getJson('/api/v1/dashboard?date_from=2026-05-01&date_to=2026-05-31')
             ->assertOk();
 
-        $response->assertJsonPath('data.kpis.1.value', 1)
+        $response->assertJsonPath('data.kpis.0.value', 1)
+            ->assertJsonPath('data.kpis.0.display_value', '1 / 1')
+            ->assertJsonPath('data.kpis.1.value', 1)
             ->assertJsonPath('data.kpis.2.value', 5)
             ->assertJsonPath('data.kpis.3.value', 250000);
+
+        $armadaStatus = collect($response->json('data.armada_status'));
+        $this->assertEquals(1, $armadaStatus->firstWhere('key', 'available')['value']);
+        $this->assertEquals(0, $armadaStatus->firstWhere('key', 'rented')['value']);
 
         $normalBoard = collect($response->json('data.repeat_order_leaderboards'))->firstWhere('status', 'Normal');
         $memberBoard = collect($response->json('data.repeat_order_leaderboards'))->firstWhere('status', 'Member');

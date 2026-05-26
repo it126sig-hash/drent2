@@ -1,4 +1,4 @@
-﻿import { ref } from 'vue'
+import { ref } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import receivableApi from '../api/receivable'
 import bookingApi from '../api/booking'
@@ -38,10 +38,12 @@ export function useReceivable() {
   const filters = ref({
     invoice_status: null,
     search: '',
+    kota: null,
   })
   const invoiceFilters = ref({
     status: null,
     search: '',
+    kota: null,
   })
 
   const fetchAll = async (page = 1) => {

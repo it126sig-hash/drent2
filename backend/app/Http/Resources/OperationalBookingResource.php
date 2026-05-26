@@ -16,6 +16,10 @@ class OperationalBookingResource extends JsonResource
             'tujuan' => $this->tujuan,
             'kota' => $this->kota,
             'created_at' => $this->created_at?->toISOString(),
+            'is_operational_completed' => (bool) $this->is_operational_completed,
+            'operational_revert_status' => $this->operational_revert_status,
+            'operational_revert_reason' => $this->operational_revert_reason,
+            'operational_revert_requested_at' => $this->operational_revert_requested_at?->toISOString(),
             'customer' => $this->whenLoaded('customer', fn () => $this->customer ? [
                 'id' => $this->customer->id,
                 'nama' => $this->customer->nama,
@@ -64,6 +68,9 @@ class OperationalBookingResource extends JsonResource
             ),
             'operational_funds' => $this->whenLoaded('operationalFunds', fn () =>
                 DriverOperationalFundResource::collection($this->operationalFunds)
+            ),
+            'operational_expenses' => $this->whenLoaded('operationalExpenses', fn () =>
+                DriverOperationalExpenseResource::collection($this->operationalExpenses)
             ),
             'summary' => [
                 'booking_operational_total' => (int) $this->booking_operational_total,

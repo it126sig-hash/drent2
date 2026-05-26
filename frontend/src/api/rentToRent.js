@@ -8,6 +8,14 @@ export const getRentToRentDebt = (debtId) => api.get(`${prefix}/${debtId}`)
 
 export const updateRentToRentDebtAmount = (debtId, data) => api.patch(`${prefix}/${debtId}/amount`, data)
 
+export const requestRentToRentAmountChange = (debtId, data) => api.post(`${prefix}/debts/${debtId}/amount-change-requests`, data)
+
+export const cancelRentToRentAmountChange = (requestId) => api.post(`${prefix}/amount-change-requests/${requestId}/cancel`)
+
+export const approveRentToRentAmountChange = (requestId) => api.post(`${prefix}/amount-change-requests/${requestId}/approve`)
+
+export const rejectRentToRentAmountChange = (requestId, data) => api.post(`${prefix}/amount-change-requests/${requestId}/reject`, data)
+
 export const addRentToRentDebtPayment = (debtId, data) => api.post(`${prefix}/${debtId}/payments`, data)
 
 export const markRentToRentDebtPaid = (debtId) => api.post(`${prefix}/${debtId}/mark-paid`)
@@ -48,6 +56,10 @@ export default {
   getRentToRentDebts,
   getRentToRentDebt,
   updateRentToRentDebtAmount,
+  requestRentToRentAmountChange,
+  cancelRentToRentAmountChange,
+  approveRentToRentAmountChange,
+  rejectRentToRentAmountChange,
   addRentToRentDebtPayment,
   markRentToRentDebtPaid,
   getRentToRentBills,

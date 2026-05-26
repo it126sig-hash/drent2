@@ -9,78 +9,83 @@ class BookingPolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'supervisor', 'cs', 'finance']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.view');
     }
 
     public function view(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return $user->branch_id === $booking->branch_id;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.view')
+            && $user->branch_id === $booking->branch_id;
     }
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['cs', 'admin_branch', 'superadmin']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.create');
     }
 
     public function updateStatus(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return in_array($user->role, ['admin_branch', 'cs'])
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
             && $user->branch_id === $booking->branch_id;
     }
 
     public function update(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return in_array($user->role, ['admin_branch', 'cs'])
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
             && $user->branch_id === $booking->branch_id;
     }
 
     public function managePayments(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return in_array($user->role, ['admin_branch', 'supervisor', 'cs', 'finance'])
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
             && $user->branch_id === $booking->branch_id;
     }
 
     public function approvePaymentVoid(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return $user->role === 'supervisor' && $user->branch_id === $booking->branch_id;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.supervisor_request')
+            && $user->branch_id === $booking->branch_id;
     }
 
     public function requestRentalUnitReturn(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return in_array($user->role, ['admin_branch', 'cs', 'finance'])
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
             && $user->branch_id === $booking->branch_id;
     }
 
     public function approveRentalUnitReturn(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return $user->role === 'supervisor' && $user->branch_id === $booking->branch_id;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.supervisor_request')
+            && $user->branch_id === $booking->branch_id;
     }
 
     public function manageRefunds(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return in_array($user->role, ['admin_branch', 'finance'])
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
             && $user->branch_id === $booking->branch_id;
     }
 
     public function checkout(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return in_array($user->role, ['admin_branch', 'cs'])
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
             && $user->branch_id === $booking->branch_id;
     }
 
     public function complete(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;
-        return in_array($user->role, ['admin_branch', 'cs'])
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
             && $user->branch_id === $booking->branch_id;
     }
 }

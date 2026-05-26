@@ -1,9 +1,11 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useUnit } from '../../composables/useUnit'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useAuthStore } from '../../stores/auth'
+import { fetchCities } from '../../api/city'
+import { getRentalOwners } from '../../api/rentalOwner'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -11,7 +13,9 @@ import InputText from 'primevue/inputtext'
 import Dropdown from 'primevue/dropdown'
 import Paginator from 'primevue/paginator'
 import Tag from 'primevue/tag'
+import Dialog from 'primevue/dialog'
 import ConfirmDialog from 'primevue/confirmdialog'
+import AutoComplete from 'primevue/autocomplete'
 import UnitFormDialog from '../../components/units/UnitFormDialog.vue'
 
 const {
@@ -21,7 +25,8 @@ const {
   fetchAll,
   store,
   update,
-  remove
+  remove,
+  batchUpdateCity
 } = useUnit()
 
 const toast = useToast()
@@ -30,8 +35,28 @@ const authStore = useAuthStore()
 
 const searchQuery = ref('')
 const statusFilter = ref(null)
+const cityFilter = ref(null)
+const ownerFilter = ref(null)
+const cities = ref([])
+const owners = ref([])
+const selectedOwnerFilter = ref(null)
+const selectedBatchOwner = ref(null)
+const selectedUnits = ref([])
 const showDialog = ref(false)
 const selectedUnit = ref(null)
+const searchingOwners = ref(false)
+
+// Batch update city state
+const showBatchCityDialog = ref(false)
+const batchMethod = ref('selected')
+const batchOwnerId = ref(null)
+const batchCityId = ref(null)
+const batchLoading = ref(false)
+
+const batchMethodOptions = [
+  { label: 'Hanya Unit Terpilih di Tabel', value: 'selected' },
+  { label: 'Semua Unit Milik Pemilik', value: 'owner' }
+]
 
 const statusOptions = [
   { label: 'Semua Status', value: null },
@@ -40,17 +65,69 @@ const statusOptions = [
   { label: 'Dalam Servis', value: 'Dalam Servis' }
 ]
 
+const cityOptions = computed(() => {
+  const options = [{ label: 'Semua Kota', value: null }]
+  cities.value.forEach(city => {
+    options.push({
+      label: city.provinsi ? `${city.nama} - ${city.provinsi}` : city.nama,
+      value: city.id
+    })
+  })
+  return options
+})
+
 const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
 
 onMounted(() => {
   fetchData()
+  fetchActiveCities()
 })
+
+const searchOwners = async (event) => {
+  searchingOwners.value = true
+  try {
+    const response = await getRentalOwners({ search: event.query || '', per_page: 20 })
+    owners.value = response.data.data
+  } catch (err) {
+    console.error('Gagal mencari pemilik rental', err)
+  } finally {
+    searchingOwners.value = false
+  }
+}
+
+watch(selectedOwnerFilter, (newVal) => {
+  if (!newVal || (typeof newVal === 'string' && newVal.trim() === '')) {
+    ownerFilter.value = null
+  } else {
+    ownerFilter.value = newVal?.id || null
+  }
+  onSearch()
+})
+
+watch(selectedBatchOwner, (newVal) => {
+  if (!newVal || (typeof newVal === 'string' && newVal.trim() === '')) {
+    batchOwnerId.value = null
+  } else {
+    batchOwnerId.value = newVal?.id || null
+  }
+})
+
+const fetchActiveCities = async () => {
+  try {
+    const response = await fetchCities({ per_page: 100 })
+    cities.value = response.data.data.filter(c => c.is_active)
+  } catch (err) {
+    console.error('Gagal mengambil data kota', err)
+  }
+}
 
 const fetchData = async () => {
   try {
     await fetchAll({
       search: searchQuery.value,
       status: statusFilter.value,
+      city_id: cityFilter.value,
+      rental_owner_id: ownerFilter.value,
       branch_id: authStore.user?.branch_id
     })
   } catch (err) {
@@ -117,6 +194,42 @@ const confirmDelete = (unit) => {
   })
 }
 
+const openBatchEditCity = () => {
+  batchOwnerId.value = null
+  selectedBatchOwner.value = null
+  batchCityId.value = null
+  batchMethod.value = selectedUnits.value.length > 0 ? 'selected' : 'owner'
+  showBatchCityDialog.value = true
+}
+
+const applyBatchCityEdit = async () => {
+  if (!batchCityId.value) return
+  
+  batchLoading.value = true
+  try {
+    const payload = {
+      type: batchMethod.value === 'selected' ? 'by_ids' : 'by_owner',
+      city_id: batchCityId.value
+    }
+
+    if (batchMethod.value === 'selected') {
+      payload.ids = selectedUnits.value.map(u => u.id)
+    } else if (batchMethod.value === 'owner') {
+      payload.rental_owner_id = batchOwnerId.value
+    }
+
+    await batchUpdateCity(payload)
+    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Kota berhasil diperbarui secara batch', life: 3000 })
+    showBatchCityDialog.value = false
+    selectedUnits.value = [] // clear selection
+    fetchData() // refresh list
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Gagal', detail: err.message || 'Terjadi kesalahan saat memproses update', life: 3000 })
+  } finally {
+    batchLoading.value = false
+  }
+}
+
 const getStatusSeverity = (status) => {
   switch (status) {
     case 'Aktif': return 'success'
@@ -142,14 +255,25 @@ const formatCurrency = (value) => {
           <p>Kelola armada dan informasi unit kendaraan</p>
         </div>
       </div>
-      <div class="header-actions">
-        <Button
+      <div class="header-actions flex gap-2">
+        <button
           v-if="canManage"
-          label="Tambah Unit"
-          icon="pi pi-plus"
-          class="btn-pill btn-primary"
+          class="btn-pill btn-secondary create-booking-button"
+          @click="openBatchEditCity"
+        >
+          <i class="pi pi-pencil"></i>
+          <span class="create-label-desktop">Edit Kota</span>
+          <span class="create-label-mobile">Kota</span>
+        </button>
+        <button
+          v-if="canManage"
+          class="btn-pill btn-primary create-booking-button"
           @click="openNew"
-        />
+        >
+          <i class="pi pi-plus"></i>
+          <span class="create-label-desktop">Tambah Unit</span>
+          <span class="create-label-mobile">Unit</span>
+        </button>
       </div>
     </div>
 
@@ -180,12 +304,47 @@ const formatCurrency = (value) => {
               class="status-filter"
             />
           </div>
+          <div class="filter-group">
+            <label>Kota</label>
+            <Dropdown
+              v-model="cityFilter"
+              :options="cityOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Semua Kota"
+              @change="onSearch"
+              class="city-filter"
+            />
+          </div>
+          <div class="filter-group">
+            <label>Pemilik</label>
+            <AutoComplete
+              v-model="selectedOwnerFilter"
+              :suggestions="owners"
+              @complete="searchOwners"
+              optionLabel="nama"
+              placeholder="Cari Pemilik"
+              dropdown
+              forceSelection
+              :loading="searchingOwners"
+              class="owner-filter w-full md:w-56"
+              inputClass="w-full"
+            >
+              <template #item="slotProps">
+                <div>
+                  <div class="font-bold">{{ slotProps.item.nama }}</div>
+                  <small class="text-secondary text-xs">{{ slotProps.item.kontak_1 }} - {{ slotProps.item.kota }}</small>
+                </div>
+              </template>
+            </AutoComplete>
+          </div>
         </div>
       </div>
 
       <div class="table-shell unit-table-shell">
         <DataTable
           :value="units"
+          v-model:selection="selectedUnits"
           :loading="loading"
           lazy
           paginator
@@ -200,6 +359,7 @@ const formatCurrency = (value) => {
           class="drent-datatable unit-desktop-table"
           stripedRows
           @page="onPageChange"
+          dataKey="id"
         >
           <template #empty>
             <div class="empty-state">
@@ -208,6 +368,7 @@ const formatCurrency = (value) => {
             </div>
           </template>
 
+          <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
           <Column header="Aksi" style="width: 6.5rem; text-align: center">
             <template #body="{ data }">
               <div class="action-pill-group">
@@ -227,18 +388,13 @@ const formatCurrency = (value) => {
             </template>
           </Column>
 
-          <Column field="no_polisi" header="No Polisi" style="min-width: 120px">
+          <Column field="no_polisi" header="Kendaraan" style="min-width: 120px">
             <template #body="{ data }">
-              <span class="plat-badge">{{ data.no_polisi }}</span>
-            </template>
-          </Column>
-
-          <Column header="Kendaraan" style="min-width: 200px">
-            <template #body="{ data }">
-              <div class="unit-info">
+               <div class="unit-info">
                 <span class="unit-name">{{ data.merk }} {{ data.tipe }}</span>
                 <small class="unit-year">Tahun {{ data.tahun || '-' }}</small>
               </div>
+              <span class="plat-badge">{{ data.no_polisi }}</span>
             </template>
           </Column>
 
@@ -249,9 +405,21 @@ const formatCurrency = (value) => {
             </template>
           </Column>
 
+          <Column header="Kota" style="min-width: 130px">
+            <template #body="{ data }">
+              <span>{{ data.city?.nama || '-' }}</span>
+            </template>
+          </Column>
+
           <Column header="Harga Sewa / Hari" style="min-width: 150px">
             <template #body="{ data }">
               <span class="amount-text">{{ formatCurrency(data.harga_1_hari) }}</span>
+            </template>
+          </Column>
+
+          <Column header="Harga All-in / Hari" style="min-width: 150px">
+            <template #body="{ data }">
+              <span class="amount-text">{{ formatCurrency(data.harga_all_in) }}</span>
             </template>
           </Column>
 
@@ -287,8 +455,16 @@ const formatCurrency = (value) => {
               <strong>{{ unit.rental_owner?.nama || 'Internal' }}</strong>
             </div>
             <div>
+              <span>Kota</span>
+              <strong>{{ unit.city?.nama || '-' }}</strong>
+            </div>
+            <div>
               <span>Harga / Hari</span>
               <strong class="amount-text">{{ formatCurrency(unit.harga_1_hari) }}</strong>
+            </div>
+            <div>
+              <span>Harga All-in</span>
+              <strong class="amount-text">{{ formatCurrency(unit.harga_all_in) }}</strong>
             </div>
           </div>
           <div class="mobile-card-actions">
@@ -316,6 +492,85 @@ const formatCurrency = (value) => {
       @save="saveUnit"
       @refresh="fetchData"
     />
+
+    <Dialog 
+      v-model:visible="showBatchCityDialog" 
+      header="Batch Edit Kota Unit" 
+      :modal="true" 
+      class="custom-dialog"
+      :style="{ width: '450px' }"
+    >
+      <div class="form-container p-fluid flex flex-col gap-4" style="padding: 15px 5px; display: flex; flex-direction: column; gap: 15px;">
+        <!-- Pilihan Tipe Batch Edit -->
+        <div class="field" style="display: flex; flex-direction: column; gap: 8px;">
+          <label class="font-semibold" style="font-size: 0.85rem; font-weight: 600; color: #475569;">Metode Update</label>
+          <Dropdown
+            id="batch_mode"
+            v-model="batchMethod"
+            :options="batchMethodOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="w-full"
+          />
+        </div>
+
+        <!-- Dropdown Pemilik (Hanya jika metode 'owner') -->
+        <div v-if="batchMethod === 'owner'" class="field animate-fade-in" style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="batch_owner" class="label-required" style="font-size: 0.85rem; font-weight: 600; color: #475569;">Pilih Pemilik Rental</label>
+          <AutoComplete 
+            id="batch_owner" 
+            v-model="selectedBatchOwner" 
+            :suggestions="owners" 
+            @complete="searchOwners" 
+            optionLabel="nama" 
+            placeholder="Cari & Pilih Pemilik" 
+            dropdown
+            forceSelection
+            :loading="searchingOwners"
+            class="w-full"
+            inputClass="w-full"
+            :class="{ 'p-invalid': !batchOwnerId }"
+          >
+            <template #item="slotProps">
+              <div>
+                <div class="font-bold">{{ slotProps.item.nama }}</div>
+                <small class="text-secondary text-xs">{{ slotProps.item.kontak_1 }} - {{ slotProps.item.kota }}</small>
+              </div>
+            </template>
+          </AutoComplete>
+        </div>
+
+        <!-- Dropdown Kota Tujuan -->
+        <div class="field" style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="batch_city" class="label-required" style="font-size: 0.85rem; font-weight: 600; color: #475569;">Pilih Kota Baru</label>
+          <Dropdown 
+            id="batch_city" 
+            v-model="batchCityId" 
+            :options="cities" 
+            optionLabel="nama" 
+            optionValue="id" 
+            placeholder="Pilih Kota Tujuan" 
+            filter
+            class="w-full"
+            :class="{ 'p-invalid': !batchCityId }"
+          />
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid #f1f5f9;">
+          <Button label="Batal" icon="pi pi-times" class="p-button-text p-button-secondary" @click="showBatchCityDialog = false" />
+          <Button 
+            label="Simpan Perubahan" 
+            icon="pi pi-check" 
+            class="p-button-tosca" 
+            @click="applyBatchCityEdit" 
+            :loading="batchLoading" 
+            :disabled="!batchCityId || (batchMethod === 'selected' && selectedUnits.length === 0) || (batchMethod === 'owner' && !batchOwnerId)" 
+          />
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -329,7 +584,9 @@ const formatCurrency = (value) => {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.status-filter {
+.status-filter,
+.city-filter,
+.owner-filter {
   min-width: 200px;
 }
 
@@ -488,8 +745,30 @@ const formatCurrency = (value) => {
     display: flex;
   }
 
-  .status-filter {
+  .status-filter,
+  .city-filter,
+  .owner-filter {
     width: 100%;
   }
+}
+
+.p-button-tosca {
+  background-color: #06b6d4 !important;
+  border-color: #06b6d4 !important;
+  padding: 10px 20px !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  color: white !important;
+}
+
+.p-button-tosca:hover {
+  background-color: #0891b2 !important;
+  border-color: #0891b2 !important;
+}
+
+.label-required::after {
+  content: " *";
+  color: #f43f5e;
+  margin-left: 4px;
 }
 </style>

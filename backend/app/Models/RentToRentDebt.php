@@ -62,4 +62,16 @@ class RentToRentDebt extends Model
     {
         return $this->hasMany(RentToRentPaymentAllocation::class);
     }
+
+    public function amountChangeRequests()
+    {
+        return $this->hasMany(RentToRentAmountChangeRequest::class, 'rent_to_rent_debt_id');
+    }
+
+    public function pendingAmountRequest()
+    {
+        return $this->hasOne(RentToRentAmountChangeRequest::class, 'rent_to_rent_debt_id')
+            ->where('status', 'pending');
+    }
 }
+

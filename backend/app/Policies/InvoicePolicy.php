@@ -4,25 +4,28 @@ namespace App\Policies;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Services\PermissionService;
 
 class InvoicePolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance']);
+        if ($user->role === 'superadmin') return true;
+        return app(PermissionService::class)->hasPermission($user, 'finance.receivable');
     }
 
     public function view(User $user, Invoice $invoice): bool
     {
         if ($user->role === 'superadmin') return true;
 
-        return in_array($user->role, ['admin_branch', 'finance'])
+        return app(PermissionService::class)->hasPermission($user, 'finance.receivable')
             && $user->branch_id === $invoice->branch_id;
     }
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance']);
+        if ($user->role === 'superadmin') return true;
+        return app(PermissionService::class)->hasPermission($user, 'finance.receivable');
     }
 
     public function update(User $user, Invoice $invoice): bool

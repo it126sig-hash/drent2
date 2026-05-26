@@ -54,8 +54,8 @@ const bookingBars = computed(() => {
     const isLunas = sisaTagihan <= 0 && totalTagihan > 0;
 
     booking.booking_details.forEach(detail => {
-      if (!detail.unit_id) return;
-      if (!visibleUnitIds.has(detail.unit_id)) return;
+      const targetUnitId = detail.unit_id || `placeholder-${booking.id}-${detail.id || ''}`;
+      if (!visibleUnitIds.has(targetUnitId)) return;
 
       const dStart = startOfDay(parseISO(detail.tgl_sewa));
       const dEnd = startOfDay(parseISO(detail.tgl_kembali));
@@ -74,7 +74,7 @@ const bookingBars = computed(() => {
 
           result.push({
             bookingId: booking.id,
-            unitId: detail.unit_id,
+            unitId: targetUnitId,
             startCol: startOffset + 2, // col 1 = unit info, so +1; +1 again for 1-based grid
             span,
             status: booking.status,
@@ -88,7 +88,7 @@ const bookingBars = computed(() => {
             totalBayar,
             detailType,
             startDate: format(overlapStart, 'yyyy-MM-dd'),
-            unitNoPolisi: detail.unit?.no_polisi,
+            unitNoPolisi: detail.unit?.no_polisi || 'Unit belum ditentukan',
           });
         }
       }
@@ -173,14 +173,16 @@ const handleBookingClick = (event, bar) => {
           <!-- Unit Info Col -->
           <div
             class="unit-cell sticky-col"
+            :class="{ 'is-placeholder-row': unit.isPlaceholder }"
             :style="{ gridColumn: 1, gridRow: unitIndex + 2 }"
           >
             <div class="unit-name">{{ unit.merk }} {{ unit.tipe }}</div>
             <!-- Plate + Owner inline row -->
             <div class="unit-plate-row">
-              <span class="unit-plate">{{ unit.no_polisi }}</span>
-              <div class="owner-marquee-wrap">
+              <span v-if="!unit.isPlaceholder" class="unit-plate">{{ unit.no_polisi }}</span>
+              <div class="owner-marquee-wrap" :class="{ 'is-placeholder-marquee': unit.isPlaceholder }">
                 <span
+                  v-if="!unit.isPlaceholder"
                   class="owner-badge owner-marquee"
                   :class="unit.rental_owner
                     ? (unit.rental_owner.is_owner === false ? 'owner-external' : 'owner-internal')
@@ -189,6 +191,12 @@ const handleBookingClick = (event, bar) => {
                   {{ unit.rental_owner
                     ? (unit.rental_owner.is_owner === false ? '🤝 ' : '🏠 ') + unit.rental_owner.nama
                     : '🏠 Internal' }}
+                </span>
+                <span
+                  v-else
+                  class="owner-badge owner-placeholder"
+                >
+                  ⏳ Pending Unit
                 </span>
               </div>
             </div>
@@ -199,7 +207,12 @@ const handleBookingClick = (event, bar) => {
             v-for="(day, dayIndex) in days"
             :key="`cell-${unit.id}-${day.date}`"
             class="grid-cell"
-            :class="{ 'is-today': day.isToday, 'is-weekend': day.isWeekend, 'is-sunday': day.isSunday }"
+            :class="{ 
+              'is-today': day.isToday, 
+              'is-weekend': day.isWeekend, 
+              'is-sunday': day.isSunday,
+              'is-placeholder-cell': unit.isPlaceholder 
+            }"
             :style="{ gridColumn: dayIndex + 2, gridRow: unitIndex + 2 }"
             @click="handleCellClick($event, unit.id, day.date)"
           ></div>
@@ -356,15 +369,15 @@ const handleBookingClick = (event, bar) => {
 
 /* ── Unit Cell ── */
 .unit-cell {
-  padding: 6px var(--space-lg);
+  padding: 4px var(--space-lg);
   border-bottom: 1px solid var(--surface-border);
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  min-height: 44px;
-  /* Fixed height so rows stay compact */
-  height: 44px;
+  min-height: 48px;
+  /* Fixed height so rows stay compact and do not clip content */
+  height: 48px;
   overflow: hidden;
 }
 
@@ -448,8 +461,8 @@ const handleBookingClick = (event, bar) => {
   cursor: pointer;
   transition: background 0.15s;
   /* Match unit-cell fixed height */
-  min-height: 44px;
-  height: 44px;
+  min-height: 48px;
+  height: 48px;
 }
 
 .grid-cell:hover {
@@ -480,11 +493,10 @@ const handleBookingClick = (event, bar) => {
 /* ── Booking Bars ── */
 .booking-bar {
   /*
-   * Row height = 44px. We want the bar to fill ~80%.
-   * 80% of 44px = 35.2px. So margin top + bottom = 9px total → 4.5px each.
-   * Using 4px margin gives bar height ≈ 36px = 82%.
+   * Row height = 48px. We want the bar to fill ~80%.
+   * Margin: 5px 1px gives bar height ≈ 38px
    */
-  margin: 4px 1px;
+  margin: 5px 1px;
   padding: 3px 6px;
   border-radius: var(--radius-xs);
   font-family: var(--font-body);
@@ -633,5 +645,33 @@ const handleBookingClick = (event, bar) => {
   font-size: 11px;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* ── Placeholder Rows styling ── */
+.unit-cell.is-placeholder-row {
+  background-color: #FFFDF5 !important; /* extremely light warm yellow */
+  border-left: 3px solid #D4A017 !important;
+}
+
+.grid-cell.is-placeholder-cell {
+  background-color: rgba(212, 160, 23, 0.03);
+}
+
+.grid-cell.is-placeholder-cell:hover {
+  background-color: rgba(212, 160, 23, 0.08) !important;
+}
+
+.owner-badge.owner-placeholder {
+  background: #FDF4D9;
+  color: #8C660A;
+  border: 1px solid rgba(212, 160, 23, 0.2);
+}
+
+.text-warning {
+  color: #8C660A !important;
+}
+
+.owner-marquee-wrap.is-placeholder-marquee {
+  max-width: none !important;
 }
 </style>
