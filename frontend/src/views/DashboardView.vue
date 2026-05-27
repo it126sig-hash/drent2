@@ -29,6 +29,27 @@ const filters = ref({
 
 const kpis = computed(() => dashboard.value?.kpis || [])
 const bookingToday = computed(() => dashboard.value?.booking_today || [])
+
+const activeBookingTab = ref('with_unit') // 'with_unit' or 'placeholder'
+
+const filteredBookings = computed(() => {
+  return bookingToday.value.filter((booking) => {
+    if (activeBookingTab.value === 'with_unit') {
+      return booking.unit_id !== null && booking.unit_id !== undefined
+    } else {
+      return booking.unit_id === null || booking.unit_id === undefined
+    }
+  })
+})
+
+const bookingsWithUnitCount = computed(() => {
+  return bookingToday.value.filter((b) => b.unit_id !== null && b.unit_id !== undefined).length
+})
+
+const bookingsPlaceholderCount = computed(() => {
+  return bookingToday.value.filter((b) => b.unit_id === null || b.unit_id === undefined).length
+})
+
 const armadaStatus = computed(() => dashboard.value?.armada_status || [])
 const finance = computed(() => dashboard.value?.finance_snapshot || {})
 const alerts = computed(() => dashboard.value?.alerts || [])
@@ -165,8 +186,31 @@ onMounted(fetchData)
           <router-link to="/bookings" class="panel-link">Lihat Semua</router-link>
         </div>
 
-        <div v-if="bookingToday.length" class="booking-list">
-          <article v-for="booking in bookingToday" :key="booking.id" class="booking-row">
+        <div class="booking-tabs-container">
+          <div class="booking-tabs">
+            <button 
+              type="button" 
+              class="booking-tab" 
+              :class="{ active: activeBookingTab === 'with_unit' }" 
+              @click="activeBookingTab = 'with_unit'"
+            >
+              <span>Sudah Ada Unit</span>
+              <span class="tab-badge">{{ bookingsWithUnitCount }}</span>
+            </button>
+            <button 
+              type="button" 
+              class="booking-tab" 
+              :class="{ active: activeBookingTab === 'placeholder' }" 
+              @click="activeBookingTab = 'placeholder'"
+            >
+              <span>Masih Placeholder</span>
+              <span class="tab-badge">{{ bookingsPlaceholderCount }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="filteredBookings.length" class="booking-list">
+          <article v-for="booking in filteredBookings" :key="booking.id" class="booking-row">
             <div class="booking-icon">
               <i class="pi pi-car"></i>
             </div>
@@ -179,13 +223,17 @@ onMounted(fetchData)
               <p>{{ booking.kode_booking }} - {{ booking.unit_label || '-' }}</p>
               <span>{{ formatDateTime(booking.tgl_sewa) }} sampai {{ formatDateTime(booking.tgl_kembali) }}</span>
             </div>
-            <strong class="booking-amount">{{ formatCurrency(booking.amount) }}</strong>
+            <strong class="booking-amount">
+              {{ formatCurrency(booking.unit_id !== null && booking.unit_id !== undefined ? booking.total_biaya?.total : booking.amount) }}
+            </strong>
           </article>
         </div>
 
         <div v-else class="empty-state">
           <i class="pi pi-calendar"></i>
-          <span>Tidak ada booking hari ini.</span>
+          <span v-if="!bookingToday.length">Tidak ada booking pada periode ini.</span>
+          <span v-else-if="activeBookingTab === 'with_unit'">Tidak ada booking dengan unit pada periode ini.</span>
+          <span v-else>Tidak ada booking placeholder pada periode ini.</span>
         </div>
       </section>
 
@@ -445,6 +493,68 @@ onMounted(fetchData)
   gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--surface-border);
+}
+
+.booking-tabs-container {
+  padding: 12px 16px 4px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.booking-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.booking-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.booking-tab:hover {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+}
+
+.booking-tab.active {
+  border-color: var(--primary);
+  background: var(--surface-default);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--surface-border);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+.booking-tab.active .tab-badge {
+  background: var(--primary);
+  color: var(--surface-default);
 }
 
 .panel-header.compact {

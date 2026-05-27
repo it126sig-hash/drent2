@@ -30,7 +30,7 @@ class DashboardService
                 'label' => $this->periodLabel($dateFrom, $dateTo),
             ],
             'kpis' => $this->kpis($dateFrom, $dateTo, $user, $branchId),
-            'booking_today' => $this->bookingToday($user, $branchId),
+            'booking_today' => $this->bookingToday($dateFrom, $dateTo, $user, $branchId),
             'armada_status' => $this->armadaStatus($user, $branchId),
             'finance_snapshot' => $this->financeSnapshot($dateFrom, $dateTo, $user, $branchId),
             'alerts' => $this->alerts($user, $branchId),
@@ -153,21 +153,15 @@ class DashboardService
         ];
     }
 
-    private function bookingToday(User $user, ?int $branchId): array
+    private function bookingToday(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId): array
     {
-        $today = now();
-
         return $this->scopeTenantBranch(Booking::query(), $user, $branchId)
-            ->with(['customer', 'bookingDetails.unit.rentalOwner'])
-            ->where(function (Builder $query) use ($today) {
-                $query->where('status', 'rental_unit')
-                    ->orWhereHas('bookingDetails', function (Builder $detail) use ($today) {
-                        $detail->whereDate('tgl_sewa', $today->toDateString())
-                            ->orWhereDate('tgl_kembali', $today->toDateString());
-                    });
+            ->with(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.costs'])
+            ->whereHas('bookingDetails', function (Builder $detail) use ($dateFrom, $dateTo) {
+                $detail->whereBetween('tgl_sewa', [$dateFrom, $dateTo]);
             })
             ->latest('updated_at')
-            ->limit(8)
+            ->limit(15)
             ->get()
             ->map(fn (Booking $booking) => $this->bookingRow($booking))
             ->values()
@@ -382,6 +376,10 @@ class DashboardService
         $end = $details->max('tgl_kembali');
         $isLate = $booking->status === 'rental_unit' && $end && Carbon::parse($end)->isPast();
 
+        $billingService = app(\App\Services\BookingBillingService::class);
+        $totalTagihan = $billingService->totalTagihan($booking);
+        $hasUnit = $details->whereNotNull('unit_id')->isNotEmpty();
+
         return [
             'id' => $booking->id,
             'kode_booking' => $booking->kode_booking,
@@ -398,6 +396,11 @@ class DashboardService
                 ->unique()
                 ->values()
                 ->join(', '),
+            'unit_id' => $details->first()?->unit_id,
+            'has_unit' => $hasUnit,
+            'total_biaya' => [
+                'total' => $totalTagihan,
+            ],
         ];
     }
 

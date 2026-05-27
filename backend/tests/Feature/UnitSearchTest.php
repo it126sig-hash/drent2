@@ -66,6 +66,70 @@ class UnitSearchTest extends TestCase
         $this->assertSame([$target->id], $multiTokenIds);
     }
 
+    public function test_unit_list_supports_filtering_units_without_modal(): void
+    {
+        $ctx = $this->context();
+        $abigail = $this->owner($ctx['tenant']->id, 'Abigail Rental');
+
+        // External units
+        $completeUnit = $this->unit($ctx, $abigail, [
+            'modal_1_hari' => 100000,
+            'modal_all_in' => 150000,
+        ]);
+        
+        $incompleteUnit1 = $this->unit($ctx, $abigail, [
+            'modal_1_hari' => 0,
+            'modal_all_in' => 150000,
+        ]);
+
+        $incompleteUnit2 = $this->unit($ctx, $abigail, [
+            'modal_1_hari' => 100000,
+            'modal_all_in' => 0,
+        ]);
+
+        // Internal units
+        $completeInternalUnit = $this->unit($ctx, $abigail, [
+            'rental_owner_id' => null,
+            'modal_1_hari' => 100000,
+            'modal_all_in' => 0, // not mandatory for internal
+        ]);
+
+        $incompleteInternalUnit = $this->unit($ctx, $abigail, [
+            'rental_owner_id' => null,
+            'modal_1_hari' => 0, // mandatory
+            'modal_all_in' => 0,
+        ]);
+
+        // Get all units
+        $allIds = collect($this->getJson('/api/v1/units?per_page=50')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('id')
+            ->all();
+        
+        $this->assertContains($completeUnit->id, $allIds);
+        $this->assertContains($incompleteUnit1->id, $allIds);
+        $this->assertContains($incompleteUnit2->id, $allIds);
+        $this->assertContains($completeInternalUnit->id, $allIds);
+        $this->assertContains($incompleteInternalUnit->id, $allIds);
+
+        // Get units without modal
+        $withoutModalIds = collect($this->getJson('/api/v1/units?without_modal=true&per_page=50')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('id')
+            ->all();
+
+        $this->assertNotContains($completeUnit->id, $withoutModalIds);
+        $this->assertContains($incompleteUnit1->id, $withoutModalIds);
+        $this->assertContains($incompleteUnit2->id, $withoutModalIds);
+        
+        // Internal unit with modal_1_hari set (but modal_all_in 0) is COMPLETE (not without_modal)
+        $this->assertNotContains($completeInternalUnit->id, $withoutModalIds);
+        // Internal unit with modal_1_hari 0 is INCOMPLETE (without_modal)
+        $this->assertContains($incompleteInternalUnit->id, $withoutModalIds);
+    }
+
     private function searchUnitIds(string $search): array
     {
         return collect($this->getJson('/api/v1/units?search=' . urlencode($search) . '&per_page=50')
@@ -90,6 +154,12 @@ class UnitSearchTest extends TestCase
         ]);
 
         Sanctum::actingAs($user);
+
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
+            'role' => 'admin_branch',
+            'permission_key' => 'vehicle.unit',
+        ]);
 
         return compact('tenant', 'branch', 'user');
     }

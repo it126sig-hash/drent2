@@ -441,6 +441,18 @@ class RentToRentPayableTest extends TestCase
             'is_active' => true,
         ]);
 
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
+            'role' => 'finance',
+            'permission_key' => 'finance.rent_to_rent',
+        ]);
+
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
+            'role' => 'supervisor',
+            'permission_key' => 'finance.rent_to_rent',
+        ]);
+
         Sanctum::actingAs($user);
 
         return compact('tenant', 'branch', 'user');
@@ -520,5 +532,81 @@ class RentToRentPayableTest extends TestCase
         }
 
         return compact('booking', 'detail');
+    }
+
+    public function test_payment_notes_saving_auto_generation_and_report_filtering(): void
+    {
+        $ctx = $this->context();
+        
+        // Seed finance.account_mutation so the user can access reports
+        \App\Models\RolePermission::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'role' => 'finance',
+            'permission_key' => 'finance.account_mutation',
+        ]);
+
+        $owner = $this->owner($ctx['tenant']->id, false, 'Owner Mitra');
+        $unit = $this->unit($ctx, $owner->id, ['modal_1_hari' => 100000]);
+        $account = PaymentAccount::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'nama_bank' => 'BCA',
+            'nomor_rekening' => '123',
+            'atas_nama' => 'DRENT',
+            'is_active' => true,
+        ]);
+
+        $booking = $this->bookingWithDetail($ctx, $unit->id, detailOverrides: ['lama_sewa' => 2]);
+        $debt = RentToRentDebt::where('booking_detail_id', $booking['detail']->id)->firstOrFail();
+
+        // 1. Payment with manual note
+        $this->postJson("/api/v1/rent-to-rent/{$debt->id}/payments", [
+            'payment_account_id' => $account->id,
+            'amount' => 50000,
+            'paid_at' => '2026-05-18',
+            'catatan' => 'Uang muka pertama',
+        ])->assertOk();
+
+        // Assert note is saved in RentToRentPayment
+        $payment1 = RentToRentPayment::orderBy('id', 'desc')->firstOrFail();
+        $this->assertSame('Uang muka pertama', $payment1->catatan);
+
+        // Assert note is appended in PaymentAccountTransaction description
+        $transaction1 = \App\Models\PaymentAccountTransaction::where('type', 'rent_to_rent_payment_out')->orderBy('id', 'desc')->firstOrFail();
+        $this->assertStringContainsString('Uang muka pertama', $transaction1->description);
+
+        // 2. Payment without note (should auto generate description)
+        $this->postJson("/api/v1/rent-to-rent/{$debt->id}/payments", [
+            'payment_account_id' => $account->id,
+            'amount' => 60000,
+            'paid_at' => '2026-05-19',
+        ])->assertOk();
+
+        $payment2 = RentToRentPayment::orderBy('id', 'desc')->firstOrFail();
+        $this->assertNull($payment2->catatan);
+
+        // 3. Get financial report and verify entries
+        $response = $this->getJson('/api/v1/reports/monthly-finance?year=2026&month=5');
+        $response->assertOk();
+
+        $entries = $response->json('data.entries');
+        
+        // Assert only 'rent_to_rent_payment' entries are in the report, 'rent_to_rent_payment_out' is filtered out!
+        $r2rEntries = collect($entries)->where('source_type', 'rent_to_rent_payment')->values();
+        $r2rOutTransactions = collect($entries)->where('source_type', 'account_transaction')->where('type', 'rent_to_rent_payment_out')->values();
+
+        $this->assertCount(2, $r2rEntries);
+        $this->assertCount(0, $r2rOutTransactions);
+
+        // Assert descriptions and references are correct
+        // First entry: manual note
+        $entry1 = $r2rEntries->firstWhere('source_id', $payment1->id);
+        $this->assertSame('Uang muka pertama', $entry1['description']);
+        $this->assertSame($booking['booking']->kode_booking, $entry1['reference']);
+
+        // Second entry: auto generated note
+        $entry2 = $r2rEntries->firstWhere('source_id', $payment2->id);
+        $this->assertSame("Pembayaran rent-to-rent ke Owner Mitra untuk booking {$booking['booking']->kode_booking}", $entry2['description']);
+        $this->assertSame($booking['booking']->kode_booking, $entry2['reference']);
     }
 }

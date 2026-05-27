@@ -37,8 +37,14 @@ const searchQuery = ref('')
 const statusFilter = ref(null)
 const cityFilter = ref(null)
 const ownerFilter = ref(null)
+const modalFilter = ref(null)
 const cities = ref([])
 const owners = ref([])
+
+const modalOptions = [
+  { label: 'Semua', value: null },
+  { label: 'Belum Ada Modal', value: true }
+]
 const selectedOwnerFilter = ref(null)
 const selectedBatchOwner = ref(null)
 const selectedUnits = ref([])
@@ -128,6 +134,7 @@ const fetchData = async () => {
       status: statusFilter.value,
       city_id: cityFilter.value,
       rental_owner_id: ownerFilter.value,
+      without_modal: modalFilter.value,
       branch_id: authStore.user?.branch_id
     })
   } catch (err) {
@@ -239,6 +246,19 @@ const getStatusSeverity = (status) => {
   }
 }
 
+const isMissingModal = (data) => {
+  const isInternal = !data.rental_owner_id && !data.rental_owner
+  if (isInternal) {
+    return !data.modal_1_hari || data.modal_1_hari <= 0
+  } else {
+    return !data.modal_1_hari || data.modal_1_hari <= 0 || !data.modal_all_in || data.modal_all_in <= 0
+  }
+}
+
+const getRowClass = (data) => {
+  return isMissingModal(data) ? 'row-no-modal' : ''
+}
+
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value)
 }
@@ -338,6 +358,18 @@ const formatCurrency = (value) => {
               </template>
             </AutoComplete>
           </div>
+          <div class="filter-group">
+            <label>Harga Modal</label>
+            <Dropdown
+              v-model="modalFilter"
+              :options="modalOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Semua"
+              @change="onSearch"
+              class="modal-filter"
+            />
+          </div>
         </div>
       </div>
 
@@ -360,6 +392,7 @@ const formatCurrency = (value) => {
           stripedRows
           @page="onPageChange"
           dataKey="id"
+          :rowClass="getRowClass"
         >
           <template #empty>
             <div class="empty-state">
@@ -414,12 +447,14 @@ const formatCurrency = (value) => {
           <Column header="Harga Sewa / Hari" style="min-width: 150px">
             <template #body="{ data }">
               <span class="amount-text">{{ formatCurrency(data.harga_1_hari) }}</span>
+              <span class="modal-amount-text" v-tooltip.top="'Harga Modal'">Mdl: {{ formatCurrency(data.modal_1_hari || 0) }}</span>
             </template>
           </Column>
 
           <Column header="Harga All-in / Hari" style="min-width: 150px">
             <template #body="{ data }">
               <span class="amount-text">{{ formatCurrency(data.harga_all_in) }}</span>
+              <span class="modal-amount-text" v-tooltip.top="'Harga Modal All-in'">Mdl: {{ formatCurrency(data.modal_all_in || 0) }}</span>
             </template>
           </Column>
 
@@ -440,7 +475,7 @@ const formatCurrency = (value) => {
           <i class="pi pi-car"></i>
           <p>Belum ada data unit kendaraan.</p>
         </div>
-        <div v-for="unit in units" :key="unit.id" class="mobile-card app-card">
+        <div v-for="unit in units" :key="unit.id" class="mobile-card app-card" :class="{ 'card-no-modal': isMissingModal(unit) }">
           <div class="mobile-card-header">
             <div>
               <span class="plat-badge">{{ unit.no_polisi }}</span>
@@ -461,10 +496,12 @@ const formatCurrency = (value) => {
             <div>
               <span>Harga / Hari</span>
               <strong class="amount-text">{{ formatCurrency(unit.harga_1_hari) }}</strong>
+              <small class="modal-amount-text-mobile">Mdl: {{ formatCurrency(unit.modal_1_hari || 0) }}</small>
             </div>
             <div>
               <span>Harga All-in</span>
               <strong class="amount-text">{{ formatCurrency(unit.harga_all_in) }}</strong>
+              <small class="modal-amount-text-mobile">Mdl: {{ formatCurrency(unit.modal_all_in || 0) }}</small>
             </div>
           </div>
           <div class="mobile-card-actions">
@@ -588,6 +625,43 @@ const formatCurrency = (value) => {
 .city-filter,
 .owner-filter {
   min-width: 200px;
+}
+
+.modal-filter {
+  min-width: 160px;
+}
+
+.modal-amount-text {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+.modal-amount-text-mobile {
+  display: block;
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 1px;
+  font-weight: 500;
+}
+
+/* Red border style on left side for rows/cards with missing modal price */
+:deep(.row-no-modal td:first-child) {
+  border-left: 4px solid #E5534B !important;
+  position: relative;
+}
+
+:deep(.row-no-modal) {
+  background-color: #FCEAE9 !important;
+}
+
+.card-no-modal {
+  border-left: 4px solid #E5534B !important;
+  background-color: #FCEAE9 !important;
 }
 
 .plat-badge {

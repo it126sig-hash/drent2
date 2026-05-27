@@ -39,6 +39,26 @@ class UnitService
             $query->where('units.rental_owner_id', $filters['rental_owner_id']);
         }
 
+        if (isset($filters['without_modal']) && ($filters['without_modal'] === 'true' || $filters['without_modal'] === true || $filters['without_modal'] === '1' || $filters['without_modal'] === 1)) {
+            $query->where(function ($q) {
+                $q->where(function ($sub) {
+                    $sub->whereNull('units.rental_owner_id')
+                        ->where(function ($sub2) {
+                            $sub2->where('units.modal_1_hari', '<=', 0)
+                                 ->orWhereNull('units.modal_1_hari');
+                        });
+                })->orWhere(function ($sub) {
+                    $sub->whereNotNull('units.rental_owner_id')
+                        ->where(function ($sub2) {
+                            $sub2->where('units.modal_1_hari', '<=', 0)
+                                 ->orWhereNull('units.modal_1_hari')
+                                 ->orWhere('units.modal_all_in', '<=', 0)
+                                 ->orWhereNull('units.modal_all_in');
+                        });
+                });
+            });
+        }
+
         $searchTokens = $this->searchTokens($filters['search'] ?? null);
         if (! empty($searchTokens)) {
             $query->where(function ($q) use ($searchTokens) {

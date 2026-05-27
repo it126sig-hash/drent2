@@ -35,63 +35,49 @@ class MonthlyFinanceReportService
             ->orderBy('nama_bank')
             ->get();
 
+        $transactions = $this->accountTransactions($dateFrom, $dateTo, $user, $branchId, $accountId);
         $bookingRevenue = $this->bookingRevenue($dateFrom, $dateTo, $user, $branchId);
-        $directPayments = $this->directBookingPayments($dateFrom, $dateTo, $user, $branchId, $accountId);
-        $invoicePayments = $this->invoicePayments($dateFrom, $dateTo, $user, $branchId, $accountId);
-        $refunds = $this->refunds($dateFrom, $dateTo, $user, $branchId, $accountId);
-        $operationalFunds = $this->operationalFunds($dateFrom, $dateTo, $user, $branchId, $accountId);
-        $rentToRentPayments = $this->rentToRentPayments($dateFrom, $dateTo, $user, $branchId, $accountId);
-        $accountTransactions = $this->accountTransactions($dateFrom, $dateTo, $user, $branchId, $accountId);
 
-        $byAccount = $accounts->map(function (PaymentAccount $account) use (
-            $directPayments,
-            $invoicePayments,
-            $refunds,
-            $operationalFunds,
-            $rentToRentPayments,
-            $accountTransactions
-        ) {
-            $rentalIncome = $this->sumForAccount($directPayments, $account->id) + $this->sumForAccount($invoicePayments, $account->id);
-            $otherIncome = $this->sumTransactions($accountTransactions, $account->id, 'other_income');
-            $refundTotal = $this->sumForAccount($refunds, $account->id);
-            $operationalTotal = $this->sumForAccount($operationalFunds, $account->id);
-            $rentToRentTotal = $this->sumForAccount($rentToRentPayments, $account->id);
-            $otherExpense = $this->sumTransactions($accountTransactions, $account->id, 'other_expense');
-            $transferIn = $this->sumTransactions($accountTransactions, $account->id, 'transfer_in');
-            $transferOut = $this->sumTransactions($accountTransactions, $account->id, 'transfer_out');
-            $adjustment = $accountTransactions
-                ->where('payment_account_id', $account->id)
-                ->where('type', 'balance_adjustment')
-                ->sum('signed_amount');
+        $byAccount = $accounts->map(function (PaymentAccount $account) use ($transactions) {
+            $accTx = $transactions->where('payment_account_id', $account->id);
+
+            // Income (sum signed_amount)
+            $rentalIncome = $accTx->whereIn('type', ['booking_payment_in', 'invoice_payment_in', 'booking_payment_void', 'invoice_payment_void'])->sum('signed_amount');
+            $otherIncome = $accTx->whereIn('type', ['other_income', 'driver_return_in'])->sum('signed_amount');
+
+            // Expense (sum negative of signed_amount since signed_amount is negative for expenses)
+            $refundTotal = -$accTx->whereIn('type', ['refund_out'])->sum('signed_amount');
+            $operationalTotal = -$accTx->whereIn('type', ['driver_fund_out', 'driver_direct_expense_out', 'driver_fund_void', 'driver_direct_expense_void'])->sum('signed_amount');
+            $rentToRentTotal = -$accTx->whereIn('type', ['rent_to_rent_payment_out', 'rent_to_rent_payment_void'])->sum('signed_amount');
+            $otherExpense = -$accTx->whereIn('type', ['other_expense'])->sum('signed_amount');
+
+            $transferIn = $accTx->where('type', 'transfer_in')->sum('signed_amount');
+            $transferOut = -$accTx->where('type', 'transfer_out')->sum('signed_amount');
+            $adjustment = $accTx->where('type', 'balance_adjustment')->sum('signed_amount');
+
             $businessExpense = $refundTotal + $operationalTotal + $rentToRentTotal + $otherExpense;
             $netCash = $rentalIncome + $otherIncome - $businessExpense;
             $netMovement = $netCash + $transferIn - $transferOut + $adjustment;
 
             return [
                 'payment_account' => $this->accountPayload($account),
-                'rental_income' => $rentalIncome,
-                'other_income' => $otherIncome,
-                'refunds' => $refundTotal,
-                'operational_funds' => $operationalTotal,
-                'rent_to_rent_payments' => $rentToRentTotal,
-                'other_expense' => $otherExpense,
-                'business_expense' => $businessExpense,
-                'transfer_in' => $transferIn,
-                'transfer_out' => $transferOut,
+                'rental_income' => (int) $rentalIncome,
+                'other_income' => (int) $otherIncome,
+                'refunds' => (int) $refundTotal,
+                'operational_funds' => (int) $operationalTotal,
+                'rent_to_rent_payments' => (int) $rentToRentTotal,
+                'other_expense' => (int) $otherExpense,
+                'business_expense' => (int) $businessExpense,
+                'transfer_in' => (int) $transferIn,
+                'transfer_out' => (int) $transferOut,
                 'balance_adjustment' => (int) $adjustment,
-                'net_cash' => $netCash,
-                'net_movement' => $netMovement,
-                'estimated_opening_balance' => (int) $account->current_balance - $netMovement,
+                'net_cash' => (int) $netCash,
+                'net_movement' => (int) $netMovement,
+                'estimated_opening_balance' => (int) $account->current_balance - (int) $netMovement,
             ];
         })->values();
 
-        $entries = collect()
-            ->merge($this->paymentEntries($directPayments, 'booking_payment', 'Pembayaran Booking', 1))
-            ->merge($this->paymentEntries($invoicePayments, 'invoice_payment', 'Pembayaran Invoice', 1))
-            ->merge($this->paymentEntries($refunds, 'refund', 'Refund', -1))
-            ->merge($this->paymentEntries($operationalFunds, 'operational_fund', 'Dana Operasional', -1))
-            ->merge($this->paymentEntries($rentToRentPayments, 'rent_to_rent_payment', 'Bayar Rent-to-Rent', -1))
-            ->merge($this->accountTransactionEntries($accountTransactions))
+        $entries = $this->accountTransactionEntries($transactions)
             ->sortByDesc('happened_at')
             ->values()
             ->all();
@@ -170,64 +156,7 @@ class MonthlyFinanceReportService
             ->sum(fn (Booking $booking) => $this->billingService->totalTagihan($booking));
     }
 
-    private function directBookingPayments(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId, ?int $accountId): Collection
-    {
-        return BookingPayment::query()
-            ->with(['booking.customer', 'paymentAccount'])
-            ->whereNull('invoice_payment_id')
-            ->where(fn (Builder $query) => $query->whereNull('status')->orWhere('status', '!=', 'voided'))
-            ->whereBetween('paid_at', [$dateFrom, $dateTo])
-            ->when($accountId, fn ($query) => $query->where('payment_account_id', $accountId))
-            ->whereHas('booking', fn (Builder $booking) => $this->scopeTenantBranch($booking, $user, $branchId))
-            ->get();
-    }
 
-    private function invoicePayments(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId, ?int $accountId): Collection
-    {
-        return Payment::query()
-            ->with(['invoice.bookings.customer', 'paymentAccount'])
-            ->whereBetween('paid_at', [$dateFrom, $dateTo])
-            ->when($accountId, fn ($query) => $query->where('payment_account_id', $accountId))
-            ->whereHas('invoice', fn (Builder $invoice) => $this->scopeTenantBranch($invoice, $user, $branchId)->where('status', '!=', 'void'))
-            ->get();
-    }
-
-    private function refunds(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId, ?int $accountId): Collection
-    {
-        return Refund::query()
-            ->with(['booking.customer', 'paymentAccount'])
-            ->whereBetween('refunded_at', [$dateFrom, $dateTo])
-            ->when($accountId, fn ($query) => $query->where('payment_account_id', $accountId))
-            ->whereHas('booking', fn (Builder $booking) => $this->scopeTenantBranch($booking, $user, $branchId))
-            ->get();
-    }
-
-    private function operationalFunds(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId, ?int $accountId): Collection
-    {
-        return DriverOperationalFund::query()
-            ->with(['booking.customer', 'paymentAccount'])
-            ->whereNotNull('payment_account_id')
-            ->whereIn('status', ['pending_driver_acceptance', 'accepted', 'closed'])
-            ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$dateFrom, $dateTo])
-            ->when($accountId, fn ($query) => $query->where('payment_account_id', $accountId))
-            ->where('tenant_id', $user->tenant_id)
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
-            ->get();
-    }
-
-    private function rentToRentPayments(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId, ?int $accountId): Collection
-    {
-        return RentToRentPayment::query()
-            ->with(['bill.rentalOwner', 'allocations.debt.booking.customer', 'paymentAccount'])
-            ->where(fn (Builder $query) => $query->whereNull('status')->orWhere('status', '!=', 'voided'))
-            ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$dateFrom, $dateTo])
-            ->when($accountId, fn ($query) => $query->where('payment_account_id', $accountId))
-            ->where(function (Builder $query) use ($user, $branchId) {
-                $query->whereHas('bill', fn (Builder $bill) => $this->scopeTenantBranch($bill, $user, $branchId))
-                    ->orWhereHas('allocations.debt', fn (Builder $debt) => $this->scopeTenantBranch($debt, $user, $branchId));
-            })
-            ->get();
-    }
 
     private function accountTransactions(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId, ?int $accountId): Collection
     {
@@ -240,15 +169,7 @@ class MonthlyFinanceReportService
             ->get();
     }
 
-    private function sumForAccount(Collection $rows, int $accountId): int
-    {
-        return (int) $rows->where('payment_account_id', $accountId)->sum('amount');
-    }
 
-    private function sumTransactions(Collection $rows, int $accountId, string $type): int
-    {
-        return (int) $rows->where('payment_account_id', $accountId)->where('type', $type)->sum('amount');
-    }
 
     private function accountPayload(PaymentAccount $account): array
     {
@@ -260,22 +181,6 @@ class MonthlyFinanceReportService
             'current_balance' => (int) $account->current_balance,
             'is_active' => (bool) $account->is_active,
         ];
-    }
-
-    private function paymentEntries(Collection $rows, string $sourceType, string $label, int $direction): Collection
-    {
-        return $rows->map(fn ($row) => [
-            'source_type' => $sourceType,
-            'source_id' => $row->id,
-            'label' => $label,
-            'payment_account_id' => $row->payment_account_id,
-            'payment_account_name' => $this->accountName($row->paymentAccount),
-            'amount' => (int) $row->amount,
-            'signed_amount' => $direction * (int) $row->amount,
-            'happened_at' => ($row->paid_at ?? $row->refunded_at ?? $row->created_at)?->toISOString(),
-            'reference' => $this->reference($row),
-            'description' => $row->catatan ?? $row->keterangan ?? $row->notes ?? null,
-        ]);
     }
 
     private function accountTransactionEntries(Collection $rows): Collection
@@ -306,6 +211,11 @@ class MonthlyFinanceReportService
             return $row->invoice?->invoice_number;
         }
 
+        if ($row instanceof RentToRentPayment) {
+            return $row->bill?->bill_number 
+                ?? $row->allocations?->first()?->debt?->booking?->kode_booking;
+        }
+
         return $row->booking?->kode_booking
             ?? $row->bill?->bill_number
             ?? $row->booking?->customer?->nama
@@ -320,7 +230,29 @@ class MonthlyFinanceReportService
             'other_income' => 'Pemasukan Lain-lain',
             'other_expense' => 'Pengeluaran Lain-lain',
             'balance_adjustment' => 'Adjust Saldo',
+            'rent_to_rent_payment_out' => 'Bayar Rent-to-Rent',
+            'rent_to_rent_payment_void' => 'Void Bayar Rent-to-Rent',
             default => $type,
         };
+    }
+
+    private function generateRentToRentDescription(RentToRentPayment $row): string
+    {
+        if ($row->bill) {
+            $ownerName = $row->bill->rentalOwner?->nama ?? 'Owner';
+            return "Pembayaran tagihan {$row->bill->bill_number} kepada {$ownerName}";
+        }
+
+        $firstAllocation = $row->allocations?->first();
+        if ($firstAllocation && $firstAllocation->debt) {
+            $ownerName = $firstAllocation->debt->rentalOwner?->nama ?? 'Owner';
+            $bookingCode = $firstAllocation->debt->booking?->kode_booking;
+            if ($bookingCode) {
+                return "Pembayaran rent-to-rent ke {$ownerName} untuk booking {$bookingCode}";
+            }
+            return "Pembayaran rent-to-rent ke {$ownerName}";
+        }
+
+        return "Pembayaran rent-to-rent";
     }
 }

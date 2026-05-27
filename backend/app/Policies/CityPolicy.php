@@ -11,8 +11,9 @@ class CityPolicy
 
     public function viewAny(User $user): bool
     {
-        if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        // if ($user->role === 'superadmin') return true;
+        // return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return true;
     }
 
     public function view(User $user, City $city): bool
