@@ -11,6 +11,7 @@ class RentToRentPayment extends Model
         'payment_account_id',
         'amount',
         'status',
+        'catatan',
         'paid_at',
         'voided_at',
         'void_reason',

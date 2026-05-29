@@ -341,7 +341,8 @@ class RentToRentService
                 'payment_account_id' => $data['payment_account_id'],
                 'amount' => (int) $data['amount'],
                 'status' => 'active',
-                'paid_at' => isset($data['paid_at']) ? Carbon::parse($data['paid_at']) : now(),
+                'catatan' => $data['catatan'] ?? null,
+                'paid_at' => \App\Helpers\DateHelper::parseDateWithCurrentTime($data['paid_at'] ?? null),
                 'created_by' => auth()->id(),
             ]);
 
@@ -350,7 +351,9 @@ class RentToRentService
             $this->transactionService->applyDelta($account, -(int) $payment->amount, [
                 'type' => 'rent_to_rent_payment_out',
                 'amount' => (int) $payment->amount,
-                'description' => "Pembayaran rent-to-rent kepada " . ($debt->rentalOwner?->nama ?? "Owner") . " untuk booking #{$debt->booking?->kode_booking}",
+                'description' => ($data['catatan'] ?? null) 
+                    ? "Pembayaran rent-to-rent kepada " . ($debt->rentalOwner?->nama ?? "Owner") . " untuk booking #{$debt->booking?->kode_booking} - " . $data['catatan']
+                    : "Pembayaran rent-to-rent kepada " . ($debt->rentalOwner?->nama ?? "Owner") . " untuk booking #{$debt->booking?->kode_booking}",
                 'created_by' => auth()->id(),
                 'transaction_at' => $payment->paid_at ?? now(),
             ]);
@@ -455,7 +458,8 @@ class RentToRentService
                 'payment_account_id' => $data['payment_account_id'],
                 'amount' => (int) $data['amount'],
                 'status' => 'active',
-                'paid_at' => isset($data['paid_at']) ? Carbon::parse($data['paid_at']) : now(),
+                'catatan' => $data['catatan'] ?? null,
+                'paid_at' => \App\Helpers\DateHelper::parseDateWithCurrentTime($data['paid_at'] ?? null),
                 'created_by' => auth()->id(),
             ]);
 
@@ -464,7 +468,9 @@ class RentToRentService
             $this->transactionService->applyDelta($account, -(int) $payment->amount, [
                 'type' => 'rent_to_rent_payment_out',
                 'amount' => (int) $payment->amount,
-                'description' => "Pembayaran tagihan rent-to-rent #{$bill->bill_number} kepada " . ($bill->rentalOwner?->nama ?? "Owner"),
+                'description' => ($data['catatan'] ?? null)
+                    ? "Pembayaran tagihan rent-to-rent #{$bill->bill_number} kepada " . ($bill->rentalOwner?->nama ?? "Owner") . " - " . $data['catatan']
+                    : "Pembayaran tagihan rent-to-rent #{$bill->bill_number} kepada " . ($bill->rentalOwner?->nama ?? "Owner"),
                 'created_by' => auth()->id(),
                 'transaction_at' => $payment->paid_at ?? now(),
             ]);

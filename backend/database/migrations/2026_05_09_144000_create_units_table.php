@@ -18,7 +18,7 @@ return new class extends Migration
             $blueprint->foreignId('rental_owner_id')->nullable()->constrained()->nullOnDelete();
             
             $blueprint->string('tipe', 100);
-            $blueprint->string('merk', 100);
+            $blueprint->string('merk', 100)->nullable();
             $blueprint->year('tahun');
             $blueprint->string('no_polisi', 20);
             

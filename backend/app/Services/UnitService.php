@@ -39,6 +39,26 @@ class UnitService
             $query->where('units.rental_owner_id', $filters['rental_owner_id']);
         }
 
+        if (isset($filters['without_modal']) && ($filters['without_modal'] === 'true' || $filters['without_modal'] === true || $filters['without_modal'] === '1' || $filters['without_modal'] === 1)) {
+            $query->where(function ($q) {
+                $q->where(function ($sub) {
+                    $sub->whereNull('units.rental_owner_id')
+                        ->where(function ($sub2) {
+                            $sub2->where('units.modal_1_hari', '<=', 0)
+                                 ->orWhereNull('units.modal_1_hari');
+                        });
+                })->orWhere(function ($sub) {
+                    $sub->whereNotNull('units.rental_owner_id')
+                        ->where(function ($sub2) {
+                            $sub2->where('units.modal_1_hari', '<=', 0)
+                                 ->orWhereNull('units.modal_1_hari')
+                                 ->orWhere('units.modal_all_in', '<=', 0)
+                                 ->orWhereNull('units.modal_all_in');
+                        });
+                });
+            });
+        }
+
         $searchTokens = $this->searchTokens($filters['search'] ?? null);
         if (! empty($searchTokens)) {
             $query->where(function ($q) use ($searchTokens) {
@@ -95,6 +115,7 @@ class UnitService
 
     public function create(array $data)
     {
+        $data = $this->normalizeNullableFields($data);
         $data['tenant_id'] = Auth::user()->tenant_id;
         // Jika branch_id tidak dikirim, gunakan branch user yang login
         if (!isset($data['branch_id'])) {
@@ -105,8 +126,18 @@ class UnitService
 
     public function update(Unit $unit, array $data)
     {
+        $data = $this->normalizeNullableFields($data);
         $unit->update($data);
         return $unit;
+    }
+
+    private function normalizeNullableFields(array $data): array
+    {
+        if (array_key_exists('merk', $data) && trim((string) $data['merk']) === '') {
+            $data['merk'] = null;
+        }
+
+        return $data;
     }
 
     public function delete(Unit $unit)

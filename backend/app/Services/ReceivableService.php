@@ -11,10 +11,14 @@ use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Services\PaymentAccountTransactionService;
 
 class ReceivableService
 {
-    public function __construct(private BookingBillingService $billingService) {}
+    public function __construct(
+        private BookingBillingService $billingService,
+        private PaymentAccountTransactionService $transactionService
+    ) {}
 
     public function list(array $filters = []): LengthAwarePaginator
     {
@@ -454,8 +458,17 @@ class ReceivableService
                 'invoice_id' => $invoice->id,
                 'payment_account_id' => $data['payment_account_id'],
                 'amount' => (int) $data['amount'],
-                'paid_at' => isset($data['paid_at']) ? Carbon::parse($data['paid_at']) : now(),
+                'paid_at' => \App\Helpers\DateHelper::parseDateWithCurrentTime($data['paid_at'] ?? null),
                 'created_by' => auth()->id(),
+            ]);
+
+            $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+            $this->transactionService->applyDelta($account, (int) $payment->amount, [
+                'type'           => 'invoice_payment_in',
+                'amount'         => (int) $payment->amount,
+                'description'    => "Pembayaran piutang invoice #{$invoice->invoice_number}",
+                'created_by'     => auth()->id(),
+                'transaction_at' => $payment->paid_at ?? now(),
             ]);
 
             $this->syncInvoicePaymentToBookings($invoice, $payment);

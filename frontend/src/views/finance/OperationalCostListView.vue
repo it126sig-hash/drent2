@@ -296,6 +296,11 @@ const formatDate = (value) => {
   return format(new Date(value), 'yyyy-MM-dd')
 }
 
+const formatDateTimeForApi = (value) => {
+  if (!value) return null
+  return format(new Date(value), 'yyyy-MM-dd HH:mm:ss')
+}
+
 const fundStatusSeverity = (status) => {
   if (status === 'accepted') return 'success'
   if (status === 'closed') return 'info'
@@ -670,7 +675,7 @@ const submitFund = async () => {
   await storeFund(selectedBooking.value.id, {
     ...fundForm.value,
     fund_type: fundMode.value,
-    paid_at: formatDate(fundForm.value.paid_at),
+    paid_at: formatDateTimeForApi(fundForm.value.paid_at),
   })
   showFundDialog.value = false
 }
@@ -1296,7 +1301,7 @@ onUnmounted(() => {
             </fieldset>
             <fieldset class="form-fieldset">
               <label>Tanggal Pembayaran</label>
-              <DatePicker v-model="fundForm.paid_at" dateFormat="dd M yy" showIcon class="w-full" />
+              <DatePicker v-model="fundForm.paid_at" dateFormat="dd M yy" showTime hourFormat="24" showIcon class="w-full" />
             </fieldset>
           </div>
           <fieldset class="form-fieldset">

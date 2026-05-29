@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Branch;
+use App\Models\City;
 use App\Models\RentalOwner;
 use App\Models\Tenant;
 use App\Models\Unit;
@@ -66,6 +67,126 @@ class UnitSearchTest extends TestCase
         $this->assertSame([$target->id], $multiTokenIds);
     }
 
+    public function test_unit_list_supports_filtering_units_without_modal(): void
+    {
+        $ctx = $this->context();
+        $abigail = $this->owner($ctx['tenant']->id, 'Abigail Rental');
+
+        // External units
+        $completeUnit = $this->unit($ctx, $abigail, [
+            'modal_1_hari' => 100000,
+            'modal_all_in' => 150000,
+        ]);
+        
+        $incompleteUnit1 = $this->unit($ctx, $abigail, [
+            'modal_1_hari' => 0,
+            'modal_all_in' => 150000,
+        ]);
+
+        $incompleteUnit2 = $this->unit($ctx, $abigail, [
+            'modal_1_hari' => 100000,
+            'modal_all_in' => 0,
+        ]);
+
+        // Internal units
+        $completeInternalUnit = $this->unit($ctx, $abigail, [
+            'rental_owner_id' => null,
+            'modal_1_hari' => 100000,
+            'modal_all_in' => 0, // not mandatory for internal
+        ]);
+
+        $incompleteInternalUnit = $this->unit($ctx, $abigail, [
+            'rental_owner_id' => null,
+            'modal_1_hari' => 0, // mandatory
+            'modal_all_in' => 0,
+        ]);
+
+        // Get all units
+        $allIds = collect($this->getJson('/api/v1/units?per_page=50')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('id')
+            ->all();
+        
+        $this->assertContains($completeUnit->id, $allIds);
+        $this->assertContains($incompleteUnit1->id, $allIds);
+        $this->assertContains($incompleteUnit2->id, $allIds);
+        $this->assertContains($completeInternalUnit->id, $allIds);
+        $this->assertContains($incompleteInternalUnit->id, $allIds);
+
+        // Get units without modal
+        $withoutModalIds = collect($this->getJson('/api/v1/units?without_modal=true&per_page=50')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('id')
+            ->all();
+
+        $this->assertNotContains($completeUnit->id, $withoutModalIds);
+        $this->assertContains($incompleteUnit1->id, $withoutModalIds);
+        $this->assertContains($incompleteUnit2->id, $withoutModalIds);
+        
+        // Internal unit with modal_1_hari set (but modal_all_in 0) is COMPLETE (not without_modal)
+        $this->assertNotContains($completeInternalUnit->id, $withoutModalIds);
+        // Internal unit with modal_1_hari 0 is INCOMPLETE (without_modal)
+        $this->assertContains($incompleteInternalUnit->id, $withoutModalIds);
+    }
+
+    public function test_unit_can_be_created_and_updated_without_merk(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, 'Abigail Rental');
+        $city = City::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'nama' => 'Jakarta',
+            'provinsi' => 'DKI Jakarta',
+            'is_active' => true,
+        ]);
+
+        $payload = [
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'rental_owner_id' => $owner->id,
+            'city_id' => $city->id,
+            'merk' => '',
+            'tipe' => 'Avanza',
+            'tahun' => 2024,
+            'no_polisi' => 'B 1234 NULL',
+            'harga_1_hari' => 300000,
+            'harga_1_minggu' => 1800000,
+            'harga_1_bulan' => 6000000,
+            'harga_all_in' => 350000,
+            'harga_all_in_1_minggu' => 2100000,
+            'harga_all_in_1_bulan' => 7000000,
+            'modal_1_hari' => 100000,
+            'modal_1_minggu' => 700000,
+            'modal_1_bulan' => 2500000,
+            'modal_all_in' => 150000,
+            'modal_all_in_1_minggu' => 1000000,
+            'modal_all_in_1_bulan' => 3500000,
+            'status' => 'Aktif',
+        ];
+
+        $unitId = $this->postJson('/api/v1/units', $payload)
+            ->assertCreated()
+            ->json('data.id');
+
+        $this->assertDatabaseHas('units', [
+            'id' => $unitId,
+            'merk' => null,
+        ]);
+
+        $this->putJson('/api/v1/units/' . $unitId, array_merge($payload, [
+            'merk' => null,
+            'tipe' => 'Innova',
+        ]))->assertOk();
+
+        $this->assertDatabaseHas('units', [
+            'id' => $unitId,
+            'merk' => null,
+            'tipe' => 'Innova',
+        ]);
+    }
+
     private function searchUnitIds(string $search): array
     {
         return collect($this->getJson('/api/v1/units?search=' . urlencode($search) . '&per_page=50')
@@ -90,6 +211,12 @@ class UnitSearchTest extends TestCase
         ]);
 
         Sanctum::actingAs($user);
+
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
+            'role' => 'admin_branch',
+            'permission_key' => 'vehicle.unit',
+        ]);
 
         return compact('tenant', 'branch', 'user');
     }

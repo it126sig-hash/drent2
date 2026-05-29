@@ -30,7 +30,7 @@ class DriverOperationalFund extends Model
 
     protected $casts = [
         'amount' => 'integer',
-        'paid_at' => 'date',
+        'paid_at' => 'datetime',
         'accepted_at' => 'datetime',
         'closed_at' => 'datetime',
     ];

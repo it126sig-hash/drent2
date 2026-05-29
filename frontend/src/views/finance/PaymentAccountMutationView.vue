@@ -32,6 +32,8 @@ const {
 } = useFinanceCategory()
 
 const activeTab = ref('transfer')
+const showMutationDialog = ref(false)
+const showCategoryListDialog = ref(false)
 const filters = ref({
   payment_account_id: null,
   type: null,
@@ -82,10 +84,9 @@ const transactionTypeOptions = [
   { label: 'Pengeluaran Lain-lain', value: 'other_expense' },
   { label: 'Adjust Saldo', value: 'balance_adjustment' },
 ]
-const tabs = [
+const mutationTabs = [
   { key: 'transfer', label: 'Transfer Rekening', icon: 'pi pi-arrow-right-arrow-left' },
   { key: 'other', label: 'Lain-lain', icon: 'pi pi-file-edit' },
-  { key: 'categories', label: 'Kategori', icon: 'pi pi-tags' },
 ]
 
 const visibleTransactionCount = computed(() => transactions.value.length)
@@ -192,6 +193,7 @@ const submitTransfer = () => {
         await transfer({ ...transferForm.value, transaction_at: toApiDate(transferForm.value.transaction_at) })
         toast.add({ severity: 'success', summary: 'Sukses', detail: 'Transfer rekening berhasil dicatat', life: 3000 })
         resetTransferForm()
+        showMutationDialog.value = false
         await refreshData()
       } catch (err) {
         showError(err)
@@ -216,6 +218,7 @@ const submitOther = () => {
         await other({ ...otherForm.value, transaction_at: toApiDate(otherForm.value.transaction_at) })
         toast.add({ severity: 'success', summary: 'Sukses', detail: 'Transaksi lain-lain berhasil dicatat', life: 3000 })
         resetOtherForm()
+        showMutationDialog.value = false
         await refreshData()
       } catch (err) {
         showError(err)
@@ -303,118 +306,14 @@ const showError = (err) => {
         </div>
       </div>
       <div class="header-actions">
-        <div class="tab-toggle-container">
-          <div class="pill-toggle">
-            <button v-for="tab in tabs" :key="tab.key" class="toggle-item" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
-              <i :class="tab.icon"></i>
-              <span>{{ tab.label }}</span>
-            </button>
-          </div>
-        </div>
-        <button class="btn-pill btn-primary" type="button" @click="openCategory()">
-          <i class="pi pi-plus"></i>
-          <span>Tambah Kategori</span>
+        <button class="btn-pill btn-secondary" type="button" @click="showCategoryListDialog = true">
+          <i class="pi pi-tags"></i>
+          <span>Kelola Kategori</span>
         </button>
-      </div>
-    </div>
-
-    <div class="entry-shell app-card">
-      <div v-if="activeTab === 'transfer'" class="entry-grid">
-        <div class="field">
-          <label>Rekening Asal</label>
-          <Dropdown v-model="transferForm.from_payment_account_id" :options="accountOptions" optionLabel="label" optionValue="value" placeholder="Pilih rekening asal" filter class="w-full" />
-        </div>
-        <div class="field">
-          <label>Rekening Tujuan</label>
-          <Dropdown v-model="transferForm.to_payment_account_id" :options="accountOptions" optionLabel="label" optionValue="value" placeholder="Pilih rekening tujuan" filter class="w-full" />
-        </div>
-        <div class="field">
-          <label>Nominal</label>
-          <InputNumber v-model="transferForm.amount" mode="currency" currency="IDR" locale="id-ID" :min="1" class="w-full" />
-        </div>
-        <div class="field">
-          <label>Tanggal</label>
-          <DatePicker v-model="transferForm.transaction_at" showTime hourFormat="24" class="w-full" />
-        </div>
-        <div class="field span-2">
-          <label>Catatan</label>
-          <Textarea v-model="transferForm.description" rows="2" class="w-full" />
-        </div>
-        <div class="form-actions">
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" :disabled="actionLoading" @click="resetTransferForm">
-            <i class="pi pi-refresh"></i>
-            Reset
-          </button>
-          <button class="btn-pill btn-primary btn-pill-compact" type="button" :disabled="!transferForm.from_payment_account_id || !transferForm.to_payment_account_id || !transferForm.amount || actionLoading" @click="submitTransfer">
-            <i :class="actionLoading ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
-            Simpan Transfer
-          </button>
-        </div>
-      </div>
-
-      <div v-else-if="activeTab === 'other'" class="entry-grid">
-        <div class="field">
-          <label>Tipe</label>
-          <Dropdown v-model="otherForm.type" :options="typeOptions" optionLabel="label" optionValue="value" class="w-full" @change="otherForm.finance_category_id = null" />
-        </div>
-        <div class="field">
-          <label>Rekening</label>
-          <Dropdown v-model="otherForm.payment_account_id" :options="accountOptions" optionLabel="label" optionValue="value" placeholder="Pilih rekening" filter class="w-full" />
-        </div>
-        <div class="field">
-          <label>Kategori</label>
-          <Dropdown v-model="otherForm.finance_category_id" :options="categoryOptions" optionLabel="label" optionValue="value" placeholder="Pilih kategori" filter class="w-full" />
-        </div>
-        <div class="field">
-          <label>Nominal</label>
-          <InputNumber v-model="otherForm.amount" mode="currency" currency="IDR" locale="id-ID" :min="1" class="w-full" />
-        </div>
-        <div class="field">
-          <label>Tanggal</label>
-          <DatePicker v-model="otherForm.transaction_at" showTime hourFormat="24" class="w-full" />
-        </div>
-        <div class="field">
-          <label>Catatan</label>
-          <Textarea v-model="otherForm.description" rows="2" class="w-full" />
-        </div>
-        <div class="form-actions">
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" :disabled="actionLoading" @click="resetOtherForm">
-            <i class="pi pi-refresh"></i>
-            Reset
-          </button>
-          <button class="btn-pill btn-primary btn-pill-compact" type="button" :disabled="!otherForm.payment_account_id || !otherForm.finance_category_id || !otherForm.amount || actionLoading" @click="submitOther">
-            <i :class="actionLoading ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
-            Simpan Transaksi
-          </button>
-        </div>
-      </div>
-
-      <div v-else class="category-list">
-        <DataTable :value="categories" :loading="categoryLoading" responsiveLayout="scroll" class="drent-datatable compact-table" stripedRows>
-          <Column field="name" header="Kategori" />
-          <Column field="type" header="Tipe">
-            <template #body="{ data }">
-              <Tag :value="data.type === 'income' ? 'Pemasukan' : 'Pengeluaran'" :severity="data.type === 'income' ? 'success' : 'danger'" />
-            </template>
-          </Column>
-          <Column field="is_active" header="Status">
-            <template #body="{ data }">
-              <Tag :value="data.is_active ? 'Aktif' : 'Nonaktif'" :severity="data.is_active ? 'success' : 'secondary'" />
-            </template>
-          </Column>
-          <Column header="Aksi" style="width: 9rem">
-            <template #body="{ data }">
-              <div class="action-pill-group">
-                <button class="action-btn" type="button" title="Edit" @click="openCategory(data)">
-                  <i class="pi pi-pencil"></i>
-                </button>
-                <button class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDeleteCategory(data)">
-                  <i class="pi pi-trash"></i>
-                </button>
-              </div>
-            </template>
-          </Column>
-        </DataTable>
+        <button class="btn-pill btn-primary" type="button" @click="showMutationDialog = true">
+          <i class="pi pi-plus"></i>
+          <span>Catat Mutasi</span>
+        </button>
       </div>
     </div>
 
@@ -555,6 +454,129 @@ const showError = (err) => {
       </div>
     </div>
 
+    <!-- Dialog Catat Mutasi -->
+    <Dialog v-model:visible="showMutationDialog" header="Catat Mutasi Rekening" modal class="custom-dialog" :style="{ width: '560px' }">
+      <div class="tab-toggle-container mb-4">
+        <div class="pill-toggle w-full">
+          <button v-for="tab in mutationTabs" :key="tab.key" class="toggle-item flex-1 text-center" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
+            <i :class="tab.icon" class="mr-1"></i>
+            <span>{{ tab.label }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="activeTab === 'transfer'" class="form-grid">
+        <div class="field">
+          <label>Rekening Asal</label>
+          <Dropdown v-model="transferForm.from_payment_account_id" :options="accountOptions" optionLabel="label" optionValue="value" placeholder="Pilih rekening asal" filter class="w-full" />
+        </div>
+        <div class="field">
+          <label>Rekening Tujuan</label>
+          <Dropdown v-model="transferForm.to_payment_account_id" :options="accountOptions" optionLabel="label" optionValue="value" placeholder="Pilih rekening tujuan" filter class="w-full" />
+        </div>
+        <div class="field">
+          <label>Nominal</label>
+          <InputNumber v-model="transferForm.amount" mode="currency" currency="IDR" locale="id-ID" :min="1" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Tanggal</label>
+          <DatePicker v-model="transferForm.transaction_at" showTime hourFormat="24" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Catatan</label>
+          <Textarea v-model="transferForm.description" rows="2" class="w-full" />
+        </div>
+      </div>
+
+      <div v-else-if="activeTab === 'other'" class="form-grid">
+        <div class="field">
+          <label>Tipe</label>
+          <Dropdown v-model="otherForm.type" :options="typeOptions" optionLabel="label" optionValue="value" class="w-full" @change="otherForm.finance_category_id = null" />
+        </div>
+        <div class="field">
+          <label>Rekening</label>
+          <Dropdown v-model="otherForm.payment_account_id" :options="accountOptions" optionLabel="label" optionValue="value" placeholder="Pilih rekening" filter class="w-full" />
+        </div>
+        <div class="field">
+          <label>Kategori</label>
+          <Dropdown v-model="otherForm.finance_category_id" :options="categoryOptions" optionLabel="label" optionValue="value" placeholder="Pilih kategori" filter class="w-full" />
+        </div>
+        <div class="field">
+          <label>Nominal</label>
+          <InputNumber v-model="otherForm.amount" mode="currency" currency="IDR" locale="id-ID" :min="1" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Tanggal</label>
+          <DatePicker v-model="otherForm.transaction_at" showTime hourFormat="24" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Catatan</label>
+          <Textarea v-model="otherForm.description" rows="2" class="w-full" />
+        </div>
+      </div>
+
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" type="button" :disabled="actionLoading" @click="showMutationDialog = false">
+          <i class="pi pi-times"></i>
+          Batal
+        </button>
+        <button v-if="activeTab === 'transfer'" class="app-dialog-button app-dialog-button-primary" type="button" :disabled="!transferForm.from_payment_account_id || !transferForm.to_payment_account_id || !transferForm.amount || actionLoading" @click="submitTransfer">
+          <i :class="actionLoading ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
+          Simpan Transfer
+        </button>
+        <button v-else class="app-dialog-button app-dialog-button-primary" type="button" :disabled="!otherForm.payment_account_id || !otherForm.finance_category_id || !otherForm.amount || actionLoading" @click="submitOther">
+          <i :class="actionLoading ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
+          Simpan Transaksi
+        </button>
+      </template>
+    </Dialog>
+
+    <!-- Dialog Kelola Kategori -->
+    <Dialog v-model:visible="showCategoryListDialog" header="Kelola Kategori Keuangan" modal class="custom-dialog" :style="{ width: '800px' }">
+      <div class="dialog-header-action mb-3">
+        <p class="text-secondary text-xs m-0">Daftar kategori untuk klasifikasi pemasukan dan pengeluaran lain-lain.</p>
+        <button class="btn-pill btn-primary btn-pill-compact" type="button" @click="openCategory()">
+          <i class="pi pi-plus"></i>
+          <span>Tambah Kategori</span>
+        </button>
+      </div>
+
+      <div class="category-list">
+        <DataTable :value="categories" :loading="categoryLoading" responsiveLayout="scroll" class="drent-datatable compact-table" stripedRows :paginator="true" :rows="5">
+          <Column field="name" header="Kategori" />
+          <Column field="type" header="Tipe">
+            <template #body="{ data }">
+              <Tag :value="data.type === 'income' ? 'Pemasukan' : 'Pengeluaran'" :severity="data.type === 'income' ? 'success' : 'danger'" />
+            </template>
+          </Column>
+          <Column field="is_active" header="Status">
+            <template #body="{ data }">
+              <Tag :value="data.is_active ? 'Aktif' : 'Nonaktif'" :severity="data.is_active ? 'success' : 'secondary'" />
+            </template>
+          </Column>
+          <Column header="Aksi" style="width: 9rem">
+            <template #body="{ data }">
+              <div class="action-pill-group">
+                <button class="action-btn" type="button" title="Edit" @click="openCategory(data)">
+                  <i class="pi pi-pencil"></i>
+                </button>
+                <button class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDeleteCategory(data)">
+                  <i class="pi pi-trash"></i>
+                </button>
+              </div>
+            </template>
+          </Column>
+        </DataTable>
+      </div>
+
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" type="button" @click="showCategoryListDialog = false">
+          <i class="pi pi-times"></i>
+          Tutup
+        </button>
+      </template>
+    </Dialog>
+
     <Dialog v-model:visible="showCategoryDialog" :header="categoryForm.id ? 'Edit Kategori' : 'Tambah Kategori'" modal class="custom-dialog" :style="{ width: '440px' }">
       <div class="form-grid">
         <div class="field">
@@ -591,6 +613,18 @@ const showError = (err) => {
 </template>
 
 <style scoped>
+.dialog-header-action { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; }
+.flex-1 { flex: 1; }
+.text-center { text-align: center; }
+.mr-1 { margin-right: 4px; }
+.mb-3 { margin-bottom: 12px; }
+.mb-4 { margin-bottom: 16px; }
+.flex { display: flex; }
+.justify-between { justify-content: space-between; }
+.align-center { align-items: center; }
+.m-0 { margin: 0; }
+.w-full { width: 100%; }
+
 .payment-mutation-page { display: flex; flex-direction: column; gap: var(--space-lg); background: var(--page-bg); }
 .payment-mutation-page .page-header { margin-bottom: var(--space-md); }
 .entry-shell { padding: var(--space-lg); }

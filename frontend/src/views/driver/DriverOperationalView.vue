@@ -198,7 +198,7 @@ onMounted(async () => {
         </div>
         <div class="fund-amount">{{ formatCurrency(fund.amount) }}</div>
         <div class="info-grid">
-          <span>Tanggal</span><strong>{{ fund.paid_at || '-' }}</strong>
+          <span>Tanggal</span><strong>{{ formatDateTime(fund.paid_at) }}</strong>
           <span>Tujuan</span><strong>{{ fund.recipient_destination }}</strong>
           <span>Sisa</span><strong>{{ formatCurrency(fund.summary.remaining_amount) }}</strong>
         </div>

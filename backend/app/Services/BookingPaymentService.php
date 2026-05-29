@@ -37,7 +37,7 @@ class BookingPaymentService
         return DB::transaction(function () use ($booking, $data) {
             $data['booking_id'] = $booking->id;
             $data['created_by'] = Auth::id();
-            $data['paid_at'] = $data['paid_at'] ?? now();
+            $data['paid_at'] = \App\Helpers\DateHelper::parseDateWithCurrentTime($data['paid_at'] ?? null);
 
             $payment = BookingPayment::create($data);
 

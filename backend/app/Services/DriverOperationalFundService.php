@@ -153,7 +153,7 @@ class DriverOperationalFundService
                 'payment_account_id' => $data['payment_account_id'],
                 'fund_type' => $fundType,
                 'amount' => $data['amount'],
-                'paid_at' => $data['paid_at'],
+                'paid_at' => \App\Helpers\DateHelper::parseDateWithCurrentTime($data['paid_at'] ?? null),
                 'recipient_destination' => $data['recipient_destination'],
                 'notes' => $data['notes'] ?? null,
                 'status' => $fundType === 'salary' ? 'closed' : ($isOperationalWithoutLogin ? 'accepted' : 'pending_driver_acceptance'),
@@ -354,7 +354,7 @@ class DriverOperationalFundService
                 'amount' => (int) $fund->amount,
                 'direction' => 'out',
                 'status' => $fund->status,
-                'happened_at' => $fund->paid_at?->format('Y-m-d') ?? $fund->created_at?->toISOString(),
+                'happened_at' => $fund->paid_at?->toISOString() ?? $fund->created_at?->toISOString(),
                 'payment_account' => $fund->paymentAccount ? [
                     'id' => $fund->paymentAccount->id,
                     'nama_bank' => $fund->paymentAccount->nama_bank,

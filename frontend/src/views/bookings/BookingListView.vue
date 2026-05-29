@@ -6,7 +6,7 @@ import { getRentalOwners } from '../../api/rentalOwner';
 import { useCity } from '../../composables/useCity';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import BookingCalendar from '../../components/bookings/BookingCalendar.vue';
-import { format, addDays, addMonths, subMonths, startOfMonth } from 'date-fns';
+import { format, addMonths, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -63,7 +63,7 @@ const showAdvancedFilters = ref(false);
 const calendarOwnerFilter = ref(null);
 const calendarVehicleSearch = ref('');
 
-const calendarEnd = computed(() => format(addDays(new Date(calendarStart.value), 29), 'yyyy-MM-dd'));
+const calendarEnd = computed(() => format(endOfMonth(new Date(calendarStart.value)), 'yyyy-MM-dd'));
 
 const normalizeDateKey = (value) => {
   if (!value) return null;
@@ -192,6 +192,7 @@ const closedStatusOptions = statusOptions.filter(option => closedTabStatusValues
 const currentStatusOptions = computed(() => activeTab.value === 1 ? closedStatusOptions : activeStatusOptions);
 const selectedStatusFilters = ref([]);
 const selectedClosedStatusFilters = ref([]);
+const selectedCityFilter = ref(null);
 
 const sortOptions = [
   { label: 'Terbaru dibuat', value: 'created_at:desc' },
@@ -261,6 +262,11 @@ const onCityDropdownShow = async () => {
   await searchCities('');
 };
 
+const onCityChange = (event) => {
+  filters.value.kota = event.value?.nama || null;
+  applyFilters();
+};
+
 const loadFilterOptions = async () => {
   await Promise.allSettled([
     searchCities(''),
@@ -296,6 +302,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (citySearchTimer) clearTimeout(citySearchTimer);
   window.removeEventListener('resize', handleResize);
 });
 
@@ -339,6 +346,7 @@ const resetFilters = () => {
   filters.value.rental_owner_id = null;
   selectedOwnerFilter.value = null;
   filters.value.kota = null;
+  selectedCityFilter.value = null;
   selectedSort.value = 'created_at:desc';
   applyFilters();
 };
@@ -750,7 +758,7 @@ const getBookingCardClass = (booking) => {
           </div>
           <div class="filter-group filter-group-city">
             <label>Kota</label>
-            <Dropdown v-model="filters.kota" :options="cities" optionLabel="nama" optionValue="nama" placeholder="Semua Kota" showClear filter :loading="loadingCities" @filter="onCityFilter" @show="onCityDropdownShow" @change="applyFilters" class="w-full md:w-40" />
+            <Dropdown v-model="selectedCityFilter" :options="cities" optionLabel="nama" placeholder="Semua Kota" showClear filter :loading="loadingCities" @filter="onCityFilter" @show="onCityDropdownShow" @change="onCityChange" class="w-full md:w-40" />
           </div>
           <div v-if="showAdvancedFilters" class="advanced-filter-groups">
             <div class="filter-group">

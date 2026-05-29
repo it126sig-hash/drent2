@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Booking;
 use App\Models\BookingPayment;
 use App\Models\Invoice;
+use App\Models\PaymentAccountTransaction;
 use App\Models\PhysicalCheck;
 use App\Models\RentToRentBill;
 use App\Models\Unit;
@@ -30,9 +31,10 @@ class DashboardService
                 'label' => $this->periodLabel($dateFrom, $dateTo),
             ],
             'kpis' => $this->kpis($dateFrom, $dateTo, $user, $branchId),
-            'booking_today' => $this->bookingToday($user, $branchId),
+            'booking_today' => $this->bookingToday($dateFrom, $dateTo, $user, $branchId),
             'armada_status' => $this->armadaStatus($user, $branchId),
             'finance_snapshot' => $this->financeSnapshot($dateFrom, $dateTo, $user, $branchId),
+            'cashflow_summary' => $this->cashflowSummary($dateFrom, $dateTo, $user, $branchId),
             'alerts' => $this->alerts($user, $branchId),
             'repeat_order_leaderboards' => $this->repeatOrderLeaderboards($dateFrom, $dateTo, $user, $branchId),
         ];
@@ -153,21 +155,15 @@ class DashboardService
         ];
     }
 
-    private function bookingToday(User $user, ?int $branchId): array
+    private function bookingToday(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId): array
     {
-        $today = now();
-
         return $this->scopeTenantBranch(Booking::query(), $user, $branchId)
-            ->with(['customer', 'bookingDetails.unit.rentalOwner'])
-            ->where(function (Builder $query) use ($today) {
-                $query->where('status', 'rental_unit')
-                    ->orWhereHas('bookingDetails', function (Builder $detail) use ($today) {
-                        $detail->whereDate('tgl_sewa', $today->toDateString())
-                            ->orWhereDate('tgl_kembali', $today->toDateString());
-                    });
+            ->with(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.costs'])
+            ->whereHas('bookingDetails', function (Builder $detail) use ($dateFrom, $dateTo) {
+                $detail->whereBetween('tgl_sewa', [$dateFrom, $dateTo]);
             })
             ->latest('updated_at')
-            ->limit(8)
+            ->limit(15)
             ->get()
             ->map(fn (Booking $booking) => $this->bookingRow($booking))
             ->values()
@@ -238,6 +234,76 @@ class DashboardService
                 ->get()
                 ->sum(fn (RentToRentBill $bill) => max(0, (int) $bill->total_amount - (int) $bill->paid_amount)),
             'latest_payments' => $latestPayments,
+        ];
+    }
+
+    private function cashflowSummary(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId): array
+    {
+        $transactions = PaymentAccountTransaction::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->when($branchId, fn (Builder $query) => $query->where('branch_id', $branchId))
+            ->whereBetween('transaction_at', [$dateFrom, $dateTo])
+            ->get();
+
+        $incomeItems = [
+            [
+                'key' => 'rental_income',
+                'label' => 'Pendapatan Rental',
+                'amount' => (int) $transactions
+                    ->whereIn('type', ['booking_payment_in', 'invoice_payment_in', 'booking_payment_void', 'invoice_payment_void'])
+                    ->sum('signed_amount'),
+                'tone' => 'positive',
+            ],
+            [
+                'key' => 'other_income',
+                'label' => 'Pemasukan Lainnya',
+                'amount' => (int) $transactions
+                    ->whereIn('type', ['other_income', 'driver_return_in'])
+                    ->sum('signed_amount'),
+                'tone' => 'info',
+            ],
+        ];
+
+        $expenseItems = [
+            [
+                'key' => 'refunds',
+                'label' => 'Refund',
+                'amount' => (int) -$transactions->whereIn('type', ['refund_out'])->sum('signed_amount'),
+                'tone' => 'negative',
+            ],
+            [
+                'key' => 'operational_funds',
+                'label' => 'Bon & Operasional',
+                'amount' => (int) -$transactions
+                    ->whereIn('type', ['driver_fund_out', 'driver_direct_expense_out', 'driver_fund_void', 'driver_direct_expense_void'])
+                    ->sum('signed_amount'),
+                'tone' => 'warning',
+            ],
+            [
+                'key' => 'rent_to_rent',
+                'label' => 'Bayar Rent-to-Rent',
+                'amount' => (int) -$transactions
+                    ->whereIn('type', ['rent_to_rent_payment_out', 'rent_to_rent_payment_void'])
+                    ->sum('signed_amount'),
+                'tone' => 'info',
+            ],
+            [
+                'key' => 'other_expense',
+                'label' => 'Pengeluaran Lainnya',
+                'amount' => (int) -$transactions->whereIn('type', ['other_expense'])->sum('signed_amount'),
+                'tone' => 'neutral',
+            ],
+        ];
+
+        $incomeTotal = collect($incomeItems)->sum('amount');
+        $expenseTotal = collect($expenseItems)->sum('amount');
+
+        return [
+            'income_total' => (int) $incomeTotal,
+            'expense_total' => (int) $expenseTotal,
+            'net_cash' => (int) $incomeTotal - (int) $expenseTotal,
+            'income_items' => $incomeItems,
+            'expense_items' => $expenseItems,
         ];
     }
 
@@ -382,6 +448,10 @@ class DashboardService
         $end = $details->max('tgl_kembali');
         $isLate = $booking->status === 'rental_unit' && $end && Carbon::parse($end)->isPast();
 
+        $billingService = app(\App\Services\BookingBillingService::class);
+        $totalTagihan = $billingService->totalTagihan($booking);
+        $hasUnit = $details->whereNotNull('unit_id')->isNotEmpty();
+
         return [
             'id' => $booking->id,
             'kode_booking' => $booking->kode_booking,
@@ -398,6 +468,11 @@ class DashboardService
                 ->unique()
                 ->values()
                 ->join(', '),
+            'unit_id' => $details->first()?->unit_id,
+            'has_unit' => $hasUnit,
+            'total_biaya' => [
+                'total' => $totalTagihan,
+            ],
         ];
     }
 

@@ -38,35 +38,40 @@ const router = createRouter({
           component: () => import("../views/DashboardView.vue"),
         },
         {
+          path: "/profile",
+          name: "profile",
+          component: () => import("../views/profile/UserProfileView.vue"),
+        },
+        {
           path: "/rental-owners",
           name: "rental-owners",
           component: () =>
             import("../views/rental-owners/RentalOwnerListView.vue"),
-          meta: { keepAlive: true },
+          
         },
         {
           path: "/units",
           name: "units",
           component: () => import("../views/units/UnitListView.vue"),
-          meta: { keepAlive: true },
+          
         },
         {
           path: "/drivers",
           name: "drivers",
           component: () => import("../views/drivers/DriverListView.vue"),
-          meta: { keepAlive: true },
+          
         },
         {
           path: "/customers",
           name: "customers",
           component: () => import("../views/customers/CustomerListView.vue"),
-          meta: { keepAlive: true },
+          
         },
         {
           path: "/mdm/members",
           name: "members",
           component: () => import("../views/members/MemberListView.vue"),
-          meta: { keepAlive: true },
+          
         },
         {
           path: "/mdm/members/create",
@@ -118,14 +123,14 @@ const router = createRouter({
           path: "/bookings",
           name: "BookingList",
           component: () => import("../views/bookings/BookingListView.vue"),
-          meta: { keepAlive: true },
+          
         },
         {
           path: "/supervisor/requests",
           name: "SupervisorRequests",
           component: () =>
             import("../views/supervisor/SupervisorRequestListView.vue"),
-          meta: { permission: "booking.supervisor_request", keepAlive: true },
+          meta: { permission: "booking.supervisor_request", keepAlive: false },
         },
         {
           path: "/bookings/create",
@@ -147,37 +152,37 @@ const router = createRouter({
           name: "PhysicalCheckList",
           component: () =>
             import("../views/physical-checks/PhysicalCheckListView.vue"),
-          meta: { keepAlive: true },
+          
         },
         {
           path: "/finance/receivables",
           name: "ReceivableList",
           component: () => import("../views/finance/ReceivableListView.vue"),
-          meta: { permission: "finance.receivable", keepAlive: true },
+          meta: { permission: "finance.receivable", keepAlive: false },
         },
         {
           path: "/finance/operational-costs",
           name: "OperationalCostList",
           component: () => import("../views/finance/OperationalCostListView.vue"),
-          meta: { permission: "finance.operational_cost", keepAlive: true },
+          meta: { permission: "finance.operational_cost", keepAlive: false },
         },
         {
           path: "/finance/rent-to-rent",
           name: "RentToRentList",
           component: () => import("../views/finance/RentToRentListView.vue"),
-          meta: { permission: "finance.rent_to_rent", keepAlive: true },
+          meta: { permission: "finance.rent_to_rent", keepAlive: false },
         },
         {
           path: "/finance/transactions",
           name: "TransactionList",
           component: () => import("../views/finance/TransactionListView.vue"),
-          meta: { permission: "finance.transaction", keepAlive: true },
+          meta: { permission: "finance.transaction", keepAlive: false },
         },
         {
           path: "/finance/account-mutations",
           name: "PaymentAccountMutations",
           component: () => import("../views/finance/PaymentAccountMutationView.vue"),
-          meta: { permission: "finance.account_mutation", keepAlive: true },
+          meta: { permission: "finance.account_mutation", keepAlive: false },
         },
         {
           path: "/reports/transactions",

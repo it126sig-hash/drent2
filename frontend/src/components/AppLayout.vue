@@ -14,6 +14,8 @@ const sidebarHovered = ref(false)
 const mobileSidebarVisible = ref(false)
 
 const isSidebarCompact = computed(() => sidebarCollapsed.value && !sidebarHovered.value)
+const userInitials = computed(() => authStore.user?.name?.substring(0, 2).toUpperCase() || 'US')
+const userPhotoUrl = computed(() => authStore.user?.foto_profile_url || null)
 
 const toggleSidebar = () => {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -138,7 +140,7 @@ const filteredMenuSections = computed(() => {
     >
       <div class="sidebar-panel">
         <div class="sidebar-header">
-          <h1 v-if="!isSidebarCompact" class="logo-text">DRENT <span class="tosca-text">Vibe</span></h1>
+          <img v-if="!isSidebarCompact" class="app-logo app-logo-sidebar" src="/logo.svg" alt="DRENT Vibe" />
           <button
             class="sidebar-toggle-btn"
             type="button"
@@ -174,13 +176,20 @@ const filteredMenuSections = computed(() => {
         </nav>
 
         <div class="sidebar-footer">
-          <div class="user-avatar-initials">
-            {{ authStore.user?.name?.substring(0, 2).toUpperCase() }}
-          </div>
-          <div v-if="!isSidebarCompact" class="user-info">
-            <span class="user-name">{{ authStore.user?.name }}</span>
-            <span class="user-role">{{ authStore.user?.role }}</span>
-          </div>
+          <RouterLink
+            to="/profile"
+            class="sidebar-profile-link"
+            v-tooltip.right="isSidebarCompact ? 'Profil User' : null"
+          >
+            <div class="user-avatar-initials">
+              <img v-if="userPhotoUrl" :src="userPhotoUrl" alt="Foto profil" />
+              <span v-else>{{ userInitials }}</span>
+            </div>
+            <div v-if="!isSidebarCompact" class="user-info">
+              <span class="user-name">{{ authStore.user?.name }}</span>
+              <span class="user-role">{{ authStore.user?.role }}</span>
+            </div>
+          </RouterLink>
           <button class="logout-btn" @click="handleLogout" v-tooltip.right="'Logout'">
             <i class="pi pi-power-off"></i>
           </button>
@@ -193,12 +202,13 @@ const filteredMenuSections = computed(() => {
       <button class="menu-btn" @click="toggleMobileSidebar">
         <i class="pi pi-bars"></i>
       </button>
-      <h1 class="logo-text-mobile">DRENT <span class="tosca-text">Vibe</span></h1>
+      <img class="app-logo app-logo-mobile" src="/logo.svg" alt="DRENT Vibe" />
       <div class="mobile-header-right">
         <i class="pi pi-bell text-secondary"></i>
-        <div class="user-avatar-mini">
-           {{ authStore.user?.name?.substring(0, 2).toUpperCase() }}
-        </div>
+        <RouterLink to="/profile" class="user-avatar-mini">
+          <img v-if="userPhotoUrl" :src="userPhotoUrl" alt="Foto profil" />
+          <span v-else>{{ userInitials }}</span>
+        </RouterLink>
       </div>
     </header>
 
@@ -206,7 +216,7 @@ const filteredMenuSections = computed(() => {
     <div class="mobile-sidebar-overlay" v-if="mobileSidebarVisible" @click="toggleMobileSidebar"></div>
     <aside class="mobile-sidebar-drawer" :class="{ 'visible': mobileSidebarVisible }">
        <div class="drawer-header">
-          <h1 class="logo-text">DRENT <span class="tosca-text">Vibe</span></h1>
+          <img class="app-logo app-logo-drawer" src="/logo.svg" alt="DRENT Vibe" />
           <button class="close-btn" @click="toggleMobileSidebar"><i class="pi pi-times"></i></button>
        </div>
        <nav class="drawer-nav">
@@ -231,6 +241,9 @@ const filteredMenuSections = computed(() => {
         </div>
        </nav>
        <div class="drawer-footer">
+          <RouterLink class="btn-pill btn-secondary w-full drawer-profile-btn" to="/profile" @click="mobileSidebarVisible = false">
+             <i class="pi pi-user"></i> Profil User
+          </RouterLink>
           <button class="btn-pill btn-secondary w-full" @click="handleLogout">
              <i class="pi pi-power-off"></i> Logout
           </button>
@@ -346,17 +359,17 @@ const filteredMenuSections = computed(() => {
   padding: 0;
 }
 
-.logo-text {
-  font-family: var(--font-headline);
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #FFFFFF;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.app-logo {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
-.tosca-text { color: #7DD3FC; }
+.app-logo-sidebar {
+  width: 126px;
+  height: 36px;
+  object-position: left center;
+}
 
 .sidebar-toggle-btn {
   width: 34px;
@@ -504,6 +517,20 @@ const filteredMenuSections = computed(() => {
   padding: var(--space-md) 0;
 }
 
+.sidebar-profile-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  color: inherit;
+  text-decoration: none;
+}
+
+.sidebar-compact .sidebar-profile-link {
+  flex: 0 0 auto;
+}
+
 .user-avatar-initials {
   width: 32px;
   height: 32px;
@@ -516,6 +543,14 @@ const filteredMenuSections = computed(() => {
   justify-content: center;
   font-weight: 600;
   font-size: 12px;
+  overflow: hidden;
+}
+
+.user-avatar-initials img,
+.user-avatar-mini img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .user-info {
@@ -576,11 +611,9 @@ const filteredMenuSections = computed(() => {
   z-index: 90;
 }
 
-.logo-text-mobile {
-  font-family: var(--font-headline);
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
+.app-logo-mobile {
+  width: 116px;
+  height: 32px;
 }
 
 .menu-btn {
@@ -606,6 +639,9 @@ const filteredMenuSections = computed(() => {
    justify-content: center;
    font-size: 10px;
    font-weight: 700;
+   color: var(--text-primary);
+   text-decoration: none;
+   overflow: hidden;
 }
 
 .mobile-bottom-nav {
@@ -677,6 +713,12 @@ const filteredMenuSections = computed(() => {
    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.app-logo-drawer {
+   width: 132px;
+   height: 38px;
+   object-position: left center;
+}
+
 .drawer-nav {
    flex: 1;
    padding: var(--space-lg);
@@ -692,6 +734,9 @@ const filteredMenuSections = computed(() => {
 .drawer-footer {
    padding: var(--space-lg);
    border-top: 1px solid rgba(255, 255, 255, 0.08);
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-sm);
 }
 
 .drawer-footer .btn-secondary {
@@ -702,6 +747,11 @@ const filteredMenuSections = computed(() => {
 
 .drawer-footer .btn-secondary:hover {
    background: rgba(255, 255, 255, 0.16);
+}
+
+.drawer-profile-btn {
+   justify-content: center;
+   text-decoration: none;
 }
 
 .close-btn { background: none; border: none; font-size: 1.2rem; color: rgba(255, 255, 255, 0.72); }

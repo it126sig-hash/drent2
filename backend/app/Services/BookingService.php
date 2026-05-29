@@ -136,11 +136,9 @@ class BookingService
 
             // 8. Create BookingPayment record for DP
             if ($hasDp) {
-                $dpPaidAt = isset($data['dp_paid_at'])
-                    ? Carbon::parse($data['dp_paid_at'])->format('Y-m-d H:i:s')
-                    : now();
+                $dpPaidAt = \App\Helpers\DateHelper::parseDateWithCurrentTime($data['dp_paid_at'] ?? null);
 
-                BookingPayment::create([
+                $payment = BookingPayment::create([
                     'booking_id' => $booking->id,
                     'payment_account_id' => $data['rekening_dp_id'],
                     'amount' => $data['dp'],
@@ -149,24 +147,54 @@ class BookingService
                     'paid_at' => $dpPaidAt,
                     'created_by' => auth()->id(),
                 ]);
+
+                $account = \App\Models\PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+                app(\App\Services\PaymentAccountTransactionService::class)->applyDelta($account, (int) $payment->amount, [
+                    'type' => 'booking_payment_in',
+                    'amount' => (int) $payment->amount,
+                    'description' => "Pembayaran booking #{$booking->kode_booking} ({$payment->payment_type})",
+                    'created_by' => auth()->id(),
+                    'transaction_at' => $payment->paid_at ?? now(),
+                ]);
             }
 
             return $booking->load(['customer', 'createdBy', 'confirmedBy', 'bookingDetails.unit.rentalOwner', 'payments.creator']);
         });
     }
 
-    /**
-     * Assign a unit and driver to a booking.
-     */
     public function assignDetail(Booking $booking, array $data): BookingDetail
     {
         return DB::transaction(function () use ($booking, $data) {
+            $modalMobil = 0;
+            if (!empty($data['unit_id'])) {
+                $unit = \App\Models\Unit::find($data['unit_id']);
+                if ($unit) {
+                    $pricingMode = $data['pricing_mode'] ?? 'non_all_in';
+                    $paket = strtolower($data['paket_sewa'] ?? $booking->paket_sewa ?? '');
+                    
+                    if ($pricingMode === 'all_in' && empty($data['pricing_package_id'])) {
+                        $modalMobil = match($paket) {
+                            'mingguan' => $unit->modal_all_in_1_minggu,
+                            'bulanan' => $unit->modal_all_in_1_bulan,
+                            default => $unit->modal_all_in,
+                        };
+                    } else {
+                        $modalMobil = match($paket) {
+                            'mingguan' => $unit->modal_1_minggu,
+                            'bulanan' => $unit->modal_1_bulan,
+                            default => $unit->modal_1_hari,
+                        };
+                    }
+                }
+            }
+
             $detail = $booking->bookingDetails()->create([
                 'unit_id' => $data['unit_id'],
                 'driver_id' => $data['driver_id'] ?? null,
                 'tgl_sewa' => Carbon::parse($data['tgl_sewa'])->format('Y-m-d H:i:s'),
                 'tgl_kembali' => Carbon::parse($data['tgl_kembali'])->format('Y-m-d H:i:s'),
                 'harga_mobil' => $data['harga_mobil'],
+                'modal_mobil' => $modalMobil,
                 'diskon_mobil' => $data['diskon_mobil'] ?? 0,
                 'lama_sewa' => $data['lama_sewa'] ?? $booking->lama_sewa,
                 'paket_sewa' => $data['paket_sewa'] ?? $booking->paket_sewa,
@@ -244,12 +272,36 @@ class BookingService
                 ]);
             }
 
+            $modalMobil = 0;
+            if (!empty($data['unit_id'])) {
+                $unit = \App\Models\Unit::find($data['unit_id']);
+                if ($unit) {
+                    $pricingMode = $data['pricing_mode'] ?? 'non_all_in';
+                    $paket = strtolower($data['paket_sewa'] ?? '');
+                    
+                    if ($pricingMode === 'all_in' && empty($data['pricing_package_id'])) {
+                        $modalMobil = match($paket) {
+                            'mingguan' => $unit->modal_all_in_1_minggu,
+                            'bulanan' => $unit->modal_all_in_1_bulan,
+                            default => $unit->modal_all_in,
+                        };
+                    } else {
+                        $modalMobil = match($paket) {
+                            'mingguan' => $unit->modal_1_minggu,
+                            'bulanan' => $unit->modal_1_bulan,
+                            default => $unit->modal_1_hari,
+                        };
+                    }
+                }
+            }
+
             $detail->update([
                 'unit_id'            => $data['unit_id'],
                 'driver_id'          => $data['driver_id'] ?? null,
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],
                 'harga_mobil'        => $data['harga_mobil'],
+                'modal_mobil'        => $modalMobil,
                 'diskon_mobil'       => $data['diskon_mobil'] ?? 0,
                 'pricing_mode'       => $data['pricing_mode'],
                 'pricing_package_id' => $data['pricing_package_id'] ?? null,
@@ -277,6 +329,10 @@ class BookingService
             $booking->update([
                 'due_date' => app(BookingBillingService::class)->calculateDueDate($booking),
             ]);
+
+            // Sync cached_sisa_tagihan agar booking langsung muncul di daftar piutang
+            $booking->unsetRelation('bookingDetails')->unsetRelation('payments');
+            app(BookingBillingService::class)->updateCachedSisaTagihan($booking->fresh());
 
             return $booking->fresh();
         });
@@ -324,6 +380,10 @@ class BookingService
                         ->update(['status' => 'Out']);
                 }
             }
+
+            // Sync cached_sisa_tagihan agar piutang tetap up-to-date
+            $booking->unsetRelation('bookingDetails')->unsetRelation('payments');
+            app(BookingBillingService::class)->updateCachedSisaTagihan($booking->fresh());
 
             return $booking->fresh();
         });
@@ -531,8 +591,8 @@ class BookingService
                 ->each(fn(BookingDetail $detail) => app(RentToRentService::class)->syncDetail($detail));
         }
 
-        // Sync cache setelah selesai agar piutang langsung muncul
-        if ($data['status'] === 'selesai') {
+        // Sync cache agar piutang langsung muncul sejak waiting list
+        if (in_array($data['status'], ['waiting_list', 'rental_unit', 'selesai'], true)) {
             $booking->unsetRelation('bookingDetails')->unsetRelation('payments');
             app(BookingBillingService::class)->updateCachedSisaTagihan($booking->fresh());
         }

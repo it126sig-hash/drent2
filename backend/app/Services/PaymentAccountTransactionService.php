@@ -175,7 +175,7 @@ class PaymentAccountTransactionService
 
     private function transactionAt(array $data): Carbon
     {
-        return isset($data['transaction_at']) ? Carbon::parse($data['transaction_at']) : now();
+        return \App\Helpers\DateHelper::parseDateWithCurrentTime($data['transaction_at'] ?? null);
     }
 
     private function relations(): array

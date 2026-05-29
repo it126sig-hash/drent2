@@ -29,6 +29,10 @@ class BookingDetailController extends Controller
         
         $this->bookingService->assignDetail($booking, $request->validated());
         
+        // Harga/costs baru ditambahkan — sync cache sisa tagihan
+        $booking->load(['bookingDetails.costs', 'payments']);
+        $this->billingService->updateCachedSisaTagihan($booking);
+        
         return new BookingResource($booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
     }
 

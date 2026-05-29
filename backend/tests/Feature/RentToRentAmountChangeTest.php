@@ -40,6 +40,18 @@ class RentToRentAmountChangeTest extends TestCase
             'is_active' => true,
         ]);
 
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
+            'role' => 'finance',
+            'permission_key' => 'finance.rent_to_rent',
+        ]);
+
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
+            'role' => 'supervisor',
+            'permission_key' => 'finance.rent_to_rent',
+        ]);
+
         Sanctum::actingAs($user);
 
         $this->ctx = compact('tenant', 'branch', 'user');

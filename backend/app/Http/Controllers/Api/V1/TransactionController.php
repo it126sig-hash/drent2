@@ -110,6 +110,7 @@ class TransactionController extends Controller
             'operationalFunds.paymentAccount',
             'operationalExpenses.costType',
             'operationalExpenses.fund',
+            'rentToRentDebts.rentalOwner',
         ]);
 
         // Build unified history
@@ -192,24 +193,37 @@ class TransactionController extends Controller
             }
         }
 
-        // 5. Pengeluaran — Rent to Rent Payments (allocations linked to booking debts)
-        $allocations = RentToRentPaymentAllocation::query()
-            ->whereHas('debt', fn($q) => $q->where('booking_id', $booking->id))
-            ->with(['payment.paymentAccount', 'debt.rentalOwner'])
-            ->get();
-
-        foreach ($allocations as $allocation) {
-            $payment = $allocation->payment;
-            if ($payment && ($payment->status ?? 'active') !== 'voided') {
+        // 5. Pengeluaran — Rent to Rent Debts (Accrued R2R Expense)
+        foreach ($booking->rentToRentDebts as $debt) {
+            if ($debt->status !== 'cancelled') {
                 $history[] = [
-                    'id'          => 'r2r-' . $allocation->id,
-                    'date'        => $payment->paid_at?->toISOString() ?? $payment->created_at?->toISOString(),
+                    'id'          => 'r2r-debt-' . $debt->id,
+                    'date'        => $debt->created_at?->toISOString(),
                     'category'    => 'rent_to_rent',
                     'type'        => 'pengeluaran',
-                    'description' => 'Bayar Owner R2R: ' . ($allocation->debt->rentalOwner?->nama ?? 'Owner')
-                        . ($payment->paymentAccount ? ' (' . $payment->paymentAccount->nama_bank . ')' : ''),
-                    'amount'      => -(int) $allocation->amount,
+                    'description' => 'Biaya R2R: ' . ($debt->rentalOwner?->nama ?? 'Owner') 
+                        . ($debt->cached_payment_status ? ' (Status: ' . ucfirst($debt->cached_payment_status) . ')' : ''),
+                    'amount'      => -(int) $debt->cached_total_amount,
                 ];
+            }
+        }
+
+        // 6. Pengeluaran — Harga Modal Unit (Hanya untuk unit milik DRENT)
+        foreach ($booking->bookingDetails as $detail) {
+            if ($detail->status !== 'batal' && $detail->unit_id && $detail->modal_mobil > 0) {
+                // Pastikan bukan unit rent-to-rent
+                $isRentToRent = $detail->unit?->rentalOwner && !$detail->unit->rentalOwner->is_owner;
+                if (!$isRentToRent) {
+                    $totalModal = $detail->modal_mobil * ($detail->lama_sewa > 0 ? $detail->lama_sewa : 1);
+                    $history[] = [
+                        'id'          => 'modal-unit-' . $detail->id,
+                        'date'        => $detail->created_at?->toISOString(),
+                        'category'    => 'harga_modal',
+                        'type'        => 'pengeluaran',
+                        'description' => 'Harga Modal Unit: ' . ($detail->unit->tipe ?? 'Unit') . ' (' . $detail->lama_sewa . 'x)',
+                        'amount'      => -(int) $totalModal,
+                    ];
+                }
             }
         }
 

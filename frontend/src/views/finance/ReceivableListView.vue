@@ -172,6 +172,63 @@ const formatSignedCurrency = (value) => {
   return `${amount > 0 ? '+' : '-'}${formatCurrency(Math.abs(amount))}`
 }
 
+const getInvoiceDueWarning = (invoice, customerStatus) => {
+  if (!invoice || !invoice.due_date) return null
+  if (invoice.status === 'paid' || invoice.status === 'void') return null
+
+  const dueDate = new Date(invoice.due_date)
+  if (Number.isNaN(dueDate.getTime())) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const due = new Date(dueDate)
+  due.setHours(0, 0, 0, 0)
+
+  const diffTime = due.getTime() - today.getTime()
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+  const cleanStatus = (customerStatus || 'normal').toLowerCase()
+
+  let threshold = 1 // H-1 default (normal and member)
+  if (cleanStatus === 'rent to rent') {
+    threshold = 7
+  } else if (cleanStatus === 'corporate') {
+    threshold = 30
+  }
+
+  if (diffDays <= threshold) {
+    if (diffDays < 0) {
+      return { severity: 'danger', label: `Overdue ${Math.abs(diffDays)} hari` }
+    } else if (diffDays === 0) {
+      return { severity: 'warn', label: 'Jatuh Tempo Hari Ini' }
+    } else {
+      return { severity: 'warn', label: `H-${diffDays} Jatuh Tempo` }
+    }
+  }
+
+  return null
+}
+
+const rowClass = (data) => {
+  if (activeTab.value === 'receivables') {
+    if (data.invoice?.generated) {
+      const warning = getInvoiceDueWarning(data.invoice, data.customer?.status)
+      if (warning) {
+        return warning.severity === 'danger' ? 'row-due-overdue' : 'row-due-warning'
+      }
+    }
+  } else if (activeTab.value === 'invoices') {
+    const firstBooking = data.bookings?.[0]
+    const customerStatus = firstBooking?.customer_status || 'normal'
+    const warning = getInvoiceDueWarning(data, customerStatus)
+    if (warning) {
+      return warning.severity === 'danger' ? 'row-due-overdue' : 'row-due-warning'
+    }
+  }
+  return ''
+}
+
 const invoiceChange = (invoice) => invoice?.invoice_reconciliation || null
 
 const hasInvoiceChange = (invoice) => Boolean(invoiceChange(invoice)?.is_changed)
@@ -623,7 +680,7 @@ onMounted(async () => {
       <div v-if="activeTab === 'receivables'" class="table-shell">
         <DataTable v-model:selection="selectedRows" :value="receivables" dataKey="id" lazy paginator scrollable
           scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading"
-          @page="onPage" responsiveLayout="scroll" class="drent-datatable">
+          @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
           <Column selectionMode="multiple" headerStyle="width: 3rem" />
           <Column header="Aksi" style="min-width: 15rem">
             <template #body="{ data }">
@@ -674,8 +731,13 @@ onMounted(async () => {
                 :text="data.invoice?.number || 'Belum Buat Invoice'" />
               <Tag v-if="hasInvoiceChange(data.invoice)" :value="invoiceChangeLabel(data.invoice)" severity="warn"
                 class="mt-2" />
-              <div class="font-semibold text-italic">{{ data.invoice?.generated ? 'Due: ' +
-                formatDate(data.invoice?.due_date || data.due_date) : '' }}</div>
+              <div v-if="data.invoice?.generated" class="flex flex-col gap-1 mt-1">
+                <div class="font-semibold text-italic">Due: {{ formatDate(data.invoice?.due_date || data.due_date) }}</div>
+                <Tag v-if="getInvoiceDueWarning(data.invoice, data.customer?.status)"
+                  :value="getInvoiceDueWarning(data.invoice, data.customer?.status).label"
+                  :severity="getInvoiceDueWarning(data.invoice, data.customer?.status).severity"
+                  class="w-max" />
+              </div>
               <div class="text-xs mt-1 text-secondary" v-if="data.invoice?.generated">
                 Di Buat: {{ formatDateTime(data.invoice?.generated_at) }}
               </div>
@@ -721,7 +783,7 @@ onMounted(async () => {
       <div v-else class="table-shell">
         <DataTable :value="invoices" dataKey="id" lazy paginator scrollable scrollHeight="flex"
           :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage"
-          responsiveLayout="scroll" class="drent-datatable">
+          responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
           <Column header="Invoice" style="min-width: 13rem">
             <template #body="{ data }">
               <div class="font-bold">{{ data.invoice_number }}</div>
@@ -748,7 +810,13 @@ onMounted(async () => {
             </template>
           </Column>
           <Column header="Due Date" style="min-width: 10rem">
-            <template #body="{ data }">{{ formatDate(data.due_date) }}</template>
+            <template #body="{ data }">
+              <div class="font-semibold">{{ formatDate(data.due_date) }}</div>
+              <Tag v-if="getInvoiceDueWarning(data, data.bookings?.[0]?.customer_status)"
+                :value="getInvoiceDueWarning(data, data.bookings?.[0]?.customer_status).label"
+                :severity="getInvoiceDueWarning(data, data.bookings?.[0]?.customer_status).severity"
+                class="mt-1" />
+            </template>
           </Column>
           <Column header="Tanggal Buat" style="min-width: 12rem">
             <template #body="{ data }">{{ formatDateTime(data.generated_at) }}</template>
@@ -1534,5 +1602,36 @@ onMounted(async () => {
   .payment-invoice-table-row>strong {
     text-align: left;
   }
+}
+
+:deep(.p-datatable-tbody > tr.row-due-warning > td) {
+  background-color: #FDF4D9 !important;
+  color: #8C660A !important;
+}
+
+:deep(.p-datatable-tbody > tr.row-due-warning:hover > td) {
+  background-color: #fcf1ce !important;
+}
+
+:deep(.p-datatable-tbody > tr.row-due-overdue > td) {
+  background-color: #FCEAE9 !important;
+  color: #B02A24 !important;
+}
+
+:deep(.p-datatable-tbody > tr.row-due-overdue:hover > td) {
+  background-color: #fbe0de !important;
+}
+
+/* Ensure link buttons inside highlighted rows have high contrast */
+:deep(.row-due-warning .link-button),
+:deep(.row-due-warning .text-secondary),
+:deep(.row-due-warning .font-mono-numeric) {
+  color: #8C660A !important;
+}
+
+:deep(.row-due-overdue .link-button),
+:deep(.row-due-overdue .text-secondary),
+:deep(.row-due-overdue .font-mono-numeric) {
+  color: #B02A24 !important;
 }
 </style>

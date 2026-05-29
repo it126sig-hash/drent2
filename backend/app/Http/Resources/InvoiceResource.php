@@ -33,6 +33,7 @@ class InvoiceResource extends JsonResource
                 'id' => $booking->id,
                 'kode_booking' => $booking->kode_booking,
                 'customer_name' => $booking->customer?->nama,
+                'customer_status' => $booking->customer?->status,
                 'amount' => (int) $booking->pivot->amount,
             ])),
             'items' => $this->whenLoaded('bookings', fn() => $receivableService->invoiceItems($this->resource)),

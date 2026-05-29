@@ -69,6 +69,7 @@ const paymentForm = ref({
   payment_account_id: null,
   amount: null,
   paid_at: new Date(),
+  catatan: '',
 })
 
 const debtStatusOptions = [
@@ -360,6 +361,7 @@ const openPaymentDialog = async (bill) => {
     payment_account_id: paymentAccountOptions.value[0]?.value || null,
     amount: bill.remaining_amount || null,
     paid_at: new Date(),
+    catatan: '',
   }
   showPaymentDialog.value = true
 }
@@ -372,6 +374,7 @@ const openDebtPaymentDialog = async (debt) => {
     payment_account_id: paymentAccountOptions.value[0]?.value || null,
     amount: debt.remaining_amount || null,
     paid_at: new Date(),
+    catatan: '',
   }
   showPaymentDialog.value = true
 }
@@ -480,6 +483,7 @@ const submitPayment = async () => {
     payment_account_id: paymentForm.value.payment_account_id,
     amount: paymentForm.value.amount,
     paid_at: toApiDate(paymentForm.value.paid_at),
+    catatan: paymentForm.value.catatan || null,
   }
 
   if (selectedBill.value?.id) {
@@ -1171,6 +1175,10 @@ onMounted(async () => {
             <fieldset class="form-fieldset">
               <label>Tanggal Bayar</label>
               <DatePicker v-model="paymentForm.paid_at" dateFormat="dd M yy" class="w-full" showIcon />
+            </fieldset>
+            <fieldset class="form-fieldset">
+              <label>Catatan</label>
+              <Textarea v-model="paymentForm.catatan" rows="2" autoResize placeholder="Tambahkan catatan pembayaran (opsional)" class="w-full text-sm font-sans" />
             </fieldset>
           </div>
         </aside>

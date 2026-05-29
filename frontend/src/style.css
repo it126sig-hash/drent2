@@ -413,6 +413,14 @@ button[aria-disabled="true"],
   font-size: 13px;
 }
 
+.p-datepicker-hour-picker,
+.p-datepicker-minute-picker,
+.p-datepicker-second-picker,
+.p-datepicker-ampm-picker {
+  cursor: ns-resize;
+  overscroll-behavior: contain;
+}
+
 .p-select,
 .p-dropdown {
   display: inline-flex;

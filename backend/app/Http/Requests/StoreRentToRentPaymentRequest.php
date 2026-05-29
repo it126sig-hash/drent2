@@ -17,6 +17,7 @@ class StoreRentToRentPaymentRequest extends FormRequest
             'payment_account_id' => ['required', 'integer', 'exists:payment_accounts,id'],
             'amount' => ['required', 'integer', 'min:1'],
             'paid_at' => ['nullable', 'date'],
+            'catatan' => ['nullable', 'string', 'max:1000'],
         ];
     }
 }

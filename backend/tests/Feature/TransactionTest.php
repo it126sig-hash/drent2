@@ -236,6 +236,14 @@ class TransactionTest extends TestCase
             'is_active' => true,
         ]);
 
+        if (in_array($role, ['admin_branch', 'finance'], true)) {
+            \App\Models\RolePermission::create([
+                'tenant_id' => $tenant->id,
+                'role' => $role,
+                'permission_key' => 'finance.transaction',
+            ]);
+        }
+
         Sanctum::actingAs($user);
 
         return compact('tenant', 'branch', 'user');

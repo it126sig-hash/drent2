@@ -27,7 +27,7 @@ class StoreUnitRequest extends FormRequest
             'rental_owner_id' => 'nullable|integer|exists:rental_owners,id',
             'city_id' => 'required|integer|exists:cities,id',
             'tipe' => 'required|string|max:100',
-            'merk' => 'required|string|max:100',
+            'merk' => 'nullable|string|max:100',
             'tahun' => 'required|integer|min:2000|max:2099',
             'no_polisi' => 'required|string|max:20',
             'harga_1_hari' => 'required|integer|min:0',
