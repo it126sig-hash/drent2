@@ -354,7 +354,7 @@ class DriverOperationalFundService
                 'amount' => (int) $fund->amount,
                 'direction' => 'out',
                 'status' => $fund->status,
-                'happened_at' => $fund->paid_at?->format('Y-m-d') ?? $fund->created_at?->toISOString(),
+                'happened_at' => $fund->paid_at?->toISOString() ?? $fund->created_at?->toISOString(),
                 'payment_account' => $fund->paymentAccount ? [
                     'id' => $fund->paymentAccount->id,
                     'nama_bank' => $fund->paymentAccount->nama_bank,

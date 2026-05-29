@@ -52,14 +52,97 @@ const bookingsPlaceholderCount = computed(() => {
 
 const armadaStatus = computed(() => dashboard.value?.armada_status || [])
 const finance = computed(() => dashboard.value?.finance_snapshot || {})
+const cashflow = computed(() => dashboard.value?.cashflow_summary || {})
 const alerts = computed(() => dashboard.value?.alerts || [])
 const leaderboards = computed(() => dashboard.value?.repeat_order_leaderboards || [])
 const activeLeaderboardStatus = ref('Normal')
+const activeCashflowTab = ref('expense')
 const activeLeaderboard = computed(() => {
   return leaderboards.value.find((board) => board.status === activeLeaderboardStatus.value)
     || leaderboards.value[0]
     || { status: 'Normal', label: 'Normal', items: [] }
 })
+
+const dashboardKpis = computed(() => [
+  ...kpis.value,
+  {
+    key: 'expense',
+    label: 'Pengeluaran',
+    value: cashflow.value.expense_total || 0,
+    display_value: formatCurrency(cashflow.value.expense_total),
+    delta: 'Periode terpilih',
+    icon: 'pi pi-arrow-up-right',
+    tone: 'negative',
+    route: '/reports/transactions',
+  },
+])
+
+const cashflowTabs = [
+  { key: 'expense', label: 'Pengeluaran' },
+  { key: 'income', label: 'Income' },
+]
+
+const cashflowChartItems = computed(() => {
+  const items = activeCashflowTab.value === 'income'
+    ? cashflow.value.income_items
+    : cashflow.value.expense_items
+
+  return (items || []).map((item) => ({
+    ...item,
+    amount: Number(item.amount) || 0,
+  }))
+})
+
+const cashflowChartTotal = computed(() => {
+  return cashflowChartItems.value.reduce((total, item) => total + item.amount, 0)
+})
+
+const cashflowChartTitle = computed(() => {
+  return activeCashflowTab.value === 'income' ? 'Income Periode Ini' : 'Pengeluaran Periode Ini'
+})
+
+const cashflowSliceColor = (item, index) => {
+  const colors = {
+    positive: 'var(--positive)',
+    info: 'var(--info-cyan)',
+    warning: 'var(--warning)',
+    negative: 'var(--negative)',
+    neutral: 'var(--text-secondary)',
+  }
+  return colors[item?.tone] || [
+    'var(--primary)',
+    'var(--positive)',
+    'var(--warning)',
+    'var(--info-cyan)',
+  ][index % 4]
+}
+
+const cashflowDonutStyle = computed(() => {
+  if (!cashflowChartTotal.value) {
+    return {
+      background: 'conic-gradient(var(--surface-border) 0 360deg)',
+    }
+  }
+
+  let start = 0
+  const slices = cashflowChartItems.value
+    .filter((item) => item.amount > 0)
+    .map((item, index) => {
+      const end = start + (item.amount / cashflowChartTotal.value) * 360
+      const slice = `${cashflowSliceColor(item, index)} ${start}deg ${end}deg`
+      start = end
+      return slice
+    })
+
+  return {
+    background: `conic-gradient(${slices.join(', ')})`,
+  }
+})
+
+const cashflowLegendPercentage = (amount) => {
+  if (!cashflowChartTotal.value) return '0%'
+  return `${Math.round(((Number(amount) || 0) / cashflowChartTotal.value) * 100)}%`
+}
 
 const fetchData = () => fetchDashboard(filters.value)
 
@@ -152,7 +235,7 @@ onMounted(fetchData)
 
     <section class="kpi-grid">
       <template v-if="loading && !dashboard">
-        <div v-for="index in 5" :key="`skeleton-${index}`" class="kpi-tile">
+        <div v-for="index in 6" :key="`skeleton-${index}`" class="kpi-tile">
           <Skeleton width="36px" height="36px" />
           <Skeleton width="70%" height="14px" class="mt-4" />
           <Skeleton width="45%" height="24px" class="mt-2" />
@@ -160,7 +243,7 @@ onMounted(fetchData)
       </template>
 
       <template v-else>
-        <div v-for="stat in kpis" :key="stat.key" class="kpi-tile" :class="toneClass(stat.tone)" @click="goTo(stat.route)">
+        <div v-for="stat in dashboardKpis" :key="stat.key" class="kpi-tile" :class="toneClass(stat.tone)" @click="goTo(stat.route)">
           <div class="kpi-header">
             <div class="kpi-icon">
               <i :class="stat.icon"></i>
@@ -286,11 +369,63 @@ onMounted(fetchData)
       </aside>
     </div>
 
-    <section class="alert-grid">
-      <button v-for="alert in alerts" :key="alert.key" type="button" class="alert-tile" :class="toneClass(alert.tone)" @click="goTo(alert.route)">
-        <span>{{ alert.label }}</span>
-        <strong>{{ alert.value }}</strong>
-      </button>
+    <section class="alert-section">
+      <div class="alert-grid">
+        <button v-for="alert in alerts" :key="alert.key" type="button" class="alert-tile" :class="toneClass(alert.tone)" @click="goTo(alert.route)">
+          <span>{{ alert.label }}</span>
+          <strong>{{ alert.value }}</strong>
+        </button>
+      </div>
+
+      <section class="app-card dashboard-panel cashflow-card">
+        <div class="panel-header cashflow-header">
+          <div>
+            <h2>{{ cashflowChartTitle }}</h2>
+            <span>{{ dashboard?.period?.label || 'Periode terpilih' }}</span>
+          </div>
+          <strong :class="activeCashflowTab === 'income' ? 'tone-positive' : 'tone-negative'">
+            {{ formatCurrency(cashflowChartTotal) }}
+          </strong>
+        </div>
+
+        <div class="cashflow-tabs">
+          <button
+            v-for="tab in cashflowTabs"
+            :key="tab.key"
+            type="button"
+            class="cashflow-tab"
+            :class="{ active: activeCashflowTab === tab.key }"
+            @click="activeCashflowTab = tab.key"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <div class="cashflow-chart">
+          <div class="cashflow-donut-wrap">
+            <div class="cashflow-donut" :style="cashflowDonutStyle">
+              <div class="cashflow-donut-hole">
+                <span>Total</span>
+                <strong>{{ formatCurrency(cashflowChartTotal) }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="cashflow-legend">
+            <article v-for="(item, index) in cashflowChartItems" :key="item.key" class="cashflow-row">
+              <div class="cashflow-row-top">
+                <span>
+                  <i class="cashflow-dot" :style="{ background: cashflowSliceColor(item, index) }"></i>
+                  {{ item.label }}
+                </span>
+                <b>{{ cashflowLegendPercentage(item.amount) }}</b>
+              </div>
+              <strong>{{ formatCurrency(item.amount) }}</strong>
+            </article>
+            <div v-if="!cashflowChartTotal" class="mini-empty">Belum ada data {{ activeCashflowTab === 'income' ? 'income' : 'pengeluaran' }} periode ini.</div>
+          </div>
+        </div>
+      </section>
     </section>
 
     <section class="leaderboard-section">
@@ -372,7 +507,7 @@ onMounted(fetchData)
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -738,11 +873,18 @@ onMounted(fetchData)
   white-space: nowrap;
 }
 
-.alert-grid {
+.alert-section {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr);
   gap: 14px;
   margin-top: 18px;
+  align-items: stretch;
+}
+
+.alert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .alert-tile {
@@ -772,6 +914,141 @@ onMounted(fetchData)
 .alert-tile strong {
   font-size: 24px;
   font-family: var(--font-headline);
+}
+
+.cashflow-card {
+  min-height: 100%;
+}
+
+.cashflow-header strong {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.cashflow-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.cashflow-tab {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cashflow-tab.active {
+  border-color: var(--primary);
+  background: var(--surface-default);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.cashflow-chart {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+}
+
+.cashflow-donut-wrap {
+  display: grid;
+  place-items: center;
+}
+
+.cashflow-donut {
+  width: 152px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--surface-border);
+}
+
+.cashflow-donut-hole {
+  width: 88px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  border-radius: 999px;
+  background: var(--surface-default);
+  border: 1px solid var(--surface-border);
+  text-align: center;
+}
+
+.cashflow-donut-hole span {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashflow-donut-hole strong {
+  max-width: 72px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+}
+
+.cashflow-legend {
+  display: grid;
+  gap: 10px;
+}
+
+.cashflow-row {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cashflow-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.cashflow-row-top span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.cashflow-row-top b {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.cashflow-row strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cashflow-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
 }
 
 .leaderboard-section {
@@ -962,7 +1239,8 @@ onMounted(fetchData)
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .dashboard-grid {
+  .dashboard-grid,
+  .alert-section {
     grid-template-columns: 1fr;
   }
 }
@@ -1006,6 +1284,10 @@ onMounted(fetchData)
   .leaderboard-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .cashflow-chart {
+    grid-template-columns: 1fr;
   }
 
   .leaderboard-metric {

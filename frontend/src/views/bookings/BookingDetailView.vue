@@ -9,7 +9,7 @@ import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
 import { usePhysicalCheck } from '../../composables/usePhysicalCheck';
 import { useCity } from '../../composables/useCity';
-import { getUnits, checkUnitSchedule } from '../../api/unit';
+import { getUnits, getUnit, updateUnit, checkUnitSchedule } from '../../api/unit';
 import { useAuthStore } from '../../stores/auth';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import { useToast } from 'primevue/usetoast';
@@ -48,6 +48,38 @@ const selectedUnitCache = ref(null);
 const unitSearchLoading = ref(false);
 const unitServerSearchTerm = ref('');
 const unitCityFilter = ref(null);
+const showUnitPriceDialog = ref(false);
+const unitPriceSaving = ref(false);
+const unitPriceForm = ref({
+  id: null,
+  label: '',
+  harga_1_hari: 0,
+  harga_1_minggu: 0,
+  harga_1_bulan: 0,
+  harga_all_in: 0,
+  harga_all_in_1_minggu: 0,
+  harga_all_in_1_bulan: 0,
+  modal_1_hari: 0,
+  modal_1_minggu: 0,
+  modal_1_bulan: 0,
+  modal_all_in: 0,
+  modal_all_in_1_minggu: 0,
+  modal_all_in_1_bulan: 0,
+});
+const unitPriceFields = [
+  'harga_1_hari',
+  'harga_1_minggu',
+  'harga_1_bulan',
+  'harga_all_in',
+  'harga_all_in_1_minggu',
+  'harga_all_in_1_bulan',
+  'modal_1_hari',
+  'modal_1_minggu',
+  'modal_1_bulan',
+  'modal_all_in',
+  'modal_all_in_1_minggu',
+  'modal_all_in_1_bulan',
+];
 let unitSearchTimer = null;
 let citySearchTimer = null;
 let driverSearchTimer = null;
@@ -613,7 +645,53 @@ const selectedDetailUnit = computed(() => findUnitOption(detailForm.value.unit_i
 const selectedDetailDriver = computed(() => drivers.value.find(driver => driver.id === detailForm.value.driver_id));
 const detailHargaSewa = computed(() => Math.max(0, ((detailForm.value.harga_mobil || 0) - (detailForm.value.diskon_mobil || 0)) * (detailForm.value.lama_sewa || 0)));
 const detailTotalBiayaOps = computed(() => getBillableCostTotal(detailForm.value.pricing_mode, detailForm.value.costs));
-const detailGrandTotalInternal = computed(() => detailHargaSewa.value + detailTotalBiayaOps.value);
+const detailModalMobil = computed(() =>
+  getUnitModalByPaket(
+    selectedDetailUnit.value,
+    detailForm.value.paket_sewa,
+    detailForm.value.pricing_mode,
+    detailForm.value.pricing_package_id
+  )
+);
+const isDetailManualAllIn = computed(() =>
+  detailForm.value.pricing_mode === 'all_in' && !detailForm.value.pricing_package_id
+);
+const detailPriceInputLabel = computed(() => {
+  if (isDetailManualAllIn.value) return 'Harga All In';
+  if (detailForm.value.pricing_mode === 'all_in' && detailForm.value.pricing_package_id) {
+    return 'Harga mobil harian / lepas kunci';
+  }
+  return 'Harga Mobil';
+});
+const detailPriceInputHint = computed(() => {
+  if (isDetailManualAllIn.value) return 'Isi harga All In manual atau edit harga unit.';
+  if (detailForm.value.pricing_mode === 'all_in' && detailForm.value.pricing_package_id) {
+    return 'Harga lepas kunci harian dari unit; tagihan konsumen memakai pricing package.';
+  }
+  return 'Diisi otomatis dari unit dan paket sewa.';
+});
+const detailPriceInputValue = computed({
+  get() {
+    return isDetailManualAllIn.value
+      ? detailForm.value.harga_all_in
+      : detailForm.value.harga_mobil;
+  },
+  set(value) {
+    if (isDetailManualAllIn.value) {
+      detailForm.value.harga_all_in = value;
+      return;
+    }
+
+    detailForm.value.harga_mobil = value;
+  },
+});
+const detailDisplayedPriceTotal = computed(() => {
+  const duration = detailForm.value.lama_sewa || 0;
+  return isDetailManualAllIn.value
+    ? (detailForm.value.harga_all_in || 0) * duration
+    : detailHargaSewa.value;
+});
+const detailGrandTotalInternal = computed(() => detailDisplayedPriceTotal.value + detailTotalBiayaOps.value);
 const detailTagihanKonsumen = computed(() => {
   if (detailForm.value.pricing_mode === 'all_in') {
     const lama = detailForm.value.lama_sewa || 1;
@@ -908,6 +986,91 @@ const getUnitAllInByPaket = (unit, paket) => {
     case 'mingguan': return unit.harga_all_in_1_minggu || null;
     case 'bulanan': return unit.harga_all_in_1_bulan || null;
     default: return unit.harga_all_in || null;
+  }
+};
+
+const getUnitModalByPaket = (unit, paket, pricingMode = 'non_all_in', pricingPackageId = null) => {
+  if (!unit) return 0;
+
+  if (pricingMode === 'all_in' && !pricingPackageId) {
+    switch (paket) {
+      case 'mingguan': return unit.modal_all_in_1_minggu || 0;
+      case 'bulanan': return unit.modal_all_in_1_bulan || 0;
+      default: return unit.modal_all_in || 0;
+    }
+  }
+
+  switch (paket) {
+    case 'mingguan': return unit.modal_1_minggu || 0;
+    case 'bulanan': return unit.modal_1_bulan || 0;
+    default: return unit.modal_1_hari || 0;
+  }
+};
+
+const openUnitPriceDialog = () => {
+  if (!selectedDetailUnit.value) {
+    toast.add({ severity: 'warn', summary: 'Pilih Unit', detail: 'Pilih unit dulu sebelum edit harga.', life: 3000 });
+    return;
+  }
+
+  const unit = selectedDetailUnit.value;
+  rememberUnitOption({ ...unit });
+  unitPriceForm.value = {
+    id: unit.id,
+    label: `${unit.merk || ''} ${unit.tipe || ''}`.trim() || unit.unitLabel || 'Unit',
+    harga_1_hari: unit.harga_1_hari || 0,
+    harga_1_minggu: unit.harga_1_minggu || 0,
+    harga_1_bulan: unit.harga_1_bulan || 0,
+    harga_all_in: unit.harga_all_in || 0,
+    harga_all_in_1_minggu: unit.harga_all_in_1_minggu || 0,
+    harga_all_in_1_bulan: unit.harga_all_in_1_bulan || 0,
+    modal_1_hari: unit.modal_1_hari || 0,
+    modal_1_minggu: unit.modal_1_minggu || 0,
+    modal_1_bulan: unit.modal_1_bulan || 0,
+    modal_all_in: unit.modal_all_in || 0,
+    modal_all_in_1_minggu: unit.modal_all_in_1_minggu || 0,
+    modal_all_in_1_bulan: unit.modal_all_in_1_bulan || 0,
+  };
+  showUnitPriceDialog.value = true;
+};
+
+const refreshSelectedUnit = async (unitId) => {
+  const response = await getUnit(unitId);
+  const updatedUnit = response.data.data;
+  const mappedUnit = mapUnitOption(updatedUnit);
+  const existingIndex = units.value.findIndex(unit => unit.id === updatedUnit.id);
+
+  if (existingIndex >= 0) {
+    units.value.splice(existingIndex, 1, updatedUnit);
+  } else {
+    units.value.unshift(updatedUnit);
+  }
+
+  rememberUnitOption(mappedUnit);
+};
+
+const saveUnitPrice = async (data) => {
+  if (!selectedDetailUnit.value?.id) return;
+
+  const pricePayload = unitPriceFields.reduce((payload, field) => {
+    payload[field] = data?.[field] ?? 0;
+    return payload;
+  }, {});
+
+  unitPriceSaving.value = true;
+  try {
+    await updateUnit(selectedDetailUnit.value.id, {
+      ...selectedDetailUnit.value,
+      ...pricePayload,
+      id: selectedDetailUnit.value.id,
+    });
+    await refreshSelectedUnit(selectedDetailUnit.value.id);
+    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Harga unit berhasil diperbarui.', life: 3000 });
+    showUnitPriceDialog.value = false;
+  } catch (err) {
+    showActionError(err, 'Gagal memperbarui harga unit');
+  } finally {
+    unitPriceSaving.value = false;
   }
 };
 
@@ -2677,7 +2840,7 @@ const auditUserName = (user) => user?.name || '-';
                 </template>
               </Dropdown>
               <div v-if="selectedDetailUnit" class="app-muted-panel p-3 text-sm">
-                <div class="grid grid-cols-3 gap-2">
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
                   <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{
                     selectedDetailUnit.no_polisi
                       }}</strong></div>
@@ -2754,11 +2917,23 @@ const auditUserName = (user) => user?.name || '-';
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga</legend>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-1">
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-                <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> Harga Mobil
-              </label>
-              <InputNumber v-model="detailForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID"
-                class="w-full bg-slate-50" readonly />
+              <div class="detail-price-label-row">
+                <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> {{ detailPriceInputLabel }}
+                </label>
+                <Button
+                  label="Edit Harga Unit"
+                  icon="pi pi-pencil"
+                  text
+                  size="small"
+                  class="detail-price-action"
+                  :disabled="!selectedDetailUnit"
+                  @click="openUnitPriceDialog"
+                />
+              </div>
+              <InputNumber v-model="detailPriceInputValue" mode="currency" currency="IDR" locale="id-ID"
+                class="w-full bg-slate-50" :readonly="!isDetailManualAllIn" />
+              <small class="text-xs text-slate-400">{{ detailPriceInputHint }}</small>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
@@ -2779,9 +2954,6 @@ const auditUserName = (user) => user?.name || '-';
               <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label"
                 optionValue="id" placeholder="Pilih paket All In..." filter @filter="onPricingPackageFilter" showClear
                 class="w-full" @change="onDetailPackageChange" />
-              <InputNumber v-if="!detailForm.pricing_package_id" v-model="detailForm.harga_all_in" mode="currency"
-                currency="IDR" locale="id-ID" placeholder="Harga All In per paket sewa" class="w-full bg-slate-50"
-                readonly />
               <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
@@ -2837,8 +3009,8 @@ const auditUserName = (user) => user?.name || '-';
         <div class="bg-slate-900 rounded-xl p-4 text-white">
           <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Kalkulasi Unit</p>
           <div class="flex flex-col gap-2 text-sm">
-            <div class="flex justify-between"><span class="text-white/60">Harga Sewa</span><span>{{
-              formatCurrency(detailHargaSewa) }}</span></div>
+            <div class="flex justify-between"><span class="text-white/60">{{ isDetailManualAllIn ? 'Harga All In' : 'Harga Sewa' }}</span><span>{{
+              formatCurrency(detailDisplayedPriceTotal) }}</span></div>
             <div class="flex justify-between">
               <span class="text-white/60">{{ detailForm.pricing_mode === 'all_in' ? 'Diskon Ops Dihitung' :
                 'Biaya/Diskon Ops' }}</span>
@@ -2858,6 +3030,106 @@ const auditUserName = (user) => user?.name || '-';
             @click="requestCloseDialog('showDetailDialog')" />
           <Button :label="detailSubmitLabel" icon="pi pi-check" :class="detailSubmitButtonClass" @click="submitDetail"
             :loading="loading" :disabled="isInitializingDetailDialog" />
+        </div>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="showUnitPriceDialog"
+      modal
+      header="Edit Harga Unit"
+      class="custom-dialog"
+      :style="{ width: '760px' }"
+      :breakpoints="{ '820px': '95vw' }"
+    >
+      <div class="unit-price-dialog">
+        <div class="unit-price-heading">
+          <div>
+            <span>Unit</span>
+            <strong>{{ unitPriceForm.label }}</strong>
+          </div>
+          <Tag v-if="selectedDetailUnit" :value="unitStatusMeta(selectedDetailUnit.status).label" :severity="unitStatusMeta(selectedDetailUnit.status).severity" />
+        </div>
+
+        <div class="unit-price-grid">
+          <section class="unit-price-section">
+            <h3>Harga Lepas Kunci</h3>
+            <div class="unit-price-fields">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.harga_1_hari" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.harga_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.harga_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+            </div>
+          </section>
+
+          <section class="unit-price-section">
+            <h3>Harga All In</h3>
+            <div class="unit-price-fields">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.harga_all_in_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.harga_all_in_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+            </div>
+          </section>
+
+          <section class="unit-price-section">
+            <h3>Modal Lepas Kunci</h3>
+            <div class="unit-price-fields">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.modal_1_hari" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.modal_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.modal_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+            </div>
+          </section>
+
+          <section class="unit-price-section">
+            <h3>Modal All In</h3>
+            <div class="unit-price-fields">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.modal_all_in" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.modal_all_in_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.modal_all_in_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full" />
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showUnitPriceDialog = false" />
+          <Button label="Simpan Harga" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" :loading="unitPriceSaving" @click="saveUnitPrice(unitPriceForm)" />
         </div>
       </template>
     </Dialog>
@@ -3705,6 +3977,81 @@ const auditUserName = (user) => user?.name || '-';
   background: var(--card-bg);
 }
 
+.detail-price-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.detail-price-action {
+  flex-shrink: 0;
+}
+
+:deep(.detail-price-action.p-button) {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.unit-price-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.unit-price-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+}
+
+.unit-price-heading span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.unit-price-heading strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.unit-price-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.unit-price-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.unit-price-section h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.unit-price-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
 .app-card :deep(.p-button.p-button-text) {
   color: var(--text-secondary);
 }
@@ -4036,6 +4383,11 @@ fieldset legend {
   .detail-main-column,
   .detail-side-column {
     gap: var(--space-lg);
+  }
+
+  .unit-price-grid,
+  .unit-price-fields {
+    grid-template-columns: 1fr;
   }
 
   .app-section-header {

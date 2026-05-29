@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Branch;
+use App\Models\City;
 use App\Models\RentalOwner;
 use App\Models\Tenant;
 use App\Models\Unit;
@@ -128,6 +129,62 @@ class UnitSearchTest extends TestCase
         $this->assertNotContains($completeInternalUnit->id, $withoutModalIds);
         // Internal unit with modal_1_hari 0 is INCOMPLETE (without_modal)
         $this->assertContains($incompleteInternalUnit->id, $withoutModalIds);
+    }
+
+    public function test_unit_can_be_created_and_updated_without_merk(): void
+    {
+        $ctx = $this->context();
+        $owner = $this->owner($ctx['tenant']->id, 'Abigail Rental');
+        $city = City::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'nama' => 'Jakarta',
+            'provinsi' => 'DKI Jakarta',
+            'is_active' => true,
+        ]);
+
+        $payload = [
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'rental_owner_id' => $owner->id,
+            'city_id' => $city->id,
+            'merk' => '',
+            'tipe' => 'Avanza',
+            'tahun' => 2024,
+            'no_polisi' => 'B 1234 NULL',
+            'harga_1_hari' => 300000,
+            'harga_1_minggu' => 1800000,
+            'harga_1_bulan' => 6000000,
+            'harga_all_in' => 350000,
+            'harga_all_in_1_minggu' => 2100000,
+            'harga_all_in_1_bulan' => 7000000,
+            'modal_1_hari' => 100000,
+            'modal_1_minggu' => 700000,
+            'modal_1_bulan' => 2500000,
+            'modal_all_in' => 150000,
+            'modal_all_in_1_minggu' => 1000000,
+            'modal_all_in_1_bulan' => 3500000,
+            'status' => 'Aktif',
+        ];
+
+        $unitId = $this->postJson('/api/v1/units', $payload)
+            ->assertCreated()
+            ->json('data.id');
+
+        $this->assertDatabaseHas('units', [
+            'id' => $unitId,
+            'merk' => null,
+        ]);
+
+        $this->putJson('/api/v1/units/' . $unitId, array_merge($payload, [
+            'merk' => null,
+            'tipe' => 'Innova',
+        ]))->assertOk();
+
+        $this->assertDatabaseHas('units', [
+            'id' => $unitId,
+            'merk' => null,
+            'tipe' => 'Innova',
+        ]);
     }
 
     private function searchUnitIds(string $search): array

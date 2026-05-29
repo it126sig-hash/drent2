@@ -164,7 +164,7 @@ function resetForm() {
 
 const handleSave = () => {
   const required = [
-    'tipe', 'merk', 'tahun', 'no_polisi', 'city_id',
+    'tipe', 'tahun', 'no_polisi', 'city_id',
     'harga_1_hari', 'harga_1_minggu', 'harga_1_bulan',
     'harga_all_in', 'harga_all_in_1_minggu', 'harga_all_in_1_bulan',
     'modal_1_hari', 'modal_1_minggu', 'modal_1_bulan',
@@ -219,8 +219,8 @@ const onDeletePhoto = async ({ unitId, photoId }) => {
         <h3 class="section-title"><i class="pi pi-info-circle mr-2"></i>Informasi Kendaraan</h3>
         <div class="form-row">
           <div class="field">
-            <label for="merk" class="label-required">Merk</label>
-            <InputText id="merk" v-model="formData.merk" placeholder="Contoh: Toyota" :class="{ 'p-invalid': !formData.merk }" />
+            <label for="merk">Merk</label>
+            <InputText id="merk" v-model="formData.merk" placeholder="Contoh: Toyota" />
           </div>
           <div class="field">
             <label for="tipe" class="label-required">Tipe / Model</label>
@@ -384,7 +384,7 @@ const onDeletePhoto = async ({ unitId, photoId }) => {
           class="p-button-tosca" 
           @click="handleSave" 
           :loading="loading" 
-          :disabled="!formData.merk || !formData.tipe || !formData.no_polisi" 
+          :disabled="!formData.tipe || !formData.no_polisi" 
         />
       </div>
     </template>

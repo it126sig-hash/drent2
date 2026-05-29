@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\BookingPaymentController;
 use App\Http\Controllers\Api\V1\RefundController;
 use App\Http\Controllers\Api\V1\PhysicalCheckController;
 use App\Http\Controllers\Api\V1\PhysicalCheckItemController;
+use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\ReceivableController;
 use App\Http\Controllers\Api\V1\RentToRentController;
 use App\Http\Controllers\Api\V1\SupervisorRequestController;
@@ -45,6 +46,9 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:sanctum', 'branch.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
+        Route::get('/profile', [ProfileController::class, 'show']);
+        Route::post('/profile', [ProfileController::class, 'update']);
+        Route::patch('/profile/password', [ProfileController::class, 'updatePassword']);
         Route::get('dashboard', [DashboardController::class, 'index']);
         
         Route::get('branches', [BranchController::class, 'index']);

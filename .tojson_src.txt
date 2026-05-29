@@ -1,0 +1,52 @@
+﻿def to_json(G: nx.Graph, communities: dict[int, list[str]], output_path: str, *, force: bool = False, built_at_commit: str | None = None) -> bool:
+    # Safety check: refuse to silently shrink an existing graph (#479)
+    existing_path = Path(output_path)
+    if not force and existing_path.exists():
+        try:
+            from graphify.security import check_graph_file_size_cap
+            check_graph_file_size_cap(existing_path)
+            existing_data = json.loads(existing_path.read_text(encoding="utf-8"))
+            existing_n = len(existing_data.get("nodes", []))
+            new_n = G.number_of_nodes()
+            if new_n < existing_n:
+                import sys as _sys
+                print(
+                    f"[graphify] WARNING: new graph has {new_n} nodes but existing "
+                    f"graph.json has {existing_n}. Refusing to overwrite � you may be "
+                    f"missing chunk files from a previous session. "
+                    f"Pass force=True to override.",
+                    file=_sys.stderr,
+                )
+                return False
+        except Exception:
+            pass  # unreadable existing file � proceed with write
+
+    node_community = _node_community_map(communities)
+    try:
+        data = json_graph.node_link_data(G, edges="links")
+    except TypeError:
+        data = json_graph.node_link_data(G)
+    for node in data["nodes"]:
+        node["community"] = node_community.get(node["id"])
+        node["norm_label"] = _strip_diacritics(node.get("label", "")).lower()
+    for link in data["links"]:
+        if "confidence_score" not in link:
+            conf = link.get("confidence", "EXTRACTED")
+            link["confidence_score"] = _CONFIDENCE_SCORE_DEFAULTS.get(conf, 1.0)
+        # Restore original edge direction. Undirected NetworkX storage may
+        # canonicalize endpoint order, flipping `calls` and other directional
+        # edges in graph.json. The build path stashes the true endpoints in
+        # _src/_tgt for exactly this purpose (#563).
+        true_src = link.pop("_src", None)
+        true_tgt = link.pop("_tgt", None)
+        if true_src is not None and true_tgt is not None:
+            link["source"] = true_src
+            link["target"] = true_tgt
+    data["hyperedges"] = getattr(G, "graph", {}).get("hyperedges", [])
+    commit = built_at_commit if built_at_commit is not None else _git_head()
+    if commit:
+        data["built_at_commit"] = commit
+    with open(output_path, "w", encoding="utf-8") as f:  # nosec
+        json.dump(data, f, indent=2)
+    return True
+

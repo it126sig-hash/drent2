@@ -17,7 +17,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
 // Keputusan ini belum final per [2026-05-09].
 
-#[Fillable(['name', 'email', 'password', 'tenant_id', 'branch_id', 'role', 'is_active'])]
+#[Fillable([
+    'name',
+    'email',
+    'password',
+    'tenant_id',
+    'branch_id',
+    'role',
+    'is_active',
+    'nik',
+    'alamat',
+    'no_rekening',
+    'bank',
+    'atas_nama',
+    'kontak',
+    'foto_profile_path',
+])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {

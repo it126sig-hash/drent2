@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { format, parseISO, addDays, startOfDay } from 'date-fns';
+import { format, parseISO, addDays, startOfDay, endOfMonth, differenceInCalendarDays } from 'date-fns';
 
 const props = defineProps({
   bookings: {
@@ -19,12 +19,16 @@ const props = defineProps({
 
 const emit = defineEmits(['calendar-context']);
 
-const DAYS_COUNT = 30;
 const todayStr = new Date().toISOString().slice(0, 10);
+
+const daysCount = computed(() => {
+  const start = startOfDay(parseISO(props.startDate));
+  return differenceInCalendarDays(endOfMonth(start), start) + 1;
+});
 
 const days = computed(() => {
   const start = parseISO(props.startDate);
-  return Array.from({ length: DAYS_COUNT }, (_, i) => {
+  return Array.from({ length: daysCount.value }, (_, i) => {
     const d = addDays(start, i);
     const dow = d.getDay();
     return {
@@ -44,7 +48,7 @@ const formatIDR = (val) =>
 const bookingBars = computed(() => {
   const result = [];
   const start = startOfDay(parseISO(props.startDate));
-  const end = addDays(start, DAYS_COUNT);
+  const end = addDays(start, daysCount.value);
   const visibleUnitIds = new Set(props.units.map(unit => unit.id));
 
   props.bookings.forEach(booking => {
@@ -66,7 +70,7 @@ const bookingBars = computed(() => {
       if (overlapStart <= overlapEnd && overlapStart < end && overlapEnd >= start) {
         const startOffset = Math.max(0, Math.floor((overlapStart - start) / (1000 * 60 * 60 * 24)));
         const duration = Math.floor((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
-        const span = Math.min(duration, DAYS_COUNT - startOffset);
+        const span = Math.min(duration, daysCount.value - startOffset);
 
         if (span > 0) {
           const detailType = detail.detail_type === 'extend' ? 'extend' : 'initial';
@@ -150,7 +154,7 @@ const handleBookingClick = (event, bar) => {
     <div class="calendar-container">
       <div
         class="calendar-grid"
-        :style="{ gridTemplateColumns: `180px repeat(${DAYS_COUNT}, 40px)` }"
+        :style="{ gridTemplateColumns: `180px repeat(${daysCount}, 40px)` }"
       >
         <!-- Row 1: Header -->
         <!-- Col 1: Corner -->

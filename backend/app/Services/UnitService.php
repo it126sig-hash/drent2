@@ -115,6 +115,7 @@ class UnitService
 
     public function create(array $data)
     {
+        $data = $this->normalizeNullableFields($data);
         $data['tenant_id'] = Auth::user()->tenant_id;
         // Jika branch_id tidak dikirim, gunakan branch user yang login
         if (!isset($data['branch_id'])) {
@@ -125,8 +126,18 @@ class UnitService
 
     public function update(Unit $unit, array $data)
     {
+        $data = $this->normalizeNullableFields($data);
         $unit->update($data);
         return $unit;
+    }
+
+    private function normalizeNullableFields(array $data): array
+    {
+        if (array_key_exists('merk', $data) && trim((string) $data['merk']) === '') {
+            $data['merk'] = null;
+        }
+
+        return $data;
     }
 
     public function delete(Unit $unit)

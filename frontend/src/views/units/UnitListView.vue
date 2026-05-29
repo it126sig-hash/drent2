@@ -68,7 +68,8 @@ const statusOptions = [
   { label: 'Semua Status', value: null },
   { label: 'Aktif', value: 'Aktif' },
   { label: 'Tidak Aktif', value: 'Tidak Aktif' },
-  { label: 'Dalam Servis', value: 'Dalam Servis' }
+  { label: 'Dalam Servis', value: 'Dalam Servis' },
+  { label: 'Out', value: 'Out' }
 ]
 
 const cityOptions = computed(() => {
@@ -184,7 +185,7 @@ const saveUnit = async (data) => {
 
 const confirmDelete = (unit) => {
   confirm.require({
-    message: `Apakah Anda yakin ingin menghapus unit "${unit.merk} ${unit.tipe}" (${unit.no_polisi})?`,
+    message: `Apakah Anda yakin ingin menghapus unit "${unitLabel(unit)}" (${unit.no_polisi})?`,
     header: 'Konfirmasi Hapus',
     icon: 'pi pi-exclamation-triangle',
     acceptClass: 'p-button-danger',
@@ -242,6 +243,7 @@ const getStatusSeverity = (status) => {
     case 'Aktif': return 'success'
     case 'Tidak Aktif': return 'danger'
     case 'Dalam Servis': return 'warning'
+    case 'Out': return 'info'
     default: return 'info'
   }
 }
@@ -258,6 +260,8 @@ const isMissingModal = (data) => {
 const getRowClass = (data) => {
   return isMissingModal(data) ? 'row-no-modal' : ''
 }
+
+const unitLabel = (unit) => [unit?.merk, unit?.tipe].filter(Boolean).join(' ') || '-'
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value)
@@ -424,7 +428,7 @@ const formatCurrency = (value) => {
           <Column field="no_polisi" header="Kendaraan" style="min-width: 120px">
             <template #body="{ data }">
                <div class="unit-info">
-                <span class="unit-name">{{ data.merk }} {{ data.tipe }}</span>
+                <span class="unit-name">{{ unitLabel(data) }}</span>
                 <small class="unit-year">Tahun {{ data.tahun || '-' }}</small>
               </div>
               <span class="plat-badge">{{ data.no_polisi }}</span>
@@ -479,7 +483,7 @@ const formatCurrency = (value) => {
           <div class="mobile-card-header">
             <div>
               <span class="plat-badge">{{ unit.no_polisi }}</span>
-              <h3>{{ unit.merk }} {{ unit.tipe }}</h3>
+              <h3>{{ unitLabel(unit) }}</h3>
               <p>Tahun {{ unit.tahun || '-' }}</p>
             </div>
             <Tag :severity="getStatusSeverity(unit.status)" :value="unit.status" class="status-tag" />
