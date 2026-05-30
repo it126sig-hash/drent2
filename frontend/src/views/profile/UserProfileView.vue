@@ -6,6 +6,7 @@ import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Textarea from 'primevue/textarea'
 
+import SignatureCanvas from '../../components/SignatureCanvas.vue'
 import { getProfile, updateProfile, updateProfilePassword } from '../../api/profile'
 import { useAuthStore } from '../../stores/auth'
 
@@ -19,6 +20,7 @@ const photoInput = ref(null)
 const selectedPhoto = ref(null)
 const photoPreview = ref(null)
 const shouldRemovePhoto = ref(false)
+const signatureData = ref(null)
 
 const profileForm = ref({
   name: '',
@@ -29,6 +31,7 @@ const profileForm = ref({
   atas_nama: '',
   kontak: '',
   foto_profile_url: null,
+  signature_url: null,
 })
 
 const passwordForm = ref({
@@ -70,6 +73,7 @@ const fillProfile = (user) => {
     atas_nama: user?.atas_nama || '',
     kontak: user?.kontak || '',
     foto_profile_url: user?.foto_profile_url || null,
+    signature_url: user?.signature_url || null,
   }
 }
 
@@ -88,6 +92,7 @@ const fetchProfile = async () => {
   try {
     const { data } = await getProfile()
     fillProfile(data.data)
+    signatureData.value = data.data?.signature_url || null
     authStore.setUser(data.data)
   } catch (error) {
     toast.add({ severity: 'error', summary: 'Gagal', detail: 'Gagal memuat profil user', life: 3000 })
@@ -137,6 +142,12 @@ const submitProfile = async () => {
   payload.append('atas_nama', profileForm.value.atas_nama || '')
   payload.append('kontak', profileForm.value.kontak || '')
   payload.append('remove_foto_profile', shouldRemovePhoto.value ? '1' : '0')
+
+  if (signatureData.value) {
+    payload.append('signature_data', signatureData.value)
+  } else {
+    payload.append('remove_signature', '1')
+  }
 
   if (selectedPhoto.value) {
     payload.append('foto_profile', selectedPhoto.value)
@@ -298,6 +309,17 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </form>
+        </section>
+
+        <section class="app-card profile-info-card">
+          <div class="app-section-header profile-section-header">
+            <div class="section-title">
+              <i class="pi pi-pencil"></i>
+              <span>Tanda Tangan</span>
+            </div>
+          </div>
+          <p class="text-secondary text-xs" style="margin: 0 0 12px;">Tanda tangan ini akan digunakan pada invoice, kwitansi, dan dokumen lainnya.</p>
+          <SignatureCanvas v-model="signatureData" :width="400" :height="180" />
         </section>
       </div>
 

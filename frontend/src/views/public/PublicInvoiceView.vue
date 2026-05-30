@@ -317,7 +317,8 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="signature-section">
-              <div class="signature-line"></div>
+              <img v-if="invoice?.signature_url" :src="invoice.signature_url" class="signature-img" alt="Signature" />
+              <div v-else class="signature-line"></div>
               <div class="signature-text">{{ authorizedSignName }}</div>
               <div class="signature-caption">Authorised Sign</div>
             </div>
@@ -815,6 +816,13 @@ onBeforeUnmount(() => {
   text-align: right;
   width: 150px;
   align-self: flex-end;
+}
+
+.signature-img {
+  width: 150px;
+  height: 60px;
+  object-fit: contain;
+  margin-bottom: 4px;
 }
 
 .signature-line {

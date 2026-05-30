@@ -53,6 +53,8 @@ class DriverOperationalFundResource extends JsonResource
                 'status' => $this->booking->status,
                 'tujuan' => $this->booking->tujuan,
                 'kota' => $this->booking->kota,
+                'alamat_penjemputan' => $this->booking->alamat_penjemputan,
+                'catatan' => $this->booking->catatan,
                 'customer' => $this->booking->relationLoaded('customer') && $this->booking->customer ? [
                     'id' => $this->booking->customer->id,
                     'nama' => $this->booking->customer->nama,

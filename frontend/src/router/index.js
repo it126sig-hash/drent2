@@ -214,6 +214,12 @@ const router = createRouter({
           meta: { permission: "driver.operational" },
         },
         {
+          path: "/driver/trip-history",
+          name: "DriverTripHistory",
+          component: () => import("../views/driver/DriverTripHistoryView.vue"),
+          meta: { permission: "driver.operational" },
+        },
+        {
           path: "/physical-checks/:bookingId/:type",
           name: "PhysicalCheckForm",
           component: () =>

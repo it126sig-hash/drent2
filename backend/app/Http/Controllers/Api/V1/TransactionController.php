@@ -38,6 +38,7 @@ class TransactionController extends Controller
         $query = Booking::query()
             ->where('tenant_id', $user->tenant_id)
             ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
+            ->when($user->role === 'cs', fn($q) => $q->where('handled_by', $user->id))
             // Total dana R2R yang harus dibayarkan ke pemilik
             ->withSum(['rentToRentDebts as total_rent_to_rent' => fn($q) => $q->where('status', '!=', 'cancelled')], 'cached_total_amount')
             // Total dana yang diserahkan ke driver (gross disbursement)
@@ -99,6 +100,9 @@ class TransactionController extends Controller
         abort_unless($booking->tenant_id === $user->tenant_id, 403);
         if ($user->role !== 'superadmin') {
             abort_unless($booking->branch_id === $user->branch_id, 403);
+        }
+        if ($user->role === 'cs') {
+            abort_unless($booking->handled_by === $user->id, 403);
         }
 
         $booking->load([

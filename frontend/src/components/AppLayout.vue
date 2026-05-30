@@ -206,9 +206,9 @@ const filteredMenuSections = computed(() => {
       <button class="menu-btn" @click="toggleMobileSidebar">
         <i class="pi pi-bars"></i>
       </button>
-      <img class="app-logo app-logo-mobile" src="/logo.svg" alt="DRENT Vibe" />
+      <img class="app-logo app-logo-mobile" src="/logo-light.svg" alt="DRENT Vibe" />
       <div class="mobile-header-right">
-        <i class="pi pi-bell text-secondary"></i>
+        <i class="pi pi-bell" style="color: #FFFFFF;"></i>
         <RouterLink to="/profile" class="user-avatar-mini">
           <img v-if="userPhotoUrl" :src="userPhotoUrl" alt="Foto profil" />
           <span v-else>{{ userInitials }}</span>
@@ -268,31 +268,39 @@ const filteredMenuSections = computed(() => {
 
 
     <!-- Mobile Bottom Navigation -->
-    <nav class="mobile-bottom-nav show-mobile">
+    <nav v-if="authStore.user?.role === 'driver_tetap'" class="mobile-bottom-nav mobile-bottom-nav-driver show-mobile">
+      <RouterLink to="/driver/operational" class="bottom-nav-item" :class="{ active: isMenuItemActive('/driver/operational') }">
+        <i class="pi pi-briefcase"></i>
+        <span>Operasional</span>
+      </RouterLink>
+      <RouterLink to="/driver/trip-history" class="bottom-nav-item" :class="{ active: isMenuItemActive('/driver/trip-history') }">
+        <i class="pi pi-history"></i>
+        <span>Riwayat Jalan</span>
+      </RouterLink>
+      <RouterLink to="/profile" class="bottom-nav-item" :class="{ active: isMenuItemActive('/profile') }">
+        <i class="pi pi-user"></i>
+        <span>Profil</span>
+      </RouterLink>
+    </nav>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav v-else class="mobile-bottom-nav show-mobile">
       <RouterLink to="/" class="bottom-nav-item" :class="{ active: isMenuItemActive('/') }">
         <i class="pi pi-home"></i>
-        <span>Home</span>
+        <span>Dashboard</span>
       </RouterLink>
-      <RouterLink v-if="authStore.user?.role === 'driver_tetap'" to="/driver/operational" class="bottom-nav-item" :class="{ active: isMenuItemActive('/driver/operational') }">
-        <i class="pi pi-briefcase"></i>
-        <span>Ops</span>
-      </RouterLink>
-      <RouterLink v-else to="/bookings" class="bottom-nav-item" :class="{ active: isMenuItemActive('/bookings') }">
+      <RouterLink to="/bookings" class="bottom-nav-item" :class="{ active: isMenuItemActive('/bookings') }">
         <i class="pi pi-calendar"></i>
         <span>Booking</span>
       </RouterLink>
-      <RouterLink to="/units" class="bottom-nav-item" :class="{ active: isMenuItemActive('/units') }">
-        <i class="pi pi-car"></i>
-        <span>Unit</span>
+      <RouterLink to="/finance/receivables" class="bottom-nav-item" :class="{ active: isMenuItemActive('/finance/receivables') }">
+        <i class="pi pi-wallet"></i>
+        <span>Piutang</span>
       </RouterLink>
-      <RouterLink to="/physical-checks" class="bottom-nav-item" :class="{ active: isMenuItemActive('/physical-checks') }">
-        <i class="pi pi-check-square"></i>
-        <span>Cek Fisik</span>
+      <RouterLink to="/finance/rent-to-rent" class="bottom-nav-item" :class="{ active: isMenuItemActive('/finance/rent-to-rent') }">
+        <i class="pi pi-building"></i>
+        <span>Rent2Rent</span>
       </RouterLink>
-      <button class="bottom-nav-item" @click="toggleMobileSidebar">
-        <i class="pi pi-bars"></i>
-        <span>Menu</span>
-      </button>
     </nav>
   </div>
 </template>
@@ -604,8 +612,8 @@ const filteredMenuSections = computed(() => {
 /* === Mobile Elements === */
 .mobile-top-bar {
   height: 56px;
-  background-color: var(--surface-default);
-  border-bottom: 1px solid var(--surface-border);
+  background-color: var(--primary);
+  border-bottom: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -613,6 +621,7 @@ const filteredMenuSections = computed(() => {
   position: sticky;
   top: 0;
   z-index: 90;
+  color: #FFFFFF;
 }
 
 .app-logo-mobile {
@@ -624,7 +633,7 @@ const filteredMenuSections = computed(() => {
   background: none;
   border: none;
   font-size: 1.25rem;
-  color: var(--text-primary);
+  color: #FFFFFF;
 }
 
 .mobile-header-right {
@@ -673,7 +682,11 @@ const filteredMenuSections = computed(() => {
   background: none;
   border: none;
   padding: 8px 0;
-  width: 20%;
+  width: 25%;
+}
+
+.mobile-bottom-nav-driver .bottom-nav-item {
+  width: 33.3333%;
 }
 
 .bottom-nav-item i { font-size: 1.2rem; }
@@ -698,7 +711,7 @@ const filteredMenuSections = computed(() => {
    top: 0; left: -280px;
    width: 280px;
    height: 100vh;
-   background: #0B1F3A;
+   background: var(--primary);
    z-index: 1001;
    transition: left 0.3s ease;
    display: flex;

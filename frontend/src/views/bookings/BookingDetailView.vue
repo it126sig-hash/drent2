@@ -1920,6 +1920,7 @@ const printPayment = (payment) => {
     paymentAccounts.value,
     authStore.branch,
   )
+  receipt.signature_url = authStore.user?.signature_url || null
   printPaymentReceipt(receipt)
 };
 

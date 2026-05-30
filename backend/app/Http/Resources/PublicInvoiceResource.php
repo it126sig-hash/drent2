@@ -30,6 +30,7 @@ class PublicInvoiceResource extends JsonResource
             'updated_at' => $this->updated_at?->toISOString(),
             'created_at' => $this->created_at?->toISOString(),
             'created_by_name' => $this->creator?->name,
+            'signature_url' => $this->publicStorageUrl($this->creator?->signature_path),
             'branch' => $this->branch ? [
                 'id' => $this->branch->id,
                 'name' => $this->branch->name ?? $this->branch->nama ?? null,

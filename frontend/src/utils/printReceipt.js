@@ -359,6 +359,12 @@ export function printPaymentReceipt(receipt) {
       width: 150px;
       align-self: flex-end;
     }
+    .signature-img {
+      width: 150px;
+      height: 60px;
+      object-fit: contain;
+      margin-bottom: 4px;
+    }
     .signature-line {
       border-bottom: 1px solid #1a1f2e;
       width: 100%;
@@ -479,7 +485,7 @@ export function printPaymentReceipt(receipt) {
           ${summaryHtml}
         </div>
         <div class="signature-section">
-          <div class="signature-line"></div>
+          ${receipt.signature_url ? `<img src="${esc(receipt.signature_url)}" class="signature-img" />` : `<div class="signature-line"></div>`}
           <div class="signature-text">${esc(receipt.created_by_name || 'Admin')}</div>
           <div class="signature-caption">Yang Menerima</div>
         </div>

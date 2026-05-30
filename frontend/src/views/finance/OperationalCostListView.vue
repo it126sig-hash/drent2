@@ -285,6 +285,7 @@ const formatCurrency = (value) =>
 
 const abbreviateLabel = (label) => {
   if (!label) return '-'
+  if (label.length <= 16) return label
   return label.split(' ').map(word => word.charAt(0).toUpperCase()).join('')
 }
 
@@ -1004,13 +1005,12 @@ onUnmounted(() => {
               <div class="amount-stack amount-stack-rowspan"
                 :class="{ 'group-summary-amount': data.row_type === 'summary' }">
                 <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.budget_total) }}</span>
-                <div v-else class="flex flex-col gap-1">
-                  <div v-for="(item, idx) in data.budget_breakdown" :key="idx" class="flex justify-between text-xs">
-                    <span class="text-[9px] text-secondary italic" :title="item.label">({{ abbreviateLabel(item.label)
-                    }})</span>
-                    <span>{{ formatCurrency(item.amount) }}</span>
+                <div v-else class="breakdown-list">
+                  <div v-for="(item, idx) in data.budget_breakdown" :key="idx" class="breakdown-item">
+                    <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
+                    <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
                   </div>
-                  <div v-if="!data.budget_breakdown?.length">-</div>
+                  <div v-if="!data.budget_breakdown?.length" class="breakdown-empty">-</div>
                 </div>
               </div>
             </template>
@@ -1020,12 +1020,12 @@ onUnmounted(() => {
               <div class="amount-stack amount-stack-rowspan"
                 :class="{ 'group-summary-amount': data.row_type === 'summary' }">
                 <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.disbursed_total) }}</span>
-                <div v-else class="flex flex-col gap-1">
-                  <div v-for="(item, idx) in data.deposit_breakdown" :key="idx" class="flex justify-between text-xs">
-                    <span class="text-secondary" :title="item.label">{{ abbreviateLabel(item.label) }}:</span>
-                    <span>{{ formatCurrency(item.amount) }}</span>
+                <div v-else class="breakdown-list">
+                  <div v-for="(item, idx) in data.deposit_breakdown" :key="idx" class="breakdown-item">
+                    <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
+                    <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
                   </div>
-                  <div v-if="!data.deposit_breakdown?.length">-</div>
+                  <div v-if="!data.deposit_breakdown?.length" class="breakdown-empty">-</div>
                 </div>
                 <Tag v-if="data.has_pending_driver_acceptance" value="Belum di ACC driver" severity="warn" />
               </div>
@@ -1037,13 +1037,12 @@ onUnmounted(() => {
               <div class="amount-stack amount-stack-rowspan"
                 :class="{ 'group-summary-amount': data.row_type === 'summary' }">
                 <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.realization_total) }}</span>
-                <div v-else class="flex flex-col gap-1">
-                  <div v-for="(item, idx) in data.realization_breakdown" :key="idx"
-                    class="flex justify-between text-xs">
-                    <span class="text-secondary" :title="item.label">{{ abbreviateLabel(item.label) }}:</span>
-                    <span>{{ formatCurrency(item.amount) }}</span>
+                <div v-else class="breakdown-list">
+                  <div v-for="(item, idx) in data.realization_breakdown" :key="idx" class="breakdown-item">
+                    <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
+                    <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
                   </div>
-                  <div v-if="!data.realization_breakdown?.length">-</div>
+                  <div v-if="!data.realization_breakdown?.length" class="breakdown-empty">-</div>
                 </div>
                 <Tag v-if="data.has_pending_driver_receipts" value="Request ACC" severity="warn" />
               </div>
@@ -2544,5 +2543,83 @@ onUnmounted(() => {
     width: 100%;
     justify-content: center;
   }
+}
+
+/* ── Breakdown items in amount cells ── */
+.breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
+
+.breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.07);
+  padding-bottom: 2px;
+}
+
+.breakdown-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.breakdown-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.breakdown-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.breakdown-empty {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* ── Right-align all amount data ── */
+.amount-stack {
+  text-align: right;
+}
+
+/* ── Column headers: compact uppercase style ── */
+:deep(.operational-table-shell .p-datatable-thead > tr > th) {
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--surface-border);
+}
+
+/* ── Strong separator between booking groups ── */
+:deep(.drent-datatable .p-datatable-tbody > tr.operational-row-summary > td) {
+  border-bottom: 2px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ── Subtle row hover for detail rows ── */
+:deep(.drent-datatable .p-datatable-tbody > tr:not(.operational-row-summary):hover > td:not([rowspan])) {
+  background: rgba(0, 112, 234, 0.04);
+}
+
+/* ── Tighten cell padding for denser data view ── */
+:deep(.operational-table-shell .p-datatable-tbody > tr > td) {
+  padding: 10px 12px;
 }
 </style>

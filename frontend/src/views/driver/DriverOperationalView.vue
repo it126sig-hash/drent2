@@ -12,11 +12,9 @@ import { useOperationalFund } from '../../composables/useOperationalFund'
 
 const {
   funds,
-  schedules,
   loading,
   actionLoading,
   fetchDriverFunds,
-  fetchDriverSchedules,
   acceptFund,
   submitExpense,
 } = useOperationalFund()
@@ -25,8 +23,6 @@ const { costTypes, fetchAll: fetchCostTypes } = useCostType()
 const activeTab = ref('funds')
 const selectedFund = ref(null)
 const showExpenseDialog = ref(false)
-const showScheduleDialog = ref(false)
-const selectedSchedule = ref(null)
 const expenseForm = ref({
   type: 'expense',
   cost_type_id: null,
@@ -48,27 +44,20 @@ const currentBalance = computed(() => {
   return fundWithDriver?.driver?.saldo || 0
 })
 
-const pendingFunds = computed(() =>
-  funds.value.filter(fund => fund.status === 'pending_driver_acceptance')
+// Hanya tampilkan transaksi yang masih aktif (belum closed/cancelled)
+const activeOnlyFunds = computed(() =>
+  funds.value.filter(fund => fund.status !== 'closed' && fund.status !== 'cancelled')
 )
 
-const activeFunds = computed(() =>
-  funds.value.filter(fund => fund.status === 'accepted')
+const pendingFunds = computed(() =>
+  activeOnlyFunds.value.filter(fund => fund.status === 'pending_driver_acceptance')
 )
 
 const rejectedExpenses = computed(() =>
-  funds.value.flatMap(fund => (fund.expenses || [])
+  activeOnlyFunds.value.flatMap(fund => (fund.expenses || [])
     .filter(expense => expense.status === 'rejected')
     .map(expense => ({ ...expense, fund }))
   )
-)
-
-const upcomingSchedules = computed(() =>
-  schedules.value.filter(item => new Date(item.tgl_kembali) >= new Date())
-)
-
-const pastSchedules = computed(() =>
-  schedules.value.filter(item => new Date(item.tgl_kembali) < new Date())
 )
 
 const formatCurrency = (value) =>
@@ -77,6 +66,11 @@ const formatCurrency = (value) =>
 const formatDateTime = (value) => {
   if (!value) return '-'
   return format(new Date(value), 'dd MMM yyyy HH:mm')
+}
+
+const formatDate = (value) => {
+  if (!value) return '-'
+  return format(new Date(value), 'dd MMM yyyy')
 }
 
 const fundStatusSeverity = (status) => {
@@ -92,11 +86,15 @@ const expenseStatusSeverity = (status) => {
   return 'warn'
 }
 
+const unitLabel = (fund) => {
+  const unit = fund.booking_detail?.unit
+  if (!unit) return '-'
+  const merkTipe = [unit.merk, unit.tipe].filter(Boolean).join(' ')
+  return merkTipe || '-'
+}
+
 const reload = async () => {
-  await Promise.all([
-    fetchDriverFunds(1),
-    fetchDriverSchedules(),
-  ])
+  await fetchDriverFunds(1)
 }
 
 const handleAcceptFund = async (fund) => {
@@ -138,11 +136,6 @@ const submitDriverExpense = async () => {
   await reload()
 }
 
-const openSchedule = (schedule) => {
-  selectedSchedule.value = schedule
-  showScheduleDialog.value = true
-}
-
 onMounted(async () => {
   await Promise.all([
     reload(),
@@ -156,7 +149,7 @@ onMounted(async () => {
     <header class="driver-header">
       <div>
         <h1 class="text-h1">Operasional Driver</h1>
-        <p class="text-secondary text-xs">Dana, bon, pengembalian, dan jadwal sewa kamu.</p>
+        <p class="text-secondary text-xs">Dana, bon, dan pengembalian transaksi yang sedang berjalan.</p>
       </div>
       <button class="btn-pill btn-secondary btn-pill-compact" :disabled="loading" @click="reload">
         <i class="pi pi-refresh"></i>
@@ -179,28 +172,34 @@ onMounted(async () => {
         <i class="pi pi-receipt"></i>
         Bon
       </button>
-      <button class="tab-button" :class="{ active: activeTab === 'schedule' }" @click="activeTab = 'schedule'">
-        <i class="pi pi-calendar"></i>
-        Jadwal
-      </button>
     </div>
 
     <ProgressBar v-if="loading" mode="indeterminate" style="height: 4px" />
 
     <section v-if="activeTab === 'funds'" class="card-stack">
-      <article v-for="fund in funds" :key="fund.id" class="app-card fund-card">
+      <article v-for="fund in activeOnlyFunds" :key="fund.id" class="app-card fund-card">
         <div class="card-top">
           <div>
             <strong>{{ fund.booking?.kode_booking || '-' }}</strong>
-            <p>{{ fund.booking?.customer?.nama || '-' }} - {{ fund.booking?.tujuan || '-' }}</p>
+            <p>{{ fund.booking?.customer?.nama || '-' }}</p>
           </div>
           <Tag :value="fund.status" :severity="fundStatusSeverity(fund.status)" />
         </div>
         <div class="fund-amount">{{ formatCurrency(fund.amount) }}</div>
         <div class="info-grid">
-          <span>Tanggal</span><strong>{{ formatDateTime(fund.paid_at) }}</strong>
-          <span>Tujuan</span><strong>{{ fund.recipient_destination }}</strong>
-          <span>Sisa</span><strong>{{ formatCurrency(fund.summary.remaining_amount) }}</strong>
+          <span>Unit</span><strong>{{ unitLabel(fund) }}</strong>
+          <span>Nopol</span><strong>{{ fund.booking_detail?.unit?.no_polisi || '-' }}</strong>
+          <span>Tgl Sewa</span>
+          <strong>
+            {{ formatDate(fund.booking_detail?.tgl_sewa) }}
+            <template v-if="fund.booking_detail?.tgl_kembali">
+              &mdash; {{ formatDate(fund.booking_detail?.tgl_kembali) }}
+            </template>
+          </strong>
+          <span>Penjemputan</span><strong>{{ fund.booking?.alamat_penjemputan || '-' }}</strong>
+          <span>Tujuan</span><strong>{{ fund.booking?.tujuan || '-' }}</strong>
+          <span>Catatan</span><strong>{{ fund.booking?.catatan || '-' }}</strong>
+          <span>Sisa Dana</span><strong>{{ formatCurrency(fund.summary.remaining_amount) }}</strong>
         </div>
         <div class="breakdown-list">
           <div v-for="item in fund.items" :key="item.id">
@@ -225,14 +224,14 @@ onMounted(async () => {
           </template>
         </div>
       </article>
-      <div v-if="!funds.length && !loading" class="empty-state">
+      <div v-if="!activeOnlyFunds.length && !loading" class="empty-state">
         <i class="pi pi-info-circle"></i>
-        <span>Belum ada dana operasional.</span>
+        <span>Belum ada dana operasional aktif.</span>
       </div>
     </section>
 
-    <section v-else-if="activeTab === 'receipts'" class="card-stack">
-      <article v-for="fund in funds" :key="fund.id" class="app-card receipt-group">
+    <section v-else class="card-stack">
+      <article v-for="fund in activeOnlyFunds" :key="fund.id" class="app-card receipt-group">
         <div class="card-top">
           <strong>{{ fund.booking?.kode_booking || '-' }}</strong>
           <span>{{ formatCurrency(fund.summary.remaining_amount) }} tersisa</span>
@@ -253,25 +252,10 @@ onMounted(async () => {
         </div>
         <div v-else class="muted-line">Belum ada bon.</div>
       </article>
-    </section>
-
-    <section v-else class="card-stack">
-      <div class="schedule-section-title">Akan Datang</div>
-      <article v-for="schedule in upcomingSchedules" :key="schedule.id" class="app-card schedule-card" @click="openSchedule(schedule)">
-        <div>
-          <strong>{{ schedule.booking?.kode_booking || '-' }}</strong>
-          <p>{{ schedule.booking?.customer?.nama || '-' }} - {{ schedule.booking?.tujuan || '-' }}</p>
-        </div>
-        <span>{{ formatDateTime(schedule.tgl_sewa) }}</span>
-      </article>
-      <div class="schedule-section-title">Sudah Berlalu</div>
-      <article v-for="schedule in pastSchedules" :key="schedule.id" class="app-card schedule-card past" @click="openSchedule(schedule)">
-        <div>
-          <strong>{{ schedule.booking?.kode_booking || '-' }}</strong>
-          <p>{{ schedule.booking?.customer?.nama || '-' }} - {{ schedule.booking?.tujuan || '-' }}</p>
-        </div>
-        <span>{{ formatDateTime(schedule.tgl_sewa) }}</span>
-      </article>
+      <div v-if="!activeOnlyFunds.length && !loading" class="empty-state">
+        <i class="pi pi-info-circle"></i>
+        <span>Belum ada bon untuk transaksi aktif.</span>
+      </div>
     </section>
 
     <Dialog v-model:visible="showExpenseDialog" :header="expenseForm.type === 'return' ? 'Pengembalian Dana' : 'Input Bon'" modal position="bottom" class="custom-dialog mobile-bottom-sheet">
@@ -310,20 +294,6 @@ onMounted(async () => {
           Kirim
         </button>
       </template>
-    </Dialog>
-
-    <Dialog v-model:visible="showScheduleDialog" header="Detail Jadwal" modal position="bottom" class="custom-dialog mobile-bottom-sheet">
-      <div v-if="selectedSchedule" class="dialog-stack">
-        <div class="app-muted-panel">
-          <div class="summary-row"><span>Booking</span><strong>{{ selectedSchedule.booking?.kode_booking }}</strong></div>
-          <div class="summary-row"><span>Pelanggan</span><strong>{{ selectedSchedule.booking?.customer?.nama || '-' }}</strong></div>
-          <div class="summary-row"><span>Tujuan</span><strong>{{ selectedSchedule.booking?.tujuan || '-' }}</strong></div>
-          <div class="summary-row"><span>Kota</span><strong>{{ selectedSchedule.booking?.kota || '-' }}</strong></div>
-          <div class="summary-row"><span>Unit</span><strong>{{ selectedSchedule.unit?.no_polisi || '-' }}</strong></div>
-          <div class="summary-row"><span>Mulai</span><strong>{{ formatDateTime(selectedSchedule.tgl_sewa) }}</strong></div>
-          <div class="summary-row"><span>Kembali</span><strong>{{ formatDateTime(selectedSchedule.tgl_kembali) }}</strong></div>
-        </div>
-      </div>
     </Dialog>
   </div>
 </template>
@@ -372,7 +342,7 @@ onMounted(async () => {
 
 .mobile-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   margin-bottom: var(--space-lg);
@@ -417,8 +387,7 @@ onMounted(async () => {
 }
 
 .fund-card,
-.receipt-group,
-.schedule-card {
+.receipt-group {
   padding: var(--space-lg);
 }
 
@@ -442,8 +411,7 @@ onMounted(async () => {
 }
 
 .card-top p,
-.receipt-row p,
-.schedule-card p {
+.receipt-row p {
   margin: 4px 0 0;
   color: var(--text-secondary);
   font-size: 12px;
@@ -460,13 +428,19 @@ onMounted(async () => {
 
 .info-grid {
   display: grid;
-  grid-template-columns: 80px 1fr;
+  grid-template-columns: 96px 1fr;
+  row-gap: 6px;
   margin-bottom: var(--space-md);
   font-size: 12px;
+  line-height: 1.35;
 }
 
 .info-grid span {
   color: var(--text-secondary);
+}
+
+.info-grid strong {
+  word-break: break-word;
 }
 
 .breakdown-list {
@@ -527,8 +501,7 @@ onMounted(async () => {
 }
 
 .muted-line,
-.empty-state,
-.schedule-section-title {
+.empty-state {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 800;
@@ -543,29 +516,6 @@ onMounted(async () => {
   border: 1px dashed var(--surface-border);
   border-radius: var(--radius-default);
   background: var(--card-bg);
-}
-
-.schedule-section-title {
-  margin-top: var(--space-sm);
-  text-transform: uppercase;
-}
-
-.schedule-card {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  cursor: pointer;
-}
-
-.schedule-card > span {
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.schedule-card.past {
-  opacity: 0.78;
 }
 
 .form-fieldset,

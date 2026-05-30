@@ -6,6 +6,7 @@ import { useMonthlyFinanceReport } from '../../composables/useMonthlyFinanceRepo
 import { usePaymentAccount } from '../../composables/usePaymentAccount'
 import { useBranch } from '../../composables/useBranch'
 import { useRentToRent } from '../../composables/useRentToRent'
+import * as XLSX from 'xlsx'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Dropdown from 'primevue/dropdown'
@@ -312,13 +313,69 @@ const sourceSeverity = (sourceType) => {
   return map[sourceType] || 'secondary'
 }
 
-const exportExcelPlaceholder = () => {
-  toast.add({
-    severity: 'info',
-    summary: 'Export Excel',
-    detail: 'Fitur Export Excel untuk Laporan Bulanan sedang disiapkan.',
-    life: 3000
-  })
+const exportExcel = () => {
+  const wb = XLSX.utils.book_new()
+  const monthLabel = selectedMonthLabel.value
+  const year = filters.value.year
+
+  // Sheet 1: Ringkasan KPI
+  const kpiRows = [
+    ['Laporan Bulanan', `${monthLabel} ${year}`],
+    [],
+    ['Indikator', 'Nilai (IDR)'],
+    ...kpis.value.map(k => [k.label, Number(k.value || 0)]),
+  ]
+  const wsKpi = XLSX.utils.aoa_to_sheet(kpiRows)
+  wsKpi['!cols'] = [{ wch: 28 }, { wch: 20 }]
+  XLSX.utils.book_append_sheet(wb, wsKpi, 'Ringkasan')
+
+  // Sheet 2: Saldo per Rekening
+  const accHeader = [
+    'Rekening', 'No. Rekening', 'Atas Nama', 'Saldo Saat Ini',
+    'Est. Saldo Awal', 'Masuk Rental', 'Pemasukan Lain',
+    'Refund', 'Dana Operasional', 'Rent-to-Rent', 'Pengeluaran Lain',
+    'Transfer Masuk', 'Transfer Keluar', 'Penyesuaian', 'Net Movement', 'Status Rekonsiliasi',
+  ]
+  const accData = accountRows.value.map(row => [
+    cleanAccountName(row.payment_account.nama_bank),
+    row.payment_account.nomor_rekening,
+    row.payment_account.atas_nama,
+    Number(row.payment_account.current_balance || 0),
+    Number(row.estimated_opening_balance || 0),
+    Number(row.rental_income || 0),
+    Number(row.other_income || 0),
+    Number(row.refunds || 0),
+    Number(row.operational_funds || 0),
+    Number(row.rent_to_rent_payments || 0),
+    Number(row.other_expense || 0),
+    Number(row.transfer_in || 0),
+    Number(row.transfer_out || 0),
+    Number(row.balance_adjustment || 0),
+    Number(row.net_movement || 0),
+    reconciliationOk(row) ? 'Balance' : 'Selisih',
+  ])
+  const wsAcc = XLSX.utils.aoa_to_sheet([accHeader, ...accData])
+  wsAcc['!cols'] = accHeader.map((_, i) => ({ wch: i === 0 ? 24 : i <= 2 ? 18 : 16 }))
+  XLSX.utils.book_append_sheet(wb, wsAcc, 'Saldo per Rekening')
+
+  // Sheet 3: Detail Mutasi
+  const txHeader = ['Tanggal', 'Sumber', 'Rekening', 'Referensi', 'Nominal (IDR)', 'Catatan', 'Void']
+  const txData = processedEntries.value.map(entry => [
+    entry.happened_at ? new Date(entry.happened_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-',
+    entry.label || '-',
+    entry.payment_account_name || '-',
+    entry.reference || '-',
+    Number(entry.signed_amount || 0),
+    entry.description || '-',
+    entry.is_void ? 'Ya' : 'Tidak',
+  ])
+  const wsTx = XLSX.utils.aoa_to_sheet([txHeader, ...txData])
+  wsTx['!cols'] = [{ wch: 20 }, { wch: 26 }, { wch: 24 }, { wch: 18 }, { wch: 16 }, { wch: 36 }, { wch: 8 }]
+  XLSX.utils.book_append_sheet(wb, wsTx, 'Detail Mutasi')
+
+  XLSX.writeFile(wb, `Laporan_Bulanan_${monthLabel}_${year}.xlsx`)
+
+  toast.add({ severity: 'success', summary: 'Berhasil', detail: 'File Excel berhasil diunduh.', life: 3000 })
 }
 
 const exportPdfPlaceholder = () => {
@@ -376,7 +433,7 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
           Reset
         </button>
         <div class="flex items-center gap-1.5 border-l border-[var(--surface-border)] pl-3 ml-1">
-          <button class="btn-pill btn-secondary btn-pill-compact flex items-center gap-1" type="button" @click="exportExcelPlaceholder">
+          <button class="btn-pill btn-secondary btn-pill-compact flex items-center gap-1" type="button" @click="exportExcel">
             <i class="pi pi-file-excel text-emerald-600"></i>
             <span>Excel</span>
           </button>

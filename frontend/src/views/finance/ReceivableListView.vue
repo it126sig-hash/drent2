@@ -687,6 +687,7 @@ const joinList = (items) => {
 
 const printHistoryPayment = (payment) => {
   const receipt = buildReceiptFromPaymentHistory(payment, authStore.branch)
+  receipt.signature_url = authStore.user?.signature_url || null
   printPaymentReceipt(receipt)
 }
 

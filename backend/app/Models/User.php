@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'atas_nama',
     'kontak',
     'foto_profile_path',
+    'signature_path',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable

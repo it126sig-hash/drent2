@@ -21,6 +21,8 @@ class UserResource extends JsonResource
             'kontak'      => $this->kontak,
             'foto_profile_path' => $this->foto_profile_path,
             'foto_profile_url' => $this->publicStorageUrl($this->foto_profile_path),
+            'signature_path' => $this->signature_path,
+            'signature_url' => $this->publicStorageUrl($this->signature_path),
             'role'        => $this->role,
             'tenant_id'   => $this->tenant_id,
             'branch_id'   => $this->branch_id,

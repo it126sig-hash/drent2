@@ -24,6 +24,8 @@ class UpdateProfileRequest extends FormRequest
             'kontak' => ['nullable', 'string', 'max:100'],
             'foto_profile' => ['nullable', 'image', 'max:2048'],
             'remove_foto_profile' => ['nullable', Rule::in(['0', '1', 0, 1, false, true])],
+            'signature_data' => ['nullable', 'string'],
+            'remove_signature' => ['nullable', Rule::in(['0', '1', 0, 1, false, true])],
         ];
     }
 }
