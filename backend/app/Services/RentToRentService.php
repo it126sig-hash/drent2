@@ -721,31 +721,75 @@ class RentToRentService
         $perPage = $this->historyPerPage($filters['group_per_page'] ?? $filters['group_limit'] ?? 10);
         $page = $this->historyPage($filters['group_page'] ?? 1);
 
-        $paginator = RentToRentBill::query()
-            ->with(['rentalOwner', 'payments.paymentAccount', 'payments.creator', 'items.debt.booking.customer'])
+        $paginator = \App\Models\Booking::query()
+            ->with([
+                'customer',
+                'rentToRentDebts.rentalOwner',
+                'rentToRentDebts.bookingDetail.unit',
+                'rentToRentDebts.billItems.bill',
+                'rentToRentDebts.paymentAllocations.payment.paymentAccount',
+            ])
+            ->whereHas('rentToRentDebts.paymentAllocations.payment', fn($q) => $q->where('status', '!=', 'voided'))
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->where('branch_id', $branchId))
-            ->whereHas('payments')
-            ->latest('generated_at')
+            ->latest('updated_at')
             ->paginate($perPage, ['*'], 'group_page', $page);
 
         $paginator->setCollection($paginator->getCollection()
-            ->map(function (RentToRentBill $bill) {
-                $payments = $bill->payments
-                    ->sortByDesc(fn($payment) => $payment->paid_at?->timestamp ?? 0)
+            ->map(function (\App\Models\Booking $booking) {
+                $debts = $booking->rentToRentDebts;
+
+                $allocations = $debts
+                    ->flatMap(fn($debt) => $debt->paymentAllocations)
+                    ->filter(fn($alloc) => ($alloc->payment?->status ?? 'active') !== 'voided');
+
+                $latestPaidAt = $allocations
+                    ->map(fn($alloc) => $alloc->payment?->paid_at)
+                    ->filter()
+                    ->sortDesc()
+                    ->first();
+
+                $billNumbers = $debts
+                    ->flatMap(fn($debt) => $debt->billItems)
+                    ->map(fn($item) => $item->bill?->bill_number)
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $unitNames = $debts
+                    ->map(function ($debt) {
+                        $unit = $debt->bookingDetail?->unit;
+                        if (! $unit) {
+                            return null;
+                        }
+                        $name = trim(implode(' ', array_filter([$unit->merk, $unit->tipe]))) ?: '-';
+                        return $unit->no_polisi ? "{$name} ({$unit->no_polisi})" : $name;
+                    })
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $ownerNames = $debts
+                    ->map(fn($debt) => $debt->rentalOwner?->nama)
+                    ->filter()
+                    ->unique()
                     ->values();
 
                 return [
-                    'bill_id' => $bill->id,
-                    'bill_number' => $bill->bill_number,
-                    'owner_name' => $bill->rentalOwner?->nama,
-                    'booking_codes' => $bill->items->pluck('debt.booking.kode_booking')->filter()->unique()->values(),
-                    'payment_count' => $payments->filter(fn($payment) => ($payment->status ?? 'active') !== 'voided')->count(),
-                    'latest_paid_at' => $payments->max(fn($payment) => $payment->paid_at?->toISOString()),
-                    'total_amount' => (int) $payments
-                        ->filter(fn($payment) => ($payment->status ?? 'active') !== 'voided')
-                        ->sum('amount'),
-                    'payments' => $payments->map(fn(RentToRentPayment $payment) => $this->formatPaymentHistory($payment))->values(),
+                    'booking_id' => $booking->id,
+                    'kode_booking' => $booking->kode_booking,
+                    'customer_name' => $booking->customer?->nama,
+                    'owner_name' => $ownerNames->first(),
+                    'owner_names' => $ownerNames,
+                    'unit_names' => $unitNames,
+                    'bill_numbers' => $billNumbers,
+                    'payment_count' => $allocations
+                        ->map(fn($alloc) => $alloc->payment?->id)
+                        ->filter()
+                        ->unique()
+                        ->count(),
+                    'latest_paid_at' => $latestPaidAt?->toISOString(),
+                    'total_amount' => (int) $allocations->sum('amount'),
                 ];
             })
             ->values());
@@ -948,34 +992,43 @@ class RentToRentService
             ? $debt->bookingDetail
             : $debt->bookingDetail()->with('unit')->first();
 
-        $unit = $detail?->unit;
-        $duration = (int) ($detail?->lama_sewa ?? 1);
-        $package = $detail?->paket_sewa ?? 'harian';
-        $pricingMode = $detail?->pricing_mode;
+        $duration = max(1, (int) ($detail?->lama_sewa ?? 1));
 
-        if ($pricingMode === 'all_in') {
-            if ($detail?->pricing_package_id !== null) {
+        // Sumber utama: snapshot modal saat booking di-handle/assign (tersimpan di booking_details.modal_mobil).
+        // Snapshot ini dikalikan lama_sewa karena modal_mobil disimpan per-paket (per-hari/minggu/bulan).
+        $base = (int) ($detail?->modal_mobil ?? 0);
+
+        // Fallback ke master unit hanya jika snapshot belum terisi (data legacy
+        // sebelum modal_mobil ditambahkan / fillable diperbaiki).
+        if ($base <= 0) {
+            $unit = $detail?->unit;
+            $package = $detail?->paket_sewa ?? 'harian';
+            $pricingMode = $detail?->pricing_mode;
+
+            if ($pricingMode === 'all_in') {
+                if ($detail?->pricing_package_id !== null) {
+                    $base = match ($package) {
+                        'mingguan' => (int) ($unit?->modal_1_minggu ?? 0),
+                        'bulanan' => (int) ($unit?->modal_1_bulan ?? 0),
+                        default => (int) ($unit?->modal_1_hari ?? 0),
+                    };
+                } else {
+                    $base = match ($package) {
+                        'mingguan' => (int) ($unit?->modal_all_in_1_minggu ?? 0),
+                        'bulanan' => (int) ($unit?->modal_all_in_1_bulan ?? 0),
+                        default => (int) ($unit?->modal_all_in ?? 0),
+                    };
+                }
+            } else {
                 $base = match ($package) {
                     'mingguan' => (int) ($unit?->modal_1_minggu ?? 0),
                     'bulanan' => (int) ($unit?->modal_1_bulan ?? 0),
                     default => (int) ($unit?->modal_1_hari ?? 0),
                 };
-            } else {
-                $base = match ($package) {
-                    'mingguan' => (int) ($unit?->modal_all_in_1_minggu ?? 0),
-                    'bulanan' => (int) ($unit?->modal_all_in_1_bulan ?? 0),
-                    default => (int) ($unit?->modal_all_in ?? 0),
-                };
             }
-        } else {
-            $base = match ($package) {
-                'mingguan' => (int) ($unit?->modal_1_minggu ?? 0),
-                'bulanan' => (int) ($unit?->modal_1_bulan ?? 0),
-                default => (int) ($unit?->modal_1_hari ?? 0),
-            };
         }
 
-        return $base * max(1, $duration);
+        return $base * $duration;
     }
 
     public function sellingPrice(RentToRentDebt $debt): ?int

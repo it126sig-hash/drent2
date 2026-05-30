@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BranchController;
+use App\Http\Controllers\Api\V1\TenantController;
 use App\Http\Controllers\Api\V1\RentalOwnerController;
 use App\Http\Controllers\Api\V1\UnitController;
 use App\Http\Controllers\Api\V1\DriverController;
@@ -24,12 +25,14 @@ use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\ReceivableController;
 use App\Http\Controllers\Api\V1\RentToRentController;
 use App\Http\Controllers\Api\V1\SupervisorRequestController;
+use App\Http\Controllers\Api\V1\MyRequestController;
 use App\Http\Controllers\Api\V1\DriverOperationalFundController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\FinanceCategoryController;
 use App\Http\Controllers\Api\V1\MonthlyFinanceReportController;
 use App\Http\Controllers\Api\V1\PaymentAccountTransactionController;
 use App\Http\Controllers\Api\V1\TransactionController;
+use App\Http\Controllers\Api\V1\InvoiceTermsTemplateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -52,6 +55,16 @@ Route::prefix('v1')->group(function () {
         Route::get('dashboard', [DashboardController::class, 'index']);
         
         Route::get('branches', [BranchController::class, 'index']);
+        Route::get('branches/{branch}', [BranchController::class, 'show']);
+        Route::post('branches', [BranchController::class, 'store']);
+        // POST untuk update agar mendukung multipart/form-data (logo upload)
+        Route::post('branches/{branch}', [BranchController::class, 'update']);
+        Route::delete('branches/{branch}', [BranchController::class, 'destroy']);
+
+        // Tenant (update-only — superadmin bisa kelola profil tenant miliknya)
+        Route::get('tenant', [TenantController::class, 'show']);
+        Route::post('tenant', [TenantController::class, 'update']);
+
         Route::apiResource('rental-owners', RentalOwnerController::class);
         
         // Users
@@ -129,6 +142,8 @@ Route::prefix('v1')->group(function () {
         Route::post('invoices/{invoice}/mark-sent', [ReceivableController::class, 'markInvoiceSent']);
         Route::post('invoices/{invoice}/refresh-amount', [ReceivableController::class, 'refreshInvoiceAmount']);
         Route::post('invoices/{invoice}/payments', [ReceivableController::class, 'storeInvoicePayment']);
+        Route::get('invoices/{invoice}/histories', [ReceivableController::class, 'invoiceHistories']);
+        Route::apiResource('invoice-terms-templates', InvoiceTermsTemplateController::class)->except(['show']);
 
         // Transactions
         Route::get('transactions', [TransactionController::class, 'index']);
@@ -161,6 +176,9 @@ Route::prefix('v1')->group(function () {
 
         // Supervisor approval inbox
         Route::get('supervisor-requests', [SupervisorRequestController::class, 'index']);
+
+        // Riwayat request perubahan milik user yang sedang login
+        Route::get('my-requests', [MyRequestController::class, 'index']);
 
         // Driver operational funds
         Route::get('operational-funds/bookings', [DriverOperationalFundController::class, 'bookings']);

@@ -3,98 +3,126 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Models\PaymentAccount;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 
 class InvoicePdfService
 {
+    public function __construct(private ReceivableService $receivableService)
+    {
+    }
+
     public function make(Invoice $invoice): string
     {
-        $invoice->loadMissing(['bookings.customer', 'payments.paymentAccount']);
-
-        $lines = [
-            'DRENT Vibe',
-            'INVOICE',
-            'Nomor: ' . $invoice->invoice_number,
-            'Status: ' . strtoupper(str_replace('_', ' ', $invoice->status)),
-            'Tanggal Generate: ' . $invoice->generated_at?->format('d M Y H:i'),
-            'Due Date: ' . ($invoice->due_date?->format('d M Y') ?? '-'),
-            '',
-            'Booking:',
-        ];
-
-        foreach ($invoice->bookings as $booking) {
-            $lines[] = '- ' . $booking->kode_booking . ' | ' . ($booking->customer?->nama ?? '-') . ' | ' . $this->rupiah((int) $booking->pivot->amount);
-        }
-
-        $lines = array_merge($lines, [
-            '',
-            'Ringkasan:',
-            'Total Invoice: ' . $this->rupiah((int) $invoice->total_amount),
-            'Sudah Dibayar: ' . $this->rupiah((int) $invoice->paid_amount),
-            'Sisa: ' . $this->rupiah(max(0, (int) $invoice->total_amount - (int) $invoice->paid_amount)),
-            '',
-            'Pembayaran:',
+        $invoice->loadMissing([
+            'branch',
+            'bookings.customer',
+            'bookings.bookingDetails.unit',
+            'bookings.bookingDetails.costs',
+            'bookings.payments.paymentAccount',
+            'payments.paymentAccount',
+            'payments.bookingPayments',
         ]);
 
-        if ($invoice->payments->isEmpty()) {
-            $lines[] = '- Belum ada pembayaran';
-        } else {
-            foreach ($invoice->payments as $payment) {
-                $account = $payment->paymentAccount
-                    ? trim($payment->paymentAccount->nama_bank . ' ' . $payment->paymentAccount->nomor_rekening)
-                    : '-';
-                $lines[] = '- ' . $payment->paid_at?->format('d M Y') . ' | ' . $account . ' | ' . $this->rupiah((int) $payment->amount);
-            }
-        }
+        $paymentAccounts = PaymentAccount::query()
+            ->where('tenant_id', $invoice->tenant_id)
+            ->where('branch_id', $invoice->branch_id)
+            ->where('is_active', true)
+            ->orderBy('nama_bank')
+            ->get()
+            ->filter(fn($acc) => $acc->nama_bank && strtolower($acc->nama_bank) !== 'cash')
+            ->map(fn($acc) => [
+                'nama_bank' => $acc->nama_bank,
+                'nomor_rekening' => $acc->nomor_rekening,
+                'atas_nama' => $acc->atas_nama,
+            ])
+            ->values()
+            ->all();
 
-        return $this->buildSimplePdf($lines);
-    }
+        $primaryBooking = $invoice->bookings->first();
+        $customer = $primaryBooking?->customer;
 
-    private function rupiah(int $amount): string
-    {
-        return 'Rp ' . number_format($amount, 0, ',', '.');
-    }
+        $customerAddressLines = array_values(array_filter([
+            $customer?->alamat,
+            $customer?->kota,
+        ]));
 
-    private function buildSimplePdf(array $lines): string
-    {
-        $content = "BT\n/F1 12 Tf\n50 790 Td\n";
-        foreach ($lines as $index => $line) {
-            if ($index > 0) {
-                $content .= "0 -18 Td\n";
-            }
-            $content .= '(' . $this->escape($line) . ") Tj\n";
-        }
-        $content .= "ET\n";
+        $customerContactLines = array_values(array_filter([
+            $customer?->kontak_1 ? 'Telp: ' . $customer->kontak_1 : null,
+            $customer?->kontak_2 ? 'Telp 2: ' . $customer->kontak_2 : null,
+            $customer?->email ? 'Email: ' . $customer->email : null,
+        ]));
 
-        $objects = [
-            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
-            "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-            "5 0 obj\n<< /Length " . strlen($content) . " >>\nstream\n" . $content . "endstream\nendobj\n",
+        $items = $this->receivableService->invoiceItems($invoice)->all();
+        $payments = $this->receivableService->invoicePaymentHistory($invoice)->all();
+        $paidAmount = $this->receivableService->invoicePaidAmount($invoice);
+
+        $totalAmount = (int) $invoice->total_amount;
+        $remainingAmount = max(0, $totalAmount - $paidAmount);
+
+        $branchName = $invoice->branch?->name ?: 'DRENT';
+
+        $invoiceDateRaw = $invoice->generated_at ?? $invoice->created_at;
+
+        $data = [
+            'invoice' => $invoice,
+            'branchName' => $branchName,
+            'customerName' => $customer?->nama ?: 'Pelanggan',
+            'customerAddressLines' => $customerAddressLines,
+            'customerContactLines' => $customerContactLines,
+            'invoiceDate' => $this->formatDate($invoiceDateRaw),
+            'dueDate' => $this->formatDate($invoice->due_date),
+            'items' => $items,
+            'payments' => $payments,
+            'paymentAccounts' => $paymentAccounts,
+            'paidAmount' => $paidAmount,
+            'remainingAmount' => $remainingAmount,
+            'statusSeverity' => $this->statusSeverity($invoice->status),
+            'formatCurrency' => fn($value) => $this->formatCurrency($value),
+            'formatDate' => fn($value) => $this->formatDate($value),
         ];
 
-        $pdf = "%PDF-1.4\n";
-        $offsets = [0];
-        foreach ($objects as $object) {
-            $offsets[] = strlen($pdf);
-            $pdf .= $object;
-        }
+        $pdf = Pdf::loadView('pdf.invoice', $data)
+            ->setPaper('a4', 'portrait')
+            ->setOptions([
+                'isRemoteEnabled' => false,
+                'isHtml5ParserEnabled' => true,
+                'defaultFont' => 'DejaVu Sans',
+            ]);
 
-        $xrefOffset = strlen($pdf);
-        $pdf .= "xref\n0 " . (count($objects) + 1) . "\n";
-        $pdf .= "0000000000 65535 f \n";
-        for ($i = 1; $i <= count($objects); $i++) {
-            $pdf .= str_pad((string) $offsets[$i], 10, '0', STR_PAD_LEFT) . " 00000 n \n";
-        }
-
-        $pdf .= "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\n";
-        $pdf .= "startxref\n{$xrefOffset}\n%%EOF";
-
-        return $pdf;
+        return $pdf->output();
     }
 
-    private function escape(string $value): string
+    private function formatCurrency($value): string
     {
-        return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $value);
+        $amount = (int) ($value ?? 0);
+        $negative = $amount < 0;
+        $formatted = 'Rp ' . number_format(abs($amount), 0, ',', '.');
+
+        return $negative ? '-' . $formatted : $formatted;
+    }
+
+    private function formatDate($value): string
+    {
+        if (! $value) {
+            return '-';
+        }
+
+        try {
+            return Carbon::parse($value)->translatedFormat('d M Y');
+        } catch (\Throwable $e) {
+            return '-';
+        }
+    }
+
+    private function statusSeverity(?string $status): string
+    {
+        return match ($status) {
+            'paid' => 'success',
+            'partial_paid' => 'info',
+            'void' => 'danger',
+            default => 'warn',
+        };
     }
 }

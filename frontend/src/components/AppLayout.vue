@@ -50,6 +50,7 @@ const menuSections = [
     items: [
       { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings', permission: 'booking.view' },
       { label: 'Request Supervisor', icon: 'pi pi-inbox', route: '/supervisor/requests', permission: 'booking.supervisor_request' },
+      { label: 'Riwayat Request Saya', icon: 'pi pi-history', route: '/my-requests' },
       { label: 'Cek Fisik', icon: 'pi pi-check-square', route: '/physical-checks', permission: 'physical_check.view' },
     ],
   },
@@ -84,12 +85,15 @@ const menuSections = [
   {
     label: 'Data Master',
     items: [
+      { label: 'Profil Tenant', icon: 'pi pi-building', route: '/master/tenant', permission: 'master.tenant' },
+      { label: 'Cabang', icon: 'pi pi-sitemap', route: '/master/branches', permission: 'master.branch' },
       { label: 'Manajemen User', icon: 'pi pi-user-plus', route: '/users', permission: 'master.user' },
       { label: 'Akun Pembayaran', icon: 'pi pi-credit-card', route: '/master/payment-accounts', permission: 'master.payment_account' },
       { label: 'List Kota', icon: 'pi pi-map-marker', route: '/master/cities', permission: 'master.city' },
       { label: 'Tipe Biaya', icon: 'pi pi-list', route: '/master/cost-types', permission: 'master.cost_type' },
       { label: 'Paket Harga', icon: 'pi pi-tag', route: '/master/pricing-packages', permission: 'master.pricing_package' },
       { label: 'Manajemen Role', icon: 'pi pi-shield', route: '/settings/role-permissions', permission: 'master.role_management' },
+      { label: 'Template S&K Invoice', icon: 'pi pi-file-edit', route: '/master/invoice-terms-templates' },
     ],
   },
 ]

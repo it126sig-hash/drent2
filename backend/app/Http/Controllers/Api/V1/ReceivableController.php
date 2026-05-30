@@ -59,7 +59,8 @@ class ReceivableController extends Controller
                 $request->validated('booking_ids'),
                 $user->branch_id,
                 $user->tenant_id,
-                $request->validated('due_date')
+                $request->validated('due_date'),
+                $request->validated('terms_and_conditions')
             );
         } catch (\InvalidArgumentException $exception) {
             abort(response()->json([
@@ -157,6 +158,26 @@ class ReceivableController extends Controller
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function invoiceHistories(Invoice $invoice)
+    {
+        $this->authorize('view', $invoice);
+
+        $histories = $invoice->histories()->with('actor')->get();
+
+        return response()->json([
+            'data' => $histories->map(fn($h) => [
+                'id'             => $h->id,
+                'event_type'     => $h->event_type,
+                'description'    => $h->description,
+                'amount_before'  => $h->amount_before,
+                'amount_after'   => $h->amount_after,
+                'payment_amount' => $h->payment_amount,
+                'actor_name'     => $h->actor?->name,
+                'created_at'     => $h->created_at?->toISOString(),
+            ]),
         ]);
     }
 

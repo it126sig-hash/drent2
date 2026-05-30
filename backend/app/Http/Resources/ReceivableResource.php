@@ -10,12 +10,14 @@ class ReceivableResource extends JsonResource
     public function toArray(Request $request): array
     {
         $invoice = $this->latest_active_invoice;
+        $paidInvoice = $this->latest_paid_invoice;
         $detail = $this->display_detail;
         $unit = $detail?->unit;
         $receivableService = app(\App\Services\ReceivableService::class);
         $invoiceReconciliation = $invoice
             ? ($this->invoice_reconciliation ?? $receivableService->invoiceReconciliation($invoice))
             : null;
+        $paidInvoiceReconciliation = $this->paid_invoice_reconciliation ?? null;
 
         return [
             'id' => $this->id,
@@ -64,6 +66,17 @@ class ReceivableResource extends JsonResource
                 'items' => $invoice ? $receivableService->invoiceItems($invoice) : [],
                 'payments' => $invoice ? $receivableService->invoicePaymentHistory($invoice) : [],
             ],
+            'paid_invoice_with_delta' => ($paidInvoiceReconciliation['is_changed'] ?? false)
+                && ($paidInvoiceReconciliation['difference_amount'] ?? 0) > 0
+                ? [
+                    'id'             => $paidInvoice->id,
+                    'number'         => $paidInvoice->invoice_number,
+                    'status'         => $paidInvoice->status,
+                    'reconciliation' => $paidInvoiceReconciliation,
+                    'public_path'    => $paidInvoice->public_token ? "/invoice/{$paidInvoice->public_token}" : null,
+                    'sent_at'        => $paidInvoice->sent_at?->toISOString(),
+                ]
+                : null,
         ];
     }
 }

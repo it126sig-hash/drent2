@@ -49,7 +49,20 @@ class TransactionListResource extends JsonResource
         $totalBonApproved   = (int) ($this->total_expense_approved ?? 0);
         $totalDirectExpense = (int) ($this->total_direct_expense ?? 0);
         $totalOperasional   = max(0, $totalFundDisbursed - $totalFundReturned) + $totalDirectExpense;
-        $totalPengeluaran   = $totalRentToRent + $totalOperasional;
+
+        // Modal unit internal (bukan R2R) — belum keluar kas, tapi diperhitungkan sebagai HPP
+        $totalModal = 0;
+        foreach ($this->bookingDetails->where('status', '!=', 'batal') as $d) {
+            if ($d->unit_id && $d->modal_mobil > 0) {
+                $rentalOwner = $d->unit?->rentalOwner;
+                $isRentToRent = $rentalOwner ? !$rentalOwner->is_owner : false;
+                if (!$isRentToRent) {
+                    $totalModal += $d->modal_mobil * ($d->lama_sewa > 0 ? $d->lama_sewa : 1);
+                }
+            }
+        }
+
+        $totalPengeluaran   = $totalRentToRent + $totalOperasional + $totalModal;
         $margin             = $totalBiaya - $totalPengeluaran;
 
         return [
@@ -75,6 +88,7 @@ class TransactionListResource extends JsonResource
             'total_fund_returned'   => $totalFundReturned,
             'total_bon_approved'    => $totalBonApproved,
             'total_direct_expense'  => $totalDirectExpense,
+            'total_modal'           => $totalModal,
             'total_pengeluaran'     => $totalPengeluaran,
             'margin'                => $margin,
         ];

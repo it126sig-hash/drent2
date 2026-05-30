@@ -234,6 +234,16 @@ export function useReceivable() {
     }
   }
 
+  const fetchInvoiceHistories = async (invoiceId) => {
+    try {
+      const response = await receivableApi.getInvoiceHistories(invoiceId)
+      return response.data.data || []
+    } catch (err) {
+      toast.add({ severity: 'error', summary: 'Error', detail: 'Gagal mengambil history invoice', life: 5000 })
+      return []
+    }
+  }
+
   const requestVoidPayment = async (paymentId, data) => {
     actionLoading.value = true
     try {
@@ -272,6 +282,7 @@ export function useReceivable() {
     openPdf,
     addPayment,
     requestVoidPayment,
+    fetchInvoiceHistories,
   }
 }
 

@@ -51,7 +51,7 @@ class UpdateUnitRequest extends FormRequest
             'modal_all_in' => 'required|integer|min:0',
             'modal_all_in_1_minggu' => 'required|integer|min:0',
             'modal_all_in_1_bulan' => 'required|integer|min:0',
-            'status' => 'required|in:Aktif,Tidak Aktif,Dalam Servis',
+            'status' => 'required|in:Aktif,Tidak Aktif,Dalam Servis,Out',
             'catatan' => 'nullable|string',
         ];
     }

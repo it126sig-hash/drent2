@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Booking;
 use App\Models\BookingPayment;
 use App\Models\Invoice;
+use App\Models\InvoiceHistory;
 use App\Models\Payment;
 use App\Models\PaymentAccount;
 use Carbon\Carbon;
@@ -95,6 +96,12 @@ class ReceivableService
             $booking->invoice_reconciliation = $booking->latest_active_invoice
                 ? $this->invoiceReconciliation($booking->latest_active_invoice)
                 : null;
+            $booking->latest_paid_invoice = (! $booking->latest_active_invoice)
+                ? $booking->invoices->first(fn(Invoice $invoice) => $invoice->status === 'paid')
+                : null;
+            $booking->paid_invoice_reconciliation = $booking->latest_paid_invoice
+                ? $this->invoiceReconciliation($booking->latest_paid_invoice)
+                : null;
             $booking->display_detail = $booking->bookingDetails->firstWhere('status', 'aktif')
                 ?? $booking->bookingDetails->firstWhere('detail_type', 'initial')
                 ?? $booking->bookingDetails->first();
@@ -163,8 +170,15 @@ class ReceivableService
                 ->lockForUpdate()
                 ->findOrFail($invoice->id);
 
-            if (! in_array($invoice->status, ['generated', 'partial_paid'], true)) {
-                throw new \InvalidArgumentException('Hanya invoice generated atau partial paid yang bisa diperbarui.');
+            if (! in_array($invoice->status, ['generated', 'partial_paid', 'paid'], true)) {
+                throw new \InvalidArgumentException('Hanya invoice aktif atau lunas (dengan penambahan biaya) yang bisa diperbarui.');
+            }
+
+            if ($invoice->status === 'paid') {
+                $amounts = $this->currentInvoiceBookingAmounts($invoice);
+                if ((int) $amounts->sum() <= (int) $invoice->total_amount) {
+                    throw new \InvalidArgumentException('Invoice sudah lunas tanpa penambahan biaya.');
+                }
             }
 
             if ($invoice->sent_at && ! $confirmSentRevision) {
@@ -185,6 +199,8 @@ class ReceivableService
             $totalAmount = (int) $amounts->sum();
             $paidAmount = $this->invoicePaidAmount($invoice);
 
+            $amountBefore = (int) $invoice->total_amount;
+
             foreach ($amounts as $bookingId => $amount) {
                 $invoice->bookings()->updateExistingPivot($bookingId, ['amount' => (int) $amount]);
             }
@@ -194,6 +210,17 @@ class ReceivableService
                 'paid_amount' => $paidAmount,
                 'status' => $this->invoiceStatus($totalAmount, $paidAmount),
             ]);
+
+            if ($amountBefore !== $totalAmount) {
+                InvoiceHistory::create([
+                    'invoice_id'    => $invoice->id,
+                    'event_type'    => 'amended',
+                    'description'   => 'Nominal invoice diperbarui',
+                    'amount_before' => $amountBefore,
+                    'amount_after'  => $totalAmount,
+                    'created_by'    => auth()->id(),
+                ]);
+            }
 
             return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']);
         });
@@ -363,9 +390,9 @@ class ReceivableService
         ];
     }
 
-    public function generateInvoice(array $bookingIds, int $branchId, int $tenantId, ?string $dueDate = null): Invoice
+    public function generateInvoice(array $bookingIds, int $branchId, int $tenantId, ?string $dueDate = null, ?string $termsAndConditions = null): Invoice
     {
-        return DB::transaction(function () use ($bookingIds, $branchId, $tenantId, $dueDate) {
+        return DB::transaction(function () use ($bookingIds, $branchId, $tenantId, $dueDate, $termsAndConditions) {
             $bookings = Booking::query()
                 ->with(['customer.member', 'bookingDetails.costs', 'payments', 'invoices'])
                 ->whereIn('id', $bookingIds)
@@ -404,16 +431,17 @@ class ReceivableService
                 : $this->defaultInvoiceDueDate($bookings);
 
             $invoice = Invoice::create([
-                'tenant_id' => $tenantId,
-                'branch_id' => $branchId,
-                'invoice_number' => $this->nextInvoiceNumber($branchId),
-                'public_token' => $this->newPublicToken(),
-                'status' => 'generated',
-                'total_amount' => (int) $amounts->sum(),
-                'paid_amount' => $paidAmount,
-                'due_date' => $invoiceDueDate,
-                'generated_at' => now(),
-                'created_by' => auth()->id(),
+                'tenant_id'            => $tenantId,
+                'branch_id'            => $branchId,
+                'invoice_number'       => $this->nextInvoiceNumber($branchId),
+                'public_token'         => $this->newPublicToken(),
+                'status'               => 'generated',
+                'total_amount'         => (int) $amounts->sum(),
+                'paid_amount'          => $paidAmount,
+                'due_date'             => $invoiceDueDate,
+                'terms_and_conditions' => $termsAndConditions,
+                'generated_at'         => now(),
+                'created_by'           => auth()->id(),
             ]);
 
             foreach ($amounts as $bookingId => $amount) {
@@ -421,6 +449,14 @@ class ReceivableService
             }
 
             $invoice->update(['status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount)]);
+
+            InvoiceHistory::create([
+                'invoice_id'   => $invoice->id,
+                'event_type'   => 'created',
+                'description'  => 'Invoice dibuat',
+                'amount_after' => (int) $invoice->total_amount,
+                'created_by'   => auth()->id(),
+            ]);
 
             return $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']);
         });
@@ -432,6 +468,13 @@ class ReceivableService
             'public_token' => $invoice->public_token ?: $this->newPublicToken(),
             'sent_at' => now(),
             'sent_by' => auth()->id(),
+        ]);
+
+        InvoiceHistory::create([
+            'invoice_id'  => $invoice->id,
+            'event_type'  => 'sent',
+            'description' => 'Invoice dikirim ke pelanggan',
+            'created_by'  => auth()->id(),
         ]);
 
         return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'creator', 'sentBy']);
@@ -481,6 +524,14 @@ class ReceivableService
                 'status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount),
             ]);
 
+            InvoiceHistory::create([
+                'invoice_id'     => $invoice->id,
+                'event_type'     => 'payment_received',
+                'description'    => 'Pembayaran diterima',
+                'payment_amount' => (int) $payment->amount,
+                'created_by'     => auth()->id(),
+            ]);
+
             return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']);
         });
     }
@@ -488,7 +539,7 @@ class ReceivableService
     public function publicInvoice(string $token): array
     {
         $invoice = Invoice::query()
-            ->with(['branch', 'bookings.customer', 'bookings.bookingDetails.unit', 'payments.paymentAccount', 'payments.bookingPayments'])
+            ->with(['branch', 'creator', 'bookings.customer', 'bookings.bookingDetails.unit', 'payments.paymentAccount', 'payments.bookingPayments'])
             ->where('public_token', $token)
             ->where('status', '!=', 'void')
             ->firstOrFail();

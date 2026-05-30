@@ -12,6 +12,7 @@ import { useCity } from '../../composables/useCity';
 import { getUnits, getUnit, updateUnit, checkUnitSchedule } from '../../api/unit';
 import { useAuthStore } from '../../stores/auth';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
+import { printPaymentReceipt, buildReceiptFromBookingPayment } from '../../utils/printReceipt';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 
@@ -128,8 +129,11 @@ const accountOptions = computed(() =>
     .map(a => ({ id: a.id, name: `${a.nama_bank} — ${a.nomor_rekening} (${a.atas_nama})` }))
 );
 
-// Handle booking dialog (E3)
+// Waiting List dialog (E3)
 const showHandleConfirmDialog = ref(false);
+// Tandai bahwa dialog Unit dibuka dari tombol "Handle Unit" → simpan harus auto-handle (isi handled_by + ke waiting_list).
+const unitDialogTriggersHandle = ref(false);
+const detailFormErrors = ref({});
 
 const bookingForm = ref({
   lama_sewa: 1,
@@ -584,8 +588,6 @@ const primaryUnitDetail = computed(() => {
 const hasFixedUnit = computed(() => Boolean(primaryUnitDetail.value?.unit_id));
 const canHandleBooking = computed(() => hasFixedUnit.value);
 const unitActionDetail = computed(() => primaryUnitDetail.value || null);
-const unitActionLabel = computed(() => hasFixedUnit.value ? 'Edit Unit' : 'Atur Unit');
-const unitActionIcon = computed(() => hasFixedUnit.value ? 'pi pi-pencil' : 'pi pi-plus');
 const hasZeroReadyUnitPrice = computed(() => {
   const detail = primaryUnitDetail.value;
   if (!detail?.unit_id) return false;
@@ -594,6 +596,8 @@ const hasZeroReadyUnitPrice = computed(() => {
   }
   return (detail.harga_mobil || 0) <= 0;
 });
+const unitActionLabel = computed(() => (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'Edit Unit' : 'Handle Unit');
+const unitActionIcon = computed(() => (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'pi pi-pencil' : 'pi pi-plus');
 
 const activeDetails = computed(() => {
   return validDetails.value.filter(d => d.status === 'aktif');
@@ -664,7 +668,7 @@ const detailPriceInputLabel = computed(() => {
   return 'Harga Mobil';
 });
 const detailPriceInputHint = computed(() => {
-  if (isDetailManualAllIn.value) return 'Isi harga All In manual atau edit harga unit.';
+  if (isDetailManualAllIn.value) return 'Diisi otomatis dari unit. Klik Edit Harga Unit untuk mengubah.';
   if (detailForm.value.pricing_mode === 'all_in' && detailForm.value.pricing_package_id) {
     return 'Harga lepas kunci harian dari unit; tagihan konsumen memakai pricing package.';
   }
@@ -1088,23 +1092,53 @@ watch(
     detailForm.value.pricing_package_id,
     unitOptions.value
   ],
-  ([unitId, paket, pricingMode, packageId]) => {
-    const hasValidPrice = pricingMode === 'all_in'
-      ? (detailForm.value.harga_all_in && detailForm.value.harga_all_in > 0)
-      : (detailForm.value.harga_mobil && detailForm.value.harga_mobil > 0);
-
-    if (isInitializingDetailDialog.value && hasValidPrice) return;
-
+  ([unitId, paket, pricingMode, packageId], oldValues) => {
     const unit = findUnitOption(unitId);
     if (!unit) return;
 
+    const oldPaket = oldValues?.[1];
+    const oldMode = oldValues?.[2];
+    const oldPackageId = oldValues?.[3];
+
+    const paketChanged = paket !== oldPaket;
+    const modeChanged = pricingMode !== oldMode;
+    const packageChanged = packageId !== oldPackageId;
+    const userTriggeredRefill = paketChanged || modeChanged || packageChanged;
+
+    const isInit = isInitializingDetailDialog.value;
+    const currentHargaMobil = detailForm.value.harga_mobil || 0;
+    const currentHargaAllIn = detailForm.value.harga_all_in || 0;
+
+    // Aturan auto-fill harga:
+    //   - Saat init: fill bila harga current ≤ 1, preserve bila > 1.
+    //   - Post-init paket/mode/package change: selalu re-fill (user pilih paket/mode/package berbeda).
+    //   - Post-init unit_id change atau unitOptions arrive: fill bila ≤ 1, preserve bila > 1.
+    const shouldFillMobil = isInit
+      ? currentHargaMobil <= 1
+      : userTriggeredRefill
+        ? true
+        : currentHargaMobil <= 1;
+
+    const shouldFillAllIn = isInit
+      ? currentHargaAllIn <= 1
+      : userTriggeredRefill
+        ? true
+        : currentHargaAllIn <= 1;
+
     if (pricingMode === 'non_all_in') {
-      detailForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
+      if (shouldFillMobil) {
+        detailForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
+      }
     } else if (pricingMode === 'all_in') {
-      detailForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
+      if (shouldFillMobil) {
+        detailForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
+      }
       if (!packageId) {
-        detailForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
+        if (shouldFillAllIn) {
+          detailForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
+        }
       } else {
+        // pricing package selected: harga_all_in mengikuti package (perilaku existing, tidak berubah)
         const pkg = findPricingPackage(packageId);
         if (pkg) {
           detailForm.value.harga_all_in = pkg.harga || 0;
@@ -1270,6 +1304,8 @@ onMounted(async () => {
 });
 
 const openDetailDialog = async (detail = null) => {
+  unitDialogTriggersHandle.value = false;
+  detailFormErrors.value = {};
   isInitializingDetailDialog.value = true;
   showDetailDialog.value = true;
 
@@ -1299,14 +1335,14 @@ const openDetailDialog = async (detail = null) => {
     let hargaMobilVal = detail.harga_mobil || 0;
     let hargaAllInVal = detail.harga_all_in || null;
 
-    if (unitObj && hargaMobilVal <= 0) {
+    if (unitObj && hargaMobilVal <= 1) {
       const mode = detail.pricing_mode || 'non_all_in';
       const paket = detail.paket_sewa || booking.value?.paket_sewa || 'harian';
       if (mode === 'non_all_in') {
         hargaMobilVal = getUnitHargaByPaket(unitObj, paket);
       } else if (mode === 'all_in') {
         hargaMobilVal = getUnitHargaByPaket(unitObj, 'harian');
-        if (!detail.pricing_package_id && (!hargaAllInVal || hargaAllInVal <= 0)) {
+        if (!detail.pricing_package_id && (!hargaAllInVal || hargaAllInVal <= 1)) {
           hargaAllInVal = getUnitAllInByPaket(unitObj, paket);
         }
       }
@@ -1350,14 +1386,14 @@ const openDetailDialog = async (detail = null) => {
     isInitializingDetailDialog.value = false;
 
     const form = detailForm.value;
-    if (form.unit_id && (form.harga_mobil || 0) <= 0) {
+    if (form.unit_id && (form.harga_mobil || 0) <= 1) {
       const unitObj = findUnitOption(form.unit_id);
       if (unitObj) {
         if (form.pricing_mode === 'non_all_in') {
           form.harga_mobil = getUnitHargaByPaket(unitObj, form.paket_sewa);
         } else {
           form.harga_mobil = getUnitHargaByPaket(unitObj, 'harian');
-          if (!form.pricing_package_id && (!form.harga_all_in || form.harga_all_in <= 0)) {
+          if (!form.pricing_package_id && (!form.harga_all_in || form.harga_all_in <= 1)) {
             form.harga_all_in = getUnitAllInByPaket(unitObj, form.paket_sewa);
           }
         }
@@ -1367,7 +1403,13 @@ const openDetailDialog = async (detail = null) => {
 };
 
 const openPrimaryUnitDialog = () => {
+  // Tombol Handle Unit muncul saat unit belum fix ATAU harga unit ready masih 0.
+  // Kondisi sama dipakai untuk menentukan apakah save akan auto-handle.
+  const triggersHandle = ['follow_up', 'confirm'].includes(booking.value?.status)
+    && (!hasFixedUnit.value || hasZeroReadyUnitPrice.value);
   openDetailDialog(unitActionDetail.value);
+  // Set setelah openDetailDialog karena openDetailDialog mereset flag di awal.
+  unitDialogTriggersHandle.value = triggersHandle;
 };
 
 const openCostDialog = (detailId, cost = null) => {
@@ -1505,7 +1547,9 @@ const onRollingDetailChange = (detailId) => {
 
 const onRollingOldUnitChange = (e) => {
   onUnitSelect(e.value, (unit) => {
-    rollingForm.value.harga_mobil_lama = unit.harga_1_hari || 0;
+    if ((rollingForm.value.harga_mobil_lama || 0) <= 1) {
+      rollingForm.value.harga_mobil_lama = unit.harga_1_hari || 0;
+    }
   });
 };
 
@@ -1585,7 +1629,49 @@ const doSubmitDetail = async () => {
       await addDetail(booking.value.id, payload);
     }
     showDetailDialog.value = false;
-    loadBooking();
+    await loadBooking();
+
+    // Auto-handle: kalau dialog dibuka via tombol Handle Unit dan kondisi siap
+    // (unit fix + harga valid + status pre-handle), langsung pindahkan ke waiting_list
+    // sehingga handled_by + handled_at terisi.
+    const shouldAutoHandle = unitDialogTriggersHandle.value
+      && detailDialogMode.value === 'detail'
+      && ['follow_up', 'confirm'].includes(booking.value?.status)
+      && hasFixedUnit.value
+      && !hasZeroReadyUnitPrice.value;
+    unitDialogTriggersHandle.value = false;
+
+    if (shouldAutoHandle) {
+      const primaryDetail = booking.value?.booking_details?.find(d => d.detail_type === 'initial')
+        || booking.value?.booking_details?.[0];
+      if (primaryDetail) {
+        const handlePayload = {
+          unit_id: primaryDetail.unit_id,
+          driver_id: primaryDetail.driver_id,
+          lama_sewa: primaryDetail.lama_sewa || booking.value?.lama_sewa || 1,
+          paket_sewa: primaryDetail.paket_sewa || booking.value?.paket_sewa || 'harian',
+          harga_mobil: primaryDetail.harga_mobil || 0,
+          diskon_mobil: primaryDetail.diskon_mobil || 0,
+          pricing_mode: primaryDetail.pricing_mode || 'non_all_in',
+          pricing_package_id: primaryDetail.pricing_package_id || null,
+          harga_all_in: primaryDetail.harga_all_in || null,
+          costs: primaryDetail.costs?.map(c => ({
+            cost_type_id: c.cost_type_id,
+            type: c.type || 'biaya',
+            label: c.label,
+            amount: c.amount,
+            keterangan: c.keterangan || '',
+            is_additional: c.is_additional ? 1 : 0,
+          })) || [],
+        };
+        try {
+          await handle(booking.value.id, handlePayload);
+          await loadBooking();
+        } catch (err) {
+          showActionError(err, 'Gagal memproses waiting list');
+        }
+      }
+    }
   } catch (err) {
     console.error(err);
   }
@@ -1607,6 +1693,24 @@ const submitDetail = async () => {
       severity: 'warn',
       summary: 'Tanggal tidak valid',
       detail: 'Tanggal sewa extend minimal H+1 dari tanggal kembali terakhir.',
+      life: 3500,
+    });
+    return;
+  }
+
+  // Validasi harga modal: hanya saat assign unit (mode detail) + unit sudah dipilih.
+  // Modal read-only, ngikut data unit. Kalau 0/1, user harus edit harga unit dulu.
+  detailFormErrors.value = {};
+  if (
+    detailDialogMode.value === 'detail'
+    && detailForm.value.unit_id
+    && (Number(detailModalMobil.value) || 0) <= 1
+  ) {
+    detailFormErrors.value.modal_mobil = 'Harga modal unit harus lebih dari Rp 1. Edit harga unit dulu.';
+    toast.add({
+      severity: 'warn',
+      summary: 'Validasi',
+      detail: detailFormErrors.value.modal_mobil,
       life: 3500,
     });
     return;
@@ -1799,7 +1903,7 @@ const submitHandle = async () => {
     showHandleConfirmDialog.value = false;
     loadBooking();
   } catch (err) {
-    showActionError(err, 'Gagal memproses handle booking');
+    showActionError(err, 'Gagal memproses waiting list');
   }
 };
 
@@ -1807,6 +1911,45 @@ const openPaymentDialog = () => {
   paymentForm.value = { payment_account_id: null, amount: null, payment_type: 'cicilan', paid_at: new Date(), catatan: '' };
   paymentFormErrors.value = {};
   showPaymentDialog.value = true;
+};
+
+const printPayment = (payment) => {
+  const receipt = buildReceiptFromBookingPayment(
+    booking.value,
+    payment,
+    paymentAccounts.value,
+    authStore.branch,
+  )
+  printPaymentReceipt(receipt)
+};
+
+const bookingInvoice = computed(() => booking.value?.invoice || null);
+const hasBookingInvoice = computed(() => Boolean(bookingInvoice.value?.id));
+const canAccessInvoice = computed(() => authStore.hasPermission('finance.receivable'));
+
+const onAddPaymentClick = () => {
+  if (hasBookingInvoice.value) {
+    if (!canAccessInvoice.value) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Pembayaran lewat Invoice',
+        detail: 'Booking ini sudah punya invoice. Silakan hubungi tim Finance untuk mencatat pembayaran.',
+        life: 6000,
+      });
+      return;
+    }
+
+    router.push({
+      name: 'ReceivableList',
+      query: {
+        tab: 'invoices',
+        search: booking.value?.kode_booking || bookingInvoice.value?.invoice_number || '',
+      },
+    });
+    return;
+  }
+
+  openPaymentDialog();
 };
 
 const openVoidPaymentDialog = (payment) => {
@@ -2023,7 +2166,7 @@ const dialogTitles = {
   showEditBookingDialog: 'Edit Data Booking',
   showCheckoutDialog: 'Konfirmasi Checkout',
   showCompleteDialog: 'Konfirmasi Selesai Sewa',
-  showHandleConfirmDialog: 'Konfirmasi Handle Booking',
+  showHandleConfirmDialog: 'Konfirmasi Waiting List',
   showDetailDialog: 'Unit & Driver',
   showCostDialog: 'Biaya Operasional',
   showExtendDialog: 'Perpanjang Sewa',
@@ -2093,10 +2236,10 @@ const auditUserName = (user) => user?.name || '-';
       </div>
 
       <div class="header-actions detail-action-bar">
-        <Button v-if="booking && ['follow_up', 'confirm'].includes(booking.status)" label="Handle Booking"
+        <Button v-if="booking && ['follow_up', 'confirm'].includes(booking.status)" label="Waiting List"
           icon="pi pi-check-circle" class="detail-primary-action" @click="onHandle" :loading="loading"
           :disabled="!canHandleBooking"
-          :title="canHandleBooking ? 'Handle booking' : 'Isi unit kendaraan terlebih dahulu'" />
+          :title="canHandleBooking ? 'Pindahkan ke Waiting List' : 'Isi unit kendaraan terlebih dahulu'" />
         <Button v-if="booking && booking.status === 'waiting_list'" label="Checkout" icon="pi pi-sign-out"
           class="detail-primary-action" @click="openCheckoutDialog" :loading="loading" />
         <Button v-if="booking && booking.status === 'rental_unit'" label="Selesai" icon="pi pi-flag-fill"
@@ -2498,9 +2641,13 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h3 class="text-sm font-bold text-slate-800">Pembayaran</h3>
             </div>
-            <Button label="Tambah" icon="pi pi-plus" size="small"
+            <Button :label="hasBookingInvoice ? 'Bayar via Invoice' : 'Tambah'"
+              :icon="hasBookingInvoice ? 'pi pi-file' : 'pi pi-plus'" size="small"
               class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
-              @click="openPaymentDialog" v-if="!['cancelled', 'batal', 'selesai'].includes(booking.status)" />
+              @click="onAddPaymentClick" v-if="!['cancelled', 'batal', 'selesai'].includes(booking.status)"
+              :title="hasBookingInvoice
+                ? (canAccessInvoice ? 'Booking sudah punya invoice. Buka halaman invoice.' : 'Hubungi Finance untuk pembayaran via invoice.')
+                : 'Catat pembayaran booking'" />
           </div>
 
           <div v-if="!booking.payments?.length" class="p-6 text-center text-slate-400">
@@ -2560,6 +2707,8 @@ const auditUserName = (user) => user?.name || '-';
                     size="small" severity="success" text class="text-xs px-2 py-1" @click="approveVoidRequest(p)" />
                   <Button v-if="p.status === 'void_requested' && canApprovePaymentVoid" label="Tolak" icon="pi pi-times"
                     size="small" severity="danger" text class="text-xs px-2 py-1" @click="openRejectVoidDialog(p)" />
+                  <Button v-if="p.status !== 'voided'" label="Kwitansi" icon="pi pi-print" size="small" severity="secondary" text
+                    class="text-xs px-2 py-1" title="Cetak kwitansi pembayaran" @click="printPayment(p)" />
                 </div>
               </div>
             </div>
@@ -2764,7 +2913,7 @@ const auditUserName = (user) => user?.name || '-';
     </Dialog>
 
     <Dialog :visible="showHandleConfirmDialog"
-      @update:visible="onDialogVisibleChange('showHandleConfirmDialog', $event)" header="Konfirmasi Handle Booking"
+      @update:visible="onDialogVisibleChange('showHandleConfirmDialog', $event)" header="Konfirmasi Waiting List"
       :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-4 pt-2">
         <div class="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl">
@@ -2932,7 +3081,7 @@ const auditUserName = (user) => user?.name || '-';
                 />
               </div>
               <InputNumber v-model="detailPriceInputValue" mode="currency" currency="IDR" locale="id-ID"
-                class="w-full bg-slate-50" :readonly="!isDetailManualAllIn" />
+                class="w-full bg-slate-50" readonly />
               <small class="text-xs text-slate-400">{{ detailPriceInputHint }}</small>
             </div>
             <div class="flex flex-col gap-1.5">
@@ -2941,6 +3090,15 @@ const auditUserName = (user) => user?.name || '-';
               </label>
               <InputNumber v-model="detailForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID"
                 class="w-full" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                <i class="pi pi-database text-blue-500 text-[11px]"></i> Harga Modal / periode
+              </label>
+              <InputNumber :modelValue="detailModalMobil" mode="currency" currency="IDR" locale="id-ID" disabled
+                class="w-full" :class="{ 'p-invalid': detailFormErrors.modal_mobil }" />
+              <small class="text-xs text-slate-400">Modal mengikuti unit, paket sewa, dan mode pricing.</small>
+              <small class="p-error text-xs" v-if="detailFormErrors.modal_mobil">{{ detailFormErrors.modal_mobil }}</small>
             </div>
           </div>
           <div class="mt-4 flex flex-col gap-3">
@@ -3038,9 +3196,9 @@ const auditUserName = (user) => user?.name || '-';
       v-model:visible="showUnitPriceDialog"
       modal
       header="Edit Harga Unit"
-      class="custom-dialog"
-      :style="{ width: '760px' }"
-      :breakpoints="{ '820px': '95vw' }"
+      class="custom-dialog unit-price-modal"
+      :style="{ width: '880px' }"
+      :breakpoints="{ '960px': '92vw' }"
     >
       <div class="unit-price-dialog">
         <div class="unit-price-heading">
@@ -3184,7 +3342,7 @@ const auditUserName = (user) => user?.name || '-';
                 placeholder="Pilih unit" filter
                 :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
                 :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter"
-                @change="e => onUnitSelect(e.value, unit => { extendForm.harga_mobil = unit.harga_1_hari || 0; })"
+                @change="e => onUnitSelect(e.value, unit => { if ((extendForm.harga_mobil || 0) <= 1) { extendForm.harga_mobil = unit.harga_1_hari || 0; } })"
                 class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
@@ -3225,7 +3383,8 @@ const auditUserName = (user) => user?.name || '-';
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
                 <InputNumber v-model="extendForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID"
-                  class="w-full" />
+                  class="w-full bg-slate-50" readonly />
+                <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Diskon</label>
@@ -3373,7 +3532,8 @@ const auditUserName = (user) => user?.name || '-';
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
                 <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID"
-                  class="w-full" />
+                  class="w-full bg-slate-50" readonly />
+                <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Diskon</label>
@@ -3450,7 +3610,7 @@ const auditUserName = (user) => user?.name || '-';
                 placeholder="Pilih unit baru" filter
                 :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']"
                 :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter"
-                @change="e => onUnitSelect(e.value, unit => { rollingForm.harga_mobil = unit.harga_1_hari || 0; })"
+                @change="e => onUnitSelect(e.value, unit => { if ((rollingForm.harga_mobil || 0) <= 1) { rollingForm.harga_mobil = unit.harga_1_hari || 0; } })"
                 class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
@@ -3489,7 +3649,8 @@ const auditUserName = (user) => user?.name || '-';
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
               <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID"
-                class="w-full" />
+                class="w-full bg-slate-50" readonly />
+              <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Diskon</label>
@@ -4050,6 +4211,27 @@ const auditUserName = (user) => user?.name || '-';
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-sm);
+}
+
+.unit-price-fields > div {
+  min-width: 0;
+}
+
+.unit-price-fields :deep(.p-inputnumber),
+.unit-price-fields :deep(.p-inputnumber .p-inputtext) {
+  width: 100%;
+  min-width: 0;
+}
+
+.unit-price-fields :deep(.p-inputtext) {
+  padding: 8px 10px;
+  font-size: 12px;
+  min-height: 36px;
+}
+
+.unit-price-fields label {
+  margin: 0;
+  white-space: nowrap;
 }
 
 .app-card :deep(.p-button.p-button-text) {

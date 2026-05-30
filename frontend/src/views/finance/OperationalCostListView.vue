@@ -52,12 +52,14 @@ const showExpenseDialog = ref(false)
 const showRejectDialog = ref(false)
 const showCloseDialog = ref(false)
 const showCompleteOperationalDialog = ref(false)
+const showRevertOperationalDialog = ref(false)
 const selectedBooking = ref(null)
 const selectedExpense = ref(null)
 const isMobile = ref(window.innerWidth < 768)
 const fundMode = ref('operational')
 const closeNote = ref('')
 const completeOperationalNote = ref('')
+const revertOperationalReason = ref('')
 const detailLoadingFundId = ref(null)
 const detailDialogTab = ref('selected')
 
@@ -712,15 +714,16 @@ const submitCompleteOperational = async () => {
   await fetchBookings(pagination.value.current_page)
 }
 
-const handleRevertOperational = async (booking) => {
-  const reason = prompt(`Masukkan alasan mengajukan aktifkan kembali operasional untuk booking ${booking.kode_booking}:`)
-  if (reason === null) return
-  if (!reason.trim() || reason.trim().length < 3) {
-    alert('Alasan pengajuan harus diisi minimal 3 karakter!')
-    return
-  }
+const handleRevertOperational = (booking) => {
+  selectedBooking.value = booking
+  revertOperationalReason.value = ''
+  showRevertOperationalDialog.value = true
+}
 
-  await revertOperational(booking.id, reason)
+const submitRevertOperational = async () => {
+  if (!selectedBooking.value) return
+  await revertOperational(selectedBooking.value.id, revertOperationalReason.value.trim())
+  showRevertOperationalDialog.value = false
   await fetchBookings(pagination.value.current_page)
 }
 
@@ -1579,6 +1582,31 @@ onUnmounted(() => {
       </template>
     </Dialog>
 
+    <Dialog v-model:visible="showRevertOperationalDialog" header="Aktifkan Kembali Operasional" modal
+      :style="{ width: '460px' }" :position="isMobile ? 'bottom' : 'center'"
+      :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog']">
+      <div class="dialog-stack">
+        <div class="app-muted-panel">
+          <div class="summary-row"><span>Booking</span><strong>{{ selectedBooking?.kode_booking || '-' }}</strong></div>
+          <div class="summary-row"><span>Pelanggan</span><strong>{{ selectedBooking?.customer?.nama || '-' }}</strong></div>
+        </div>
+        <fieldset class="form-fieldset">
+          <label>Alasan pengajuan</label>
+          <Textarea v-model="revertOperationalReason" rows="4" class="w-full"
+            placeholder="Contoh: ada bon susulan dari driver yang perlu direalisasikan kembali." />
+        </fieldset>
+        <p class="field-hint">Pengajuan akan dikirim ke approver. Setelah disetujui, booking akan kembali ke tab
+          Operasional Aktif.</p>
+      </div>
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary"
+          @click="showRevertOperationalDialog = false">Batal</button>
+        <button class="app-dialog-button app-dialog-button-primary"
+          :disabled="actionLoading || revertOperationalReason.trim().length < 3"
+          @click="submitRevertOperational">Ajukan Aktifkan Kembali</button>
+      </template>
+    </Dialog>
+
     <Dialog v-model:visible="showExpenseDialog"
       :header="expenseForm.type === 'return' ? 'Input Pengembalian' : 'Input Bon Finance'" modal
       :style="{ width: '480px' }" :position="isMobile ? 'bottom' : 'center'"
@@ -1872,15 +1900,18 @@ onUnmounted(() => {
 .deposit-modal {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--space-lg);
-  max-height: min(74vh, 760px);
+  max-height: min(calc(90vh - 200px), 620px);
   overflow: hidden;
 }
 
 .deposit-form-panel,
 .deposit-history-panel {
   min-width: 0;
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .deposit-history-panel,

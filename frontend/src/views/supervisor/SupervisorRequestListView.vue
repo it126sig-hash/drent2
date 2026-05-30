@@ -122,7 +122,7 @@ const requestDetailLabel = (request) => {
   }
 
   if (request.type === 'rent_to_rent_amount_change') {
-    return `Ubah Nominal: ${formatCurrency(request.debt?.current_amount)} -> ${request.debt?.requested_amount !== null ? formatCurrency(request.debt?.requested_amount) : 'Reset Live (Default)'}`
+    return `Ubah Nominal: ${formatCurrency(request.debt?.current_amount)} -> ${request.debt?.requested_amount !== null ? formatCurrency(request.debt?.requested_amount) : 'Reset ke Default (Modal Booking)'}`
   }
 
   return 'Ubah status booking dari selesai ke rental_unit'

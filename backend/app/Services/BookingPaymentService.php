@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\BookingPayment;
+use App\Models\Invoice;
 use App\Models\PaymentAccount;
 use App\Services\BookingBillingService;
 use App\Services\PaymentAccountTransactionService;
@@ -170,6 +171,12 @@ class BookingPaymentService
             $booking = $payment->booking()->with(['bookingDetails.costs', 'payments'])->first();
             if ($booking) {
                 $this->billingService->updateCachedSisaTagihan($booking);
+
+                // DP yang dibayar sebelum invoice di-generate ikut diperhitungkan ke invoice.paid_amount.
+                // Jika DP tersebut di-void, invoice.paid_amount dan invoice.status harus diperbarui.
+                if ($payment->invoice_payment_id === null) {
+                    $this->syncInvoicePaidAmountForBooking($booking);
+                }
             }
 
             // Kurangi saldo rekening (void = mengembalikan uang)
@@ -202,5 +209,35 @@ class BookingPaymentService
         ]);
 
         return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);
+    }
+
+    private function syncInvoicePaidAmountForBooking(Booking $booking): void
+    {
+        $booking->loadMissing('invoices');
+
+        $booking->invoices
+            ->filter(fn(Invoice $invoice) => $invoice->status !== 'void')
+            ->each(function (Invoice $invoice) {
+                $invoice->load(['payments', 'bookings.payments']);
+
+                $paidFromInvoicePayments = (int) $invoice->payments->sum('amount');
+                $paidFromDirectBookingPayments = (int) $invoice->bookings->sum(
+                    fn(Booking $b) => (int) $b->payments
+                        ->filter(fn(BookingPayment $p) => ($p->status ?? 'active') !== 'voided' && $p->invoice_payment_id === null)
+                        ->sum('amount')
+                );
+                $paidAmount = $paidFromInvoicePayments + $paidFromDirectBookingPayments;
+
+                $status = match (true) {
+                    $paidAmount >= (int) $invoice->total_amount && (int) $invoice->total_amount > 0 => 'paid',
+                    $paidAmount > 0 => 'partial_paid',
+                    default => 'generated',
+                };
+
+                $invoice->update([
+                    'paid_amount' => $paidAmount,
+                    'status' => $status,
+                ]);
+            });
     }
 }

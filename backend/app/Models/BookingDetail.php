@@ -17,6 +17,7 @@ class BookingDetail extends Model
         'tgl_sewa',
         'tgl_kembali',
         'harga_mobil',
+        'modal_mobil',
         'diskon_mobil',
         'lama_sewa',
         'paket_sewa',
@@ -30,6 +31,9 @@ class BookingDetail extends Model
     protected $casts = [
         'lama_sewa' => 'integer',
         'harga_all_in' => 'integer',
+        'harga_mobil' => 'integer',
+        'modal_mobil' => 'integer',
+        'diskon_mobil' => 'integer',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)

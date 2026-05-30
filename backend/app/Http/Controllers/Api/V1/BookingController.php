@@ -43,6 +43,7 @@ class BookingController extends Controller
         'payments.voidRejecter',
         'refunds',
         'physicalChecks',
+        'invoices',
     ];
 
     public function __construct(BookingService $bookingService)

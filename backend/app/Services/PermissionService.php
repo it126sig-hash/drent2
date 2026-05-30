@@ -38,6 +38,8 @@ class PermissionService
         'master.cost_type',
         'master.pricing_package',
         'master.role_management',
+        'master.tenant',
+        'master.branch',
     ];
 
     /**

@@ -48,6 +48,29 @@ const customerContactLines = computed(() => {
   ].filter(Boolean)
 })
 
+const branchLogoUrl = computed(() => invoice.value?.branch?.logo_url || null)
+
+const branchContactItems = computed(() => {
+  const branch = invoice.value?.branch
+  if (!branch) return []
+  return [
+    branch.address ? { icon: 'pi pi-map-marker', text: branch.address } : null,
+    branch.phone ? { icon: 'pi pi-phone', text: branch.phone } : null,
+    branch.email ? { icon: 'pi pi-envelope', text: branch.email } : null,
+  ].filter(Boolean)
+})
+
+const showUpdatedAt = computed(() => {
+  const inv = invoice.value
+  if (!inv?.updated_at || !inv?.generated_at) return false
+  const updatedAt = new Date(inv.updated_at).getTime()
+  const generatedAt = new Date(inv.generated_at).getTime()
+  // Show only if there's a meaningful gap (> 60 seconds) between generation and last update
+  return updatedAt - generatedAt > 60_000
+})
+
+const authorizedSignName = computed(() => invoice.value?.created_by_name || 'Authorised Sign')
+
 const paymentHistory = computed(() => {
   if (!invoice.value?.payments) return []
   return invoice.value.payments
@@ -56,6 +79,14 @@ const paymentHistory = computed(() => {
 const filteredPaymentAccounts = computed(() => {
   if (!invoice.value?.payment_accounts) return []
   return invoice.value.payment_accounts.filter(acc => acc.nama_bank && acc.nama_bank.toLowerCase() !== 'cash')
+})
+
+const termsAndConditions = computed(() => invoice.value?.terms_and_conditions || '')
+
+const hasTermsAndConditions = computed(() => {
+  // Strip HTML tags & whitespace to detect truly empty rich-text content (e.g. "<p></p>")
+  const plain = termsAndConditions.value.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+  return plain.length > 0
 })
 
 const formatCurrency = (value) => {
@@ -114,12 +145,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="public-invoice-page">
-    <div v-if="invoice && !error" class="invoice-action-bar">
-      <button class="download-button" @click="downloadInvoice">
-        <i class="pi pi-download"></i>
-        Download Invoice
-      </button>
-    </div>
+
 
     <div class="invoice-container">
       <div v-if="loading" class="loading-strip">
@@ -135,21 +161,38 @@ onBeforeUnmount(() => {
         <!-- Top header: Brand Name & INVOICE -->
         <div class="invoice-top-bar">
           <div class="brand-info">
-            <i class="pi pi-box logo-icon"></i>
-            <div>
-              <div class="brand-name">{{ invoice.branch?.name || 'DRENT' }}</div>
-              <div class="brand-tagline">CAR RENTAL SYSTEM</div>
+            <div class="brand-header">
+              <img v-if="branchLogoUrl" :src="branchLogoUrl" :alt="invoice.branch?.name || 'Logo'" class="brand-logo" />
+              <i v-else class="pi pi-box logo-icon"></i>
+              <div>
+                <div class="brand-name">{{ invoice.branch?.name || 'DRENT' }}</div>
+                <div class="brand-tagline">CAR RENTAL SYSTEM</div>
+              </div>
+            </div>
+            <div class="brand-contact" v-if="branchContactItems.length">
+              <span class="brand-contact-item" v-for="(item, idx) in branchContactItems" :key="`bc-${idx}`">
+                <i :class="item.icon"></i>
+                <span>{{ item.text }}</span>
+              </span>
             </div>
           </div>
-          <div class="invoice-title">INVOICE</div>
+          <div class="invoice-title-block">
+            <div class="invoice-title">INVOICE</div>
+            <div class="invoice-title-meta">
+              <div>Generated: {{ formatDateTime(invoice.generated_at || invoice.created_at) }}</div>
+              <div v-if="showUpdatedAt" class="updated-at">
+                Last Update: {{ formatDateTime(invoice.updated_at) }}
+              </div>
+            </div>
+          </div>
         </div>
-        
+
         <div class="red-line"></div>
 
         <!-- Second header: Invoice to & Invoice details -->
         <div class="invoice-meta-bar">
           <div class="invoice-to">
-            <div class="invoice-to-title">Invoice to:</div>
+            <div class="invoice-to-title">Billed to:</div>
             <div class="customer-name">{{ customerName }}</div>
             <div class="customer-address" v-if="customerAddressLines.length">
               <span v-for="line in customerAddressLines" :key="line">{{ line }}</span>
@@ -196,7 +239,7 @@ onBeforeUnmount(() => {
                     <span class="font-semibold">{{ item.vehicle_name || 'Rental Service' }}</span> <span class="mono">({{ item.vehicle_plate }})</span>
                   </template>
                 </div>
-                <div class="item-meta" v-if="item.label">{{ item.label }} : <span  v-if="item.note">{{ item.note }}</span></div>
+                <div class="item-meta" v-if="item.label">{{ item.label }} : <span v-if="item.note">{{ item.note }}</span></div>
                 <div class="item-meta">
                   {{ formatDate(item.rental_start_date) }} - {{ formatDate(item.rental_end_date) }}
                 </div>
@@ -233,8 +276,8 @@ onBeforeUnmount(() => {
               <template v-if="filteredPaymentAccounts.length">
                 <div class="account-grid">
                   <div class="account-card" v-for="account in filteredPaymentAccounts" :key="account.nomor_rekening">
-                    <div class="account-bank">{{ account.nama_bank }}:  <span class="account-number mono">{{ account.nomor_rekening }}</span></div>
-                   
+                    <div class="account-bank">{{ account.nama_bank }}: <span class="account-number mono">{{ account.nomor_rekening }}</span></div>
+
                     <div class="account-name">{{ account.atas_nama }}</div>
                   </div>
                 </div>
@@ -246,10 +289,11 @@ onBeforeUnmount(() => {
 
             <div class="terms-conditions">
               <div class="terms-title">Terms & Conditions</div>
-              <p>Harap lakukan pembayaran sebelum tanggal jatuh tempo. Keterlambatan dapat dikenakan denda sesuai dengan ketentuan penyewaan. Terima kasih telah mempercayai DRENT.</p>
+              <div v-if="hasTermsAndConditions" class="terms-content" v-html="termsAndConditions"></div>
+              <p v-else>Harap lakukan pembayaran sebelum tanggal jatuh tempo. Keterlambatan dapat dikenakan denda sesuai dengan ketentuan penyewaan. Terima kasih telah mempercayai DRENT.</p>
             </div>
           </div>
-          
+
           <div class="bottom-right">
             <div class="totals-section">
               <div class="total-row">
@@ -262,7 +306,9 @@ onBeforeUnmount(() => {
               </div>
               <div class="total-row" style="align-items: center;">
                 <span>Status:</span>
-                <span><Tag :value="invoice.status" :severity="statusSeverity(invoice.status)" class="status-badge" /></span>
+                <span>
+                  <Tag :value="invoice.status" :severity="statusSeverity(invoice.status)" class="status-badge" />
+                </span>
               </div>
               <div class="total-row grand-total">
                 <span>Remaining:</span>
@@ -272,7 +318,8 @@ onBeforeUnmount(() => {
 
             <div class="signature-section">
               <div class="signature-line"></div>
-              <div class="signature-text">Authorised Sign</div>
+              <div class="signature-text">{{ authorizedSignName }}</div>
+              <div class="signature-caption">Authorised Sign</div>
             </div>
           </div>
         </div>
@@ -331,6 +378,7 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-sm);
+  padding-bottom: 24px;
 }
 
 .loading-strip {
@@ -351,18 +399,37 @@ onBeforeUnmount(() => {
   color: var(--text-white);
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 40px;
+  gap: 24px;
 }
 
 .brand-info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.brand-header {
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
-.brand-info i {
+.brand-header i.logo-icon {
   font-size: 32px;
+}
+
+.brand-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  background: var(--text-white);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  flex-shrink: 0;
 }
 
 .brand-name {
@@ -378,12 +445,66 @@ onBeforeUnmount(() => {
   letter-spacing: 1px;
 }
 
+.brand-contact {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--neutral-4);
+  line-height: 1.5;
+  max-width: 480px;
+}
+
+.brand-contact-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 14px;
+}
+
+.brand-contact-item:last-child {
+  margin-right: 0;
+}
+
+.brand-contact-item i {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.brand-contact-item span {
+  word-break: break-word;
+}
+
+.invoice-title-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 .invoice-title {
   font-family: var(--font-headline);
   font-size: 36px;
   font-weight: 700;
   color: var(--negative);
   letter-spacing: 2px;
+  line-height: 1;
+}
+
+.invoice-title-meta {
+  font-size: 11px;
+  color: var(--neutral-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.invoice-title-meta .updated-at {
+  color: var(--negative);
+  font-weight: 600;
 }
 
 .red-line {
@@ -393,7 +514,8 @@ onBeforeUnmount(() => {
 
 /* META BAR */
 .invoice-meta-bar {
-  background-color: #272C3F; /* Darker than white, lighter than primary */
+  background-color: #272C3F;
+  /* Darker than white, lighter than primary */
   color: var(--text-white);
   padding: 30px 40px;
   display: flex;
@@ -468,7 +590,8 @@ onBeforeUnmount(() => {
 
 .table-header {
   display: flex;
-  background-color: #EAF0EC; /* Light greenish grey */
+  background-color: #EAF0EC;
+  /* Light greenish grey */
   padding: 12px 20px;
   font-weight: 600;
   font-family: var(--font-headline);
@@ -491,11 +614,32 @@ onBeforeUnmount(() => {
   margin-top: 2px;
 }
 
-.col-sl { width: 10%; text-align: center; }
-.col-desc { width: 50%; }
-.col-price { width: 15%; text-align: right; font-family: var(--font-mono); }
-.col-qty { width: 10%; text-align: center; font-family: var(--font-mono); }
-.col-total { width: 15%; text-align: right; font-family: var(--font-mono); }
+.col-sl {
+  width: 10%;
+  text-align: center;
+}
+
+.col-desc {
+  width: 50%;
+}
+
+.col-price {
+  width: 15%;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.col-qty {
+  width: 10%;
+  text-align: center;
+  font-family: var(--font-mono);
+}
+
+.col-total {
+  width: 15%;
+  text-align: right;
+  font-family: var(--font-mono);
+}
 
 /* BOTTOM SECTION */
 .invoice-bottom {
@@ -607,6 +751,34 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
+.terms-content {
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.terms-content :deep(p) {
+  margin: 0 0 4px;
+}
+
+.terms-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.terms-content :deep(ul),
+.terms-content :deep(ol) {
+  margin: 0 0 4px;
+  padding-left: 18px;
+}
+
+.terms-content :deep(li) {
+  margin-bottom: 2px;
+}
+
+.terms-content :deep(strong) {
+  color: var(--text-primary);
+}
+
 .bottom-right {
   width: 250px;
   display: flex;
@@ -652,12 +824,28 @@ onBeforeUnmount(() => {
 }
 
 .signature-text {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   text-align: center;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.signature-caption {
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
+  color: var(--text-secondary);
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  margin-top: 2px;
 }
 
 .invoice-footer-band {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 24px;
   background-color: #272C3F;
 }
@@ -687,23 +875,34 @@ onBeforeUnmount(() => {
     min-height: 0;
   }
 
-  .invoice-top-bar, .invoice-meta-bar {
+  .invoice-top-bar,
+  .invoice-meta-bar {
     flex-direction: column;
     align-items: flex-start;
     gap: 20px;
     padding: 24px;
   }
-  
+
+  .invoice-title-block {
+    align-items: flex-start;
+    text-align: left;
+  }
+
   .invoice-title {
     font-size: 28px;
   }
-  
+
+  .brand-logo {
+    width: 48px;
+    height: 48px;
+  }
+
   .invoice-bottom {
     flex-direction: column;
     padding: 24px;
     gap: 30px;
   }
-  
+
   .invoice-table {
     padding: 0 16px;
     margin-top: 20px;
@@ -716,23 +915,32 @@ onBeforeUnmount(() => {
     padding-left: 12px;
     padding-right: 12px;
   }
-  
-  .col-sl, .col-qty {
+
+  .col-sl,
+  .col-qty {
     display: none;
   }
-  
-  .col-desc { width: 50%; }
-  .col-price { width: 25%; }
-  .col-total { width: 25%; }
-  
-  .bottom-right { 
-    width: 100%; 
+
+  .col-desc {
+    width: 50%;
+  }
+
+  .col-price {
+    width: 25%;
+  }
+
+  .col-total {
+    width: 25%;
+  }
+
+  .bottom-right {
+    width: 100%;
   }
 
   .account-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .signature-section {
     align-self: center;
   }

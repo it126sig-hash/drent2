@@ -18,6 +18,7 @@ class Invoice extends Model
         'total_amount',
         'paid_amount',
         'due_date',
+        'terms_and_conditions',
         'generated_at',
         'sent_at',
         'voided_at',
@@ -61,5 +62,10 @@ class Invoice extends Model
     public function sentBy()
     {
         return $this->belongsTo(User::class, 'sent_by');
+    }
+
+    public function histories()
+    {
+        return $this->hasMany(InvoiceHistory::class)->orderBy('created_at');
     }
 }

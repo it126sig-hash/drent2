@@ -293,7 +293,7 @@ onMounted(fetchData)
         </div>
 
         <div v-if="filteredBookings.length" class="booking-list">
-          <article v-for="booking in filteredBookings" :key="booking.id" class="booking-row">
+          <article v-for="booking in filteredBookings" :key="booking.id" class="booking-row" @click="router.push({ name: 'BookingDetail', params: { id: booking.id } })">
             <div class="booking-icon">
               <i class="pi pi-car"></i>
             </div>
@@ -307,7 +307,11 @@ onMounted(fetchData)
               <span>{{ formatDateTime(booking.tgl_sewa) }} sampai {{ formatDateTime(booking.tgl_kembali) }}</span>
             </div>
             <strong class="booking-amount">
-              {{ formatCurrency(booking.unit_id !== null && booking.unit_id !== undefined ? booking.total_biaya?.total : booking.amount) }}
+              {{ formatCurrency(
+                booking.unit_id !== null && booking.unit_id !== undefined
+                  ? (booking.total_biaya?.total || booking.amount)
+                  : booking.amount
+              ) }}
             </strong>
           </article>
         </div>
@@ -743,6 +747,14 @@ onMounted(fetchData)
   border: 1px solid var(--surface-border);
   border-radius: 8px;
   background: var(--card-bg);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.booking-row:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(26, 29, 46, 0.08);
+  border-color: var(--primary);
 }
 
 .booking-icon {

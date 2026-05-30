@@ -30,9 +30,9 @@ class TransactionController extends Controller
         );
 
         $statuses = $this->arrayFilter($request->input('status'));
-        // If status filter is empty, default to waiting_list, selesai, batal to match requirements
+        // If status filter is empty, default to waiting_list, rental_unit, selesai, batal to match requirements
         if (empty($statuses)) {
-            $statuses = ['waiting_list', 'selesai', 'batal'];
+            $statuses = ['waiting_list', 'rental_unit', 'selesai', 'batal'];
         }
 
         $query = Booking::query()
@@ -209,19 +209,22 @@ class TransactionController extends Controller
         }
 
         // 6. Pengeluaran — Harga Modal Unit (Hanya untuk unit milik DRENT)
+        $totalModalUnit = 0;
         foreach ($booking->bookingDetails as $detail) {
             if ($detail->status !== 'batal' && $detail->unit_id && $detail->modal_mobil > 0) {
                 // Pastikan bukan unit rent-to-rent
                 $isRentToRent = $detail->unit?->rentalOwner && !$detail->unit->rentalOwner->is_owner;
                 if (!$isRentToRent) {
-                    $totalModal = $detail->modal_mobil * ($detail->lama_sewa > 0 ? $detail->lama_sewa : 1);
+                    $nominalModal = $detail->modal_mobil * ($detail->lama_sewa > 0 ? $detail->lama_sewa : 1);
+                    $totalModalUnit += $nominalModal;
                     $history[] = [
-                        'id'          => 'modal-unit-' . $detail->id,
-                        'date'        => $detail->created_at?->toISOString(),
-                        'category'    => 'harga_modal',
-                        'type'        => 'pengeluaran',
-                        'description' => 'Harga Modal Unit: ' . ($detail->unit->tipe ?? 'Unit') . ' (' . $detail->lama_sewa . 'x)',
-                        'amount'      => -(int) $totalModal,
+                        'id'           => 'modal-unit-' . $detail->id,
+                        'date'         => $detail->created_at?->toISOString(),
+                        'category'     => 'harga_modal',
+                        'type'         => 'pengeluaran',
+                        'is_unrealized' => true,
+                        'description'  => 'Harga Modal Unit: ' . ($detail->unit->tipe ?? 'Unit') . ' (' . $detail->lama_sewa . 'x @ ' . number_format($detail->modal_mobil, 0, ',', '.') . ')',
+                        'amount'       => -(int) $nominalModal,
                     ];
                 }
             }
@@ -295,6 +298,7 @@ class TransactionController extends Controller
                     'total_pemasukan'   => $totalPemasukan,
                     'total_pengeluaran' => $totalPengeluaran,
                     'total_bon_info'    => $totalBonInfo,
+                    'total_modal'       => $totalModalUnit,
                     'margin'            => $margin,
                 ]
             ]

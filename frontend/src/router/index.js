@@ -43,6 +43,11 @@ const router = createRouter({
           component: () => import("../views/profile/UserProfileView.vue"),
         },
         {
+          path: "/my-requests",
+          name: "my-requests",
+          component: () => import("../views/profile/MyRequestListView.vue"),
+        },
+        {
           path: "/rental-owners",
           name: "rental-owners",
           component: () =>
@@ -101,6 +106,18 @@ const router = createRouter({
           meta: { permission: "master.payment_account" },
         },
 
+        {
+          path: "/master/tenant",
+          name: "tenant-settings",
+          component: () => import("../views/master/TenantSettingsView.vue"),
+          meta: { permission: "master.tenant" },
+        },
+        {
+          path: "/master/branches",
+          name: "branches",
+          component: () => import("../views/master/BranchListView.vue"),
+          meta: { permission: "master.branch" },
+        },
         {
           path: "/master/cities",
           name: "cities",
@@ -207,6 +224,11 @@ const router = createRouter({
           name: "RolePermissions",
           component: () => import("../views/settings/RolePermissionView.vue"),
           meta: { permission: "master.role_management" },
+        },
+        {
+          path: "/master/invoice-terms-templates",
+          name: "InvoiceTermsTemplates",
+          component: () => import("../views/master/InvoiceTermsTemplateListView.vue"),
         },
       ],
     },

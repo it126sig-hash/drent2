@@ -24,11 +24,22 @@ class PublicInvoiceResource extends JsonResource
             'paid_amount' => $paidAmount,
             'remaining_amount' => max(0, (int) $this->total_amount - $paidAmount),
             'due_date' => $this->due_date?->toISOString(),
+            'terms_and_conditions' => $this->terms_and_conditions,
             'generated_at' => $this->generated_at?->toISOString(),
             'sent_at' => $this->sent_at?->toISOString(),
+            'updated_at' => $this->updated_at?->toISOString(),
+            'created_at' => $this->created_at?->toISOString(),
+            'created_by_name' => $this->creator?->name,
             'branch' => $this->branch ? [
                 'id' => $this->branch->id,
                 'name' => $this->branch->name ?? $this->branch->nama ?? null,
+                'address' => $this->branch->address,
+                'phone' => $this->branch->phone,
+                'phone_alt' => $this->branch->phone_alt,
+                'email' => $this->branch->email,
+                'website' => $this->branch->website,
+                'logo_path' => $this->branch->logo_path,
+                'logo_url' => $this->publicStorageUrl($this->branch->logo_path),
             ] : null,
             'bookings' => $this->whenLoaded('bookings', fn() => $this->bookings->map(function ($booking) {
                 $detail = $booking->relationLoaded('bookingDetails')
@@ -60,5 +71,16 @@ class PublicInvoiceResource extends JsonResource
                 'atas_nama' => $account->atas_nama,
             ])->values(),
         ];
+    }
+
+    private function publicStorageUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $baseUrl = rtrim(request()->getSchemeAndHttpHost() . request()->getBaseUrl(), '/');
+
+        return $baseUrl . '/storage/' . ltrim($path, '/');
     }
 }

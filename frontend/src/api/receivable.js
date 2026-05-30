@@ -38,6 +38,10 @@ export const getPublicInvoice = (token) => {
   return api.get(`/v1/public/invoices/${token}`)
 }
 
+export const getInvoiceHistories = (invoiceId) => {
+  return api.get(`/v1/invoices/${invoiceId}/histories`)
+}
+
 export default {
   getReceivables,
   getPaymentHistory,
@@ -48,4 +52,5 @@ export default {
   downloadInvoicePdf,
   addInvoicePayment,
   getPublicInvoice,
+  getInvoiceHistories,
 }

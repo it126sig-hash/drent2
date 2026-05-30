@@ -18,7 +18,7 @@ import { fetchCities } from '../../api/city'
 const router = useRouter()
 const toast = useToast()
 
-const activeTab = ref('semua') // semua, waiting_list, selesai, batal
+const activeTab = ref('semua') // semua, waiting_list, rental_unit, selesai, batal
 const transactions = ref([])
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -71,8 +71,9 @@ const fetchTransactionList = async (page = 1) => {
   loading.value = true
   try {
     const statusesMap = {
-      semua: ['waiting_list', 'selesai', 'batal'],
+      semua: ['waiting_list', 'rental_unit', 'selesai', 'batal'],
       waiting_list: ['waiting_list'],
+      rental_unit: ['rental_unit'],
       selesai: ['selesai'],
       batal: ['batal'],
     }
@@ -199,6 +200,10 @@ onMounted(() => {
             <button class="toggle-item" :class="{ active: activeTab === 'waiting_list' }"
               @click="switchTab('waiting_list')">
               Waiting List
+            </button>
+            <button class="toggle-item" :class="{ active: activeTab === 'rental_unit' }"
+              @click="switchTab('rental_unit')">
+              Disewa
             </button>
             <button class="toggle-item" :class="{ active: activeTab === 'selesai' }" @click="switchTab('selesai')">
               Selesai
@@ -384,11 +389,18 @@ onMounted(() => {
             <div class="flex flex-col items-end gap-1">
               <span class="font-mono-numeric font-semibold text-primary text-sm">{{
                 formatCurrency(data.total_pengeluaran) }}</span>
-              <div class="text-xs text-secondary flex items-center gap-2 mt-0.5">
-                <span class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">R2R: {{
+              <div class="text-xs text-secondary flex items-center gap-2 mt-0.5 flex-wrap justify-end">
+                <span v-if="data.total_rent_to_rent > 0"
+                  class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">R2R: {{
                   formatCurrency(data.total_rent_to_rent) }}</span>
-                <span class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">Ops: {{
+                <span v-if="data.total_operasional > 0"
+                  class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">Ops: {{
                   formatCurrency(data.total_operasional) }}</span>
+                <span v-if="data.total_modal > 0"
+                  class="font-mono-numeric px-1.5 py-0.5 rounded text-[11px] modal-badge-unrealized"
+                  title="Harga modal unit internal — diperhitungkan sebagai HPP, belum keluar kas">
+                  Modal*: {{ formatCurrency(data.total_modal) }}
+                </span>
               </div>
             </div>
           </template>
@@ -506,19 +518,27 @@ onMounted(() => {
                   <span v-else-if="data.category === 'bon_operasional'"
                     class="status-badge neutral">Bon/Reimburse</span>
                   <span v-else-if="data.category === 'operasional'" class="status-badge error">Realisasi Langsung</span>
+                  <span v-else-if="data.category === 'harga_modal'" class="status-badge modal-unrealized">Modal Unit</span>
                   <span v-else class="status-badge neutral">{{ data.category }}</span>
                 </template>
               </Column>
 
               <Column header="Keterangan" style="min-width: 16rem">
                 <template #body="{ data }">
-                  <span class="text-primary text-xs font-body">{{ data.description }}</span>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-primary text-xs font-body">{{ data.description }}</span>
+                    <span v-if="data.is_unrealized" class="text-[10px] font-semibold font-body unrealized-note">
+                      * Belum keluar kas — diperhitungkan sebagai HPP
+                    </span>
+                  </div>
                 </template>
               </Column>
 
               <Column header="Tipe" style="min-width: 8rem">
                 <template #body="{ data }">
                   <span v-if="data.type === 'pemasukan'" class="status-badge success">Pemasukan</span>
+                  <span v-else-if="data.type === 'pengeluaran' && data.is_unrealized" class="status-badge modal-unrealized"
+                    title="Nominal modal belum dikeluarkan secara fisik dari kas">HPP Modal*</span>
                   <span v-else-if="data.type === 'pengeluaran'" class="status-badge error">Pengeluaran</span>
                   <span v-else-if="data.type === 'info'" class="status-badge neutral"
                     title="Rincian penggunaan dana driver (tidak mengurangi kas tambahan)">Info Bon</span>
@@ -529,8 +549,9 @@ onMounted(() => {
                 <template #body="{ data }">
                   <span class="font-mono-numeric font-semibold text-xs" :class="{
                     'text-positive': data.type === 'pemasukan',
-                    'text-negative': data.type === 'pengeluaran',
+                    'text-negative': data.type === 'pengeluaran' && !data.is_unrealized,
                     'text-secondary': data.type === 'info',
+                    'text-modal-unrealized': data.is_unrealized,
                   }">
                     <template v-if="data.type === 'pemasukan'">+{{ formatCurrency(data.amount) }}</template>
                     <template v-else-if="data.type === 'pengeluaran'">{{ formatCurrency(data.amount) }}</template>
@@ -554,7 +575,7 @@ onMounted(() => {
             </span>
           </div>
           <div class="flex flex-col gap-1">
-            <span class="text-[11px] text-secondary uppercase font-semibold font-body">Total Pengeluaran (Kas)</span>
+            <span class="text-[11px] text-secondary uppercase font-semibold font-body">Total Pengeluaran</span>
             <span class="text-base font-bold font-mono-numeric text-negative">
               {{ formatCurrency(selectedTransaction.summary?.total_pengeluaran) }}
             </span>
@@ -562,6 +583,11 @@ onMounted(() => {
               class="text-[11px] text-secondary font-mono-numeric mt-0.5"
               title="Rincian realisasi bon dari dana driver. Sudah termasuk dalam dana yang diserahkan.">
               (incl. bon: {{ formatCurrency(selectedTransaction.summary?.total_bon_info) }})
+            </span>
+            <span v-if="selectedTransaction.summary?.total_modal > 0"
+              class="text-[11px] font-mono-numeric mt-0.5 modal-summary-note"
+              title="Harga modal unit internal diperhitungkan sebagai HPP, belum keluar secara fisik dari kas.">
+              *incl. modal HPP: {{ formatCurrency(selectedTransaction.summary?.total_modal) }}
             </span>
           </div>
           <div
@@ -807,6 +833,34 @@ onMounted(() => {
 
 .font-mono-numeric {
   font-family: var(--font-mono);
+}
+
+/* === Modal / HPP Unrealized === */
+.status-badge.modal-unrealized {
+  background-color: #FFF3E0 !important;
+  color: #E65100 !important;
+  border: 1px dashed #FFB74D !important;
+}
+
+.modal-badge-unrealized {
+  background-color: #FFF3E0;
+  color: #E65100;
+  border: 1px dashed #FFB74D;
+}
+
+.text-modal-unrealized {
+  color: #E65100;
+}
+
+.unrealized-note {
+  color: #E65100;
+  font-style: italic;
+}
+
+.modal-summary-note {
+  color: #E65100;
+  font-family: var(--font-mono);
+  font-style: italic;
 }
 
 @media (min-width: 1366px) {

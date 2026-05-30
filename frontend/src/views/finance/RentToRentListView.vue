@@ -54,12 +54,14 @@ const {
 const { accounts, fetchAll: fetchPaymentAccounts } = usePaymentAccount()
 
 const activeTab = ref('debts')
+const paymentView = ref('all')
 const selectedRows = ref([])
 const selectedBill = ref(null)
 const selectedPaymentDebt = ref(null)
 const showGenerateDialog = ref(false)
 const showDebtDialog = ref(false)
 const showPaymentDialog = ref(false)
+const showPaymentConfirmDialog = ref(false)
 const showVoidDialog = ref(false)
 const paymentAccountsLoaded = ref(false)
 const detailAmountForm = ref({ amount_override: null, reason: '' })
@@ -114,6 +116,17 @@ const paymentAccountOptions = computed(() => accounts.value.map(account => ({
   label: `${account.nama_bank} - ${account.nomor_rekening} (${account.atas_nama})`,
   value: account.id,
 })))
+const selectedPaymentAccountLabel = computed(() => {
+  const id = paymentForm.value.payment_account_id
+  if (!id) return '-'
+  return paymentAccountOptions.value.find(opt => opt.value === id)?.label || '-'
+})
+const remainingAfterPayment = computed(() => {
+  if (!paymentTarget.value) return 0
+  const remaining = Number(paymentTarget.value.remaining_amount || 0)
+  const amount = Number(paymentForm.value.amount || 0)
+  return Math.max(0, remaining - amount)
+})
 const ownerOptions = computed(() => [
   { id: null, nama: 'Semua Pemilik' },
   ...availableOwners.value,
@@ -273,6 +286,17 @@ const onLatestPaymentHistoryPage = (event) => {
 
 const onGroupPaymentHistoryPage = (event) => {
   fetchPaymentHistory({ view: 'group', page: event.page + 1 })
+}
+
+const switchPaymentView = (view) => {
+  if (paymentView.value === view) return
+  paymentView.value = view
+  // Refresh only the side we just switched to (and reset to page 1 for that side).
+  if (view === 'group_booking') {
+    fetchPaymentHistory({ view: 'group', page: 1 })
+  } else {
+    fetchPaymentHistory({ view: 'latest', page: 1 })
+  }
 }
 
 const switchTab = (tab) => {
@@ -476,6 +500,21 @@ const submitVoidRequest = async () => {
   voidForm.value = { bill: null, void_reason: '' }
 }
 
+const confirmPayment = () => {
+  if ((!selectedBill.value?.id && !selectedPaymentDebt.value?.id) || !paymentForm.value.amount || !paymentForm.value.payment_account_id) return
+  const remaining = Number(paymentTarget.value?.remaining_amount || 0)
+  const amount = Number(paymentForm.value.amount || 0)
+  if (amount <= 0) {
+    toast.add({ severity: 'error', summary: 'Nominal tidak valid', detail: 'Nominal pembayaran harus lebih dari 0.', life: 3000 })
+    return
+  }
+  if (amount > remaining) {
+    toast.add({ severity: 'error', summary: 'Nominal melebihi sisa', detail: `Sisa hutang ${formatCurrency(remaining)}.`, life: 3000 })
+    return
+  }
+  showPaymentConfirmDialog.value = true
+}
+
 const submitPayment = async () => {
   if ((!selectedBill.value?.id && !selectedPaymentDebt.value?.id) || !paymentForm.value.amount || !paymentForm.value.payment_account_id) return
 
@@ -492,6 +531,7 @@ const submitPayment = async () => {
     await addDebtPayment(selectedPaymentDebt.value.id, payload)
   }
 
+  showPaymentConfirmDialog.value = false
   showPaymentDialog.value = false
   selectedBill.value = null
   selectedPaymentDebt.value = null
@@ -527,7 +567,7 @@ onMounted(async () => {
     <div v-if="activeTab === 'payments'" class="filter-bar surface-card">
       <div class="filter-group">
         <label>Riwayat Pembayaran</label>
-        <span class="text-secondary text-xs">Pembayaran terbaru dan group per dokumen tagihan.</span>
+        <span class="text-secondary text-xs">Lihat seluruh pembayaran atau ringkasan per kode booking.</span>
       </div>
       <div class="filter-actions">
         <button class="btn-pill btn-secondary btn-pill-compact" :disabled="historyLoading" @click="fetchPaymentHistory">
@@ -674,9 +714,9 @@ onMounted(async () => {
             <template #body="{ data }">
               <div class="amount-stack">
                 <strong>{{ formatCurrency(data.total_amount) }}</strong>
-                <span v-if="data.pending_amount_request" style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; width: fit-content; margin-top: 4px; display: inline-block;">Pending ACC: {{ data.pending_amount_request.requested_amount_override !== null ? formatCurrency(data.pending_amount_request.requested_amount_override) : 'Reset Live' }}</span>
+                <span v-if="data.pending_amount_request" style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; width: fit-content; margin-top: 4px; display: inline-block;">Pending ACC: {{ data.pending_amount_request.requested_amount_override !== null ? formatCurrency(data.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
                 <span v-else-if="data.amount_override !== null">Manual override</span>
-                <span v-else>Live dari master unit</span>
+                <span v-else>Modal default booking</span>
               </div>
             </template>
           </Column>
@@ -719,7 +759,7 @@ onMounted(async () => {
             <div class="mobile-card-amount">
               <div><span>Total</span><strong>{{ formatCurrency(debt.total_amount) }}</strong></div>
               <div v-if="debt.pending_amount_request" style="grid-column: span 2; margin-top: 4px;">
-                <span style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block;">Pending ACC: {{ debt.pending_amount_request.requested_amount_override !== null ? formatCurrency(debt.pending_amount_request.requested_amount_override) : 'Reset Live' }}</span>
+                <span style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block;">Pending ACC: {{ debt.pending_amount_request.requested_amount_override !== null ? formatCurrency(debt.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
               </div>
               <div><span>Sisa</span><strong>{{ formatCurrency(debt.remaining_amount) }}</strong></div>
             </div>
@@ -883,129 +923,147 @@ onMounted(async () => {
 
     <div v-if="activeTab === 'payments'" class="payment-history-stack">
       <section class="payment-section">
-        <div class="section-heading">
-          <h2>Pembayaran Terbaru</h2>
+        <div class="section-heading payment-section-heading">
+          <h2>{{ paymentView === 'group_booking' ? 'Group per Kode Booking' : 'Pembayaran Keseluruhan' }}</h2>
+          <div class="pill-toggle pill-toggle-compact">
+            <button class="toggle-item" :class="{ active: paymentView === 'all' }" @click="switchPaymentView('all')">Keseluruhan</button>
+            <button class="toggle-item" :class="{ active: paymentView === 'group_booking' }" @click="switchPaymentView('group_booking')">Group per Kode Booking</button>
+          </div>
         </div>
-        <DataTable :value="paymentHistory.latest" dataKey="id" responsiveLayout="scroll" class="drent-datatable desktop-table">
-          <Column header="Dokumen" style="min-width: 12rem">
-            <template #body="{ data }">{{ data.bill_number || '-' }}</template>
-          </Column>
-          <Column header="Pemilik Rental" style="min-width: 14rem">
-            <template #body="{ data }">{{ data.owner_name || '-' }}</template>
-          </Column>
-          <Column header="Booking" style="min-width: 16rem">
-            <template #body="{ data }">{{ (data.booking_codes || []).join(', ') || '-' }}</template>
-          </Column>
-          <Column header="Akun" style="min-width: 13rem">
-            <template #body="{ data }">{{ data.payment_account_name || '-' }}</template>
-          </Column>
-          <Column header="Tanggal" style="min-width: 12rem">
-            <template #body="{ data }">{{ formatDateTime(data.paid_at) }}</template>
-          </Column>
-          <Column header="Nominal" style="min-width: 11rem">
-            <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.amount) }}</div></template>
-          </Column>
-          <Column header="Status" style="min-width: 9rem">
-            <template #body="{ data }">
-              <Tag :value="paymentStatusLabel(data.status)" :severity="paymentStatusSeverity(data.status)" />
-            </template>
-          </Column>
-          <Column header="Aksi" style="min-width: 9rem">
-            <template #body="{ data }">
-              <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(data.status)" @click="submitVoidPayment(data)">
-                <i class="pi pi-ban"></i>
-                Void
-              </button>
-            </template>
-          </Column>
-        </DataTable>
-        <Paginator
-          :rows="paymentHistoryPagination.latest.per_page"
-          :totalRecords="paymentHistoryPagination.latest.total"
-          :first="(paymentHistoryPagination.latest.current_page - 1) * paymentHistoryPagination.latest.per_page"
-          template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
-          currentPageReportTemplate="{first} - {last} dari {totalRecords}"
-          class="history-paginator"
-          @page="onLatestPaymentHistoryPage"
-        />
-        <div class="mobile-card-list rent-mobile-list">
-          <article v-for="payment in paymentHistory.latest" :key="payment.id" class="mobile-list-card">
-            <div class="mobile-card-head">
-              <div>
-                <strong>{{ payment.bill_number || '-' }}</strong>
-                <p>{{ payment.owner_name || '-' }}</p>
-              </div>
-              <Tag :value="paymentStatusLabel(payment.status)" :severity="paymentStatusSeverity(payment.status)" />
-            </div>
-            <div class="mobile-card-meta">
-              <div><span>Booking</span><strong>{{ (payment.booking_codes || []).join(', ') || '-' }}</strong></div>
-              <div><span>Akun</span><strong>{{ payment.payment_account_name || '-' }}</strong></div>
-            </div>
-            <div class="mobile-card-amount">
-              <div><span>Tanggal</span><strong>{{ formatDateTime(payment.paid_at) }}</strong></div>
-              <div><span>Nominal</span><strong>{{ formatCurrency(payment.amount) }}</strong></div>
-            </div>
-            <div class="mobile-card-actions">
-              <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(payment.status)" @click="submitVoidPayment(payment)">
-                <i class="pi pi-ban"></i>
-                Void
-              </button>
-            </div>
-          </article>
-        </div>
-      </section>
 
-      <section class="payment-section">
-        <div class="section-heading">
-          <h2>Group per Dokumen</h2>
-        </div>
-        <DataTable :value="paymentHistory.groups" dataKey="bill_id" responsiveLayout="scroll" class="drent-datatable desktop-table">
-          <Column header="Dokumen" style="min-width: 12rem">
-            <template #body="{ data }">{{ data.bill_number || '-' }}</template>
-          </Column>
-          <Column header="Pemilik Rental" style="min-width: 14rem">
-            <template #body="{ data }">{{ data.owner_name || '-' }}</template>
-          </Column>
-          <Column header="Booking" style="min-width: 16rem">
-            <template #body="{ data }">{{ (data.booking_codes || []).join(', ') || '-' }}</template>
-          </Column>
-          <Column header="Pembayaran" style="min-width: 10rem">
-            <template #body="{ data }">{{ data.payment_count }} pembayaran</template>
-          </Column>
-          <Column header="Terakhir Bayar" style="min-width: 12rem">
-            <template #body="{ data }">{{ formatDateTime(data.latest_paid_at) }}</template>
-          </Column>
-          <Column header="Total Terbayar" style="min-width: 12rem">
-            <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.total_amount) }}</div></template>
-          </Column>
-        </DataTable>
-        <Paginator
-          :rows="paymentHistoryPagination.groups.per_page"
-          :totalRecords="paymentHistoryPagination.groups.total"
-          :first="(paymentHistoryPagination.groups.current_page - 1) * paymentHistoryPagination.groups.per_page"
-          template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
-          currentPageReportTemplate="{first} - {last} dari {totalRecords}"
-          class="history-paginator"
-          @page="onGroupPaymentHistoryPage"
-        />
-        <div class="mobile-card-list rent-mobile-list">
-          <article v-for="group in paymentHistory.groups" :key="group.bill_id" class="mobile-list-card">
-            <div class="mobile-card-head">
-              <div>
-                <strong>{{ group.bill_number || '-' }}</strong>
-                <p>{{ group.owner_name || '-' }}</p>
+        <!-- KESELURUHAN -->
+        <template v-if="paymentView === 'all'">
+          <DataTable :value="paymentHistory.latest" dataKey="id" responsiveLayout="scroll" class="drent-datatable desktop-table">
+            <Column header="Dokumen" style="min-width: 12rem">
+              <template #body="{ data }">{{ data.bill_number || '-' }}</template>
+            </Column>
+            <Column header="Pemilik Rental" style="min-width: 14rem">
+              <template #body="{ data }">{{ data.owner_name || '-' }}</template>
+            </Column>
+            <Column header="Booking" style="min-width: 16rem">
+              <template #body="{ data }">{{ (data.booking_codes || []).join(', ') || '-' }}</template>
+            </Column>
+            <Column header="Akun" style="min-width: 13rem">
+              <template #body="{ data }">{{ data.payment_account_name || '-' }}</template>
+            </Column>
+            <Column header="Tanggal" style="min-width: 12rem">
+              <template #body="{ data }">{{ formatDateTime(data.paid_at) }}</template>
+            </Column>
+            <Column header="Nominal" style="min-width: 11rem">
+              <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.amount) }}</div></template>
+            </Column>
+            <Column header="Status" style="min-width: 9rem">
+              <template #body="{ data }">
+                <Tag :value="paymentStatusLabel(data.status)" :severity="paymentStatusSeverity(data.status)" />
+              </template>
+            </Column>
+            <Column header="Aksi" style="min-width: 9rem">
+              <template #body="{ data }">
+                <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(data.status)" @click="submitVoidPayment(data)">
+                  <i class="pi pi-ban"></i>
+                  Void
+                </button>
+              </template>
+            </Column>
+          </DataTable>
+          <Paginator
+            :rows="paymentHistoryPagination.latest.per_page"
+            :totalRecords="paymentHistoryPagination.latest.total"
+            :first="(paymentHistoryPagination.latest.current_page - 1) * paymentHistoryPagination.latest.per_page"
+            template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
+            currentPageReportTemplate="{first} - {last} dari {totalRecords}"
+            class="history-paginator"
+            @page="onLatestPaymentHistoryPage"
+          />
+          <div class="mobile-card-list rent-mobile-list">
+            <article v-for="payment in paymentHistory.latest" :key="payment.id" class="mobile-list-card">
+              <div class="mobile-card-head">
+                <div>
+                  <strong>{{ payment.bill_number || '-' }}</strong>
+                  <p>{{ payment.owner_name || '-' }}</p>
+                </div>
+                <Tag :value="paymentStatusLabel(payment.status)" :severity="paymentStatusSeverity(payment.status)" />
               </div>
-              <span class="mobile-card-count">{{ group.payment_count }} bayar</span>
-            </div>
-            <div class="mobile-card-meta">
-              <div><span>Booking</span><strong>{{ (group.booking_codes || []).join(', ') || '-' }}</strong></div>
-              <div><span>Terakhir</span><strong>{{ formatDateTime(group.latest_paid_at) }}</strong></div>
-            </div>
-            <div class="mobile-card-amount">
-              <div><span>Total Terbayar</span><strong>{{ formatCurrency(group.total_amount) }}</strong></div>
-            </div>
-          </article>
-        </div>
+              <div class="mobile-card-meta">
+                <div><span>Booking</span><strong>{{ (payment.booking_codes || []).join(', ') || '-' }}</strong></div>
+                <div><span>Akun</span><strong>{{ payment.payment_account_name || '-' }}</strong></div>
+              </div>
+              <div class="mobile-card-amount">
+                <div><span>Tanggal</span><strong>{{ formatDateTime(payment.paid_at) }}</strong></div>
+                <div><span>Nominal</span><strong>{{ formatCurrency(payment.amount) }}</strong></div>
+              </div>
+              <div class="mobile-card-actions">
+                <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(payment.status)" @click="submitVoidPayment(payment)">
+                  <i class="pi pi-ban"></i>
+                  Void
+                </button>
+              </div>
+            </article>
+          </div>
+        </template>
+
+        <!-- GROUP PER KODE BOOKING -->
+        <template v-else>
+          <DataTable :value="paymentHistory.groups" dataKey="booking_id" responsiveLayout="scroll" class="drent-datatable desktop-table">
+            <Column header="Kode Booking" style="min-width: 12rem">
+              <template #body="{ data }">
+                <button v-if="data.booking_id" class="link-button" @click="router.push(`/bookings/${data.booking_id}`)">{{ data.kode_booking || '-' }}</button>
+                <span v-else>{{ data.kode_booking || '-' }}</span>
+              </template>
+            </Column>
+            <Column header="Pelanggan" style="min-width: 12rem">
+              <template #body="{ data }">{{ data.customer_name || '-' }}</template>
+            </Column>
+            <Column header="Pemilik Rental" style="min-width: 14rem">
+              <template #body="{ data }">{{ (data.owner_names && data.owner_names.length ? data.owner_names.join(', ') : data.owner_name) || '-' }}</template>
+            </Column>
+            <Column header="Unit" style="min-width: 14rem">
+              <template #body="{ data }">{{ (data.unit_names || []).join(', ') || '-' }}</template>
+            </Column>
+            <Column header="Dokumen" style="min-width: 12rem">
+              <template #body="{ data }">{{ (data.bill_numbers || []).join(', ') || '-' }}</template>
+            </Column>
+            <Column header="Pembayaran" style="min-width: 10rem">
+              <template #body="{ data }">{{ data.payment_count }} pembayaran</template>
+            </Column>
+            <Column header="Terakhir Bayar" style="min-width: 12rem">
+              <template #body="{ data }">{{ formatDateTime(data.latest_paid_at) }}</template>
+            </Column>
+            <Column header="Total Terbayar" style="min-width: 12rem">
+              <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.total_amount) }}</div></template>
+            </Column>
+          </DataTable>
+          <Paginator
+            :rows="paymentHistoryPagination.groups.per_page"
+            :totalRecords="paymentHistoryPagination.groups.total"
+            :first="(paymentHistoryPagination.groups.current_page - 1) * paymentHistoryPagination.groups.per_page"
+            template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
+            currentPageReportTemplate="{first} - {last} dari {totalRecords}"
+            class="history-paginator"
+            @page="onGroupPaymentHistoryPage"
+          />
+          <div class="mobile-card-list rent-mobile-list">
+            <article v-for="group in paymentHistory.groups" :key="group.booking_id" class="mobile-list-card">
+              <div class="mobile-card-head">
+                <div>
+                  <button v-if="group.booking_id" class="link-button" @click="router.push(`/bookings/${group.booking_id}`)">{{ group.kode_booking || '-' }}</button>
+                  <strong v-else>{{ group.kode_booking || '-' }}</strong>
+                  <p>{{ group.customer_name || '-' }}</p>
+                </div>
+                <span class="mobile-card-count">{{ group.payment_count }} bayar</span>
+              </div>
+              <div class="mobile-card-meta">
+                <div><span>Pemilik</span><strong>{{ (group.owner_names && group.owner_names.length ? group.owner_names.join(', ') : group.owner_name) || '-' }}</strong></div>
+                <div><span>Unit</span><strong>{{ (group.unit_names || []).join(', ') || '-' }}</strong></div>
+                <div><span>Dokumen</span><strong>{{ (group.bill_numbers || []).join(', ') || '-' }}</strong></div>
+                <div><span>Terakhir</span><strong>{{ formatDateTime(group.latest_paid_at) }}</strong></div>
+              </div>
+              <div class="mobile-card-amount">
+                <div><span>Total Terbayar</span><strong>{{ formatCurrency(group.total_amount) }}</strong></div>
+              </div>
+            </article>
+          </div>
+        </template>
       </section>
     </div>
 
@@ -1083,7 +1141,7 @@ onMounted(async () => {
         </section>
         <aside class="detail-side">
           <div class="payment-total-panel">
-            <div class="payment-total-row"><span>Default Live</span><strong>{{ formatCurrency(selectedDebt.default_amount) }}</strong></div>
+            <div class="payment-total-row"><span>Modal Default (Booking)</span><strong>{{ formatCurrency(selectedDebt.default_amount) }}</strong></div>
             <div v-if="selectedDebt.pricing_mode === 'all_in'" class="payment-total-row"><span>Harga Jual</span><strong>{{ formatCurrency(selectedDebt.selling_price) }}</strong></div>
             <div class="payment-total-row"><span>Total Tagihan</span><strong>{{ formatCurrency(selectedDebt.total_amount) }}</strong></div>
             <div class="payment-total-row"><span>Sudah Bayar</span><strong>{{ formatCurrency(selectedDebt.paid_amount) }}</strong></div>
@@ -1097,7 +1155,7 @@ onMounted(async () => {
                 <i class="pi pi-clock"></i> Menunggu ACC Supervisor
               </div>
               <div>
-                <strong>Nominal Baru:</strong> {{ selectedDebt.pending_amount_request.requested_amount_override !== null ? formatCurrency(selectedDebt.pending_amount_request.requested_amount_override) : 'Reset ke Live (Default)' }}
+                <strong>Nominal Baru:</strong> {{ selectedDebt.pending_amount_request.requested_amount_override !== null ? formatCurrency(selectedDebt.pending_amount_request.requested_amount_override) : 'Reset ke Default (Modal Booking)' }}
               </div>
               <div style="word-break: break-all;">
                 <strong>Alasan:</strong> {{ selectedDebt.pending_amount_request.reason }}
@@ -1121,7 +1179,7 @@ onMounted(async () => {
             </fieldset>
 
             <div class="table-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
-              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || !selectedDebt.can_request_amount_change" @click="resetDebtAmount">Reset Live</button>
+              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || !selectedDebt.can_request_amount_change" @click="resetDebtAmount">Reset ke Default</button>
               <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || !selectedDebt.can_request_amount_change" @click="submitDebtAmount">Simpan</button>
             </div>
           </div>
@@ -1185,7 +1243,31 @@ onMounted(async () => {
       </div>
       <template #footer>
         <button class="app-dialog-button app-dialog-button-secondary" @click="showPaymentDialog = false">Batal</button>
-        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !paymentForm.amount || !paymentForm.payment_account_id" @click="submitPayment">Simpan Pembayaran</button>
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !paymentForm.amount || !paymentForm.payment_account_id" @click="confirmPayment">Simpan Pembayaran</button>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showPaymentConfirmDialog" header="Konfirmasi Pembayaran" modal :style="{ width: '480px' }" class="custom-dialog">
+      <div v-if="paymentTarget" class="dialog-stack">
+        <div class="app-muted-panel">
+          <div class="summary-row"><span>{{ selectedBill ? 'Dokumen' : 'Booking' }}</span><strong>{{ selectedBill?.bill_number || selectedPaymentDebt?.kode_booking || '-' }}</strong></div>
+          <div class="summary-row"><span>Pemilik rental</span><strong>{{ paymentTarget.rental_owner?.nama || '-' }}</strong></div>
+          <div class="summary-row"><span>Akun pembayaran</span><strong>{{ selectedPaymentAccountLabel }}</strong></div>
+          <div class="summary-row"><span>Tanggal bayar</span><strong>{{ formatDate(paymentForm.paid_at) }}</strong></div>
+          <div class="summary-row" v-if="paymentForm.catatan"><span>Catatan</span><strong>{{ paymentForm.catatan }}</strong></div>
+          <div class="summary-row"><span>Sisa sebelum bayar</span><strong>{{ formatCurrency(paymentTarget.remaining_amount) }}</strong></div>
+          <div class="summary-row"><span>Nominal dibayar</span><strong>{{ formatCurrency(paymentForm.amount) }}</strong></div>
+          <div class="summary-row" style="border-top: 1px solid var(--surface-border); padding-top: 8px; margin-top: 4px;"><span>Sisa setelah bayar</span><strong>{{ formatCurrency(remainingAfterPayment) }}</strong></div>
+        </div>
+        <p class="field-hint" style="margin: 0; font-size: 12px;">
+          Pembayaran akan langsung mengurangi saldo akun
+          <strong>{{ selectedPaymentAccountLabel }}</strong>
+          dan tidak bisa dibatalkan tanpa proses void. Lanjutkan?
+        </p>
+      </div>
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" :disabled="actionLoading" @click="showPaymentConfirmDialog = false">Batal</button>
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading" @click="submitPayment">Ya, Bayar Sekarang</button>
       </template>
     </Dialog>
 
@@ -1219,6 +1301,16 @@ onMounted(async () => {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-md);
+}
+
+.payment-section-heading {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pill-toggle.pill-toggle-compact .toggle-item {
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
 .table-actions {

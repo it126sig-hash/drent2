@@ -27,7 +27,8 @@ class RolePermissionSeeder extends Seeder
                 'finance.receivable', 'finance.rent_to_rent', 'finance.operational_cost', 'finance.account_mutation', 'finance.monthly_report',
                 'vehicle.rental_owner', 'vehicle.unit', 'vehicle.driver',
                 'customer.view', 'member.view',
-                'master.user', 'master.payment_account', 'master.city', 'master.cost_type', 'master.pricing_package', 'master.role_management'
+                'master.user', 'master.payment_account', 'master.city', 'master.cost_type', 'master.pricing_package', 'master.role_management',
+                'master.tenant', 'master.branch'
             ],
             'admin_branch' => [
                 'dashboard.view',
@@ -36,7 +37,8 @@ class RolePermissionSeeder extends Seeder
                 'finance.receivable', 'finance.rent_to_rent', 'finance.operational_cost', 'finance.account_mutation', 'finance.monthly_report', 'finance.transaction',
                 'vehicle.rental_owner', 'vehicle.unit', 'vehicle.driver',
                 'customer.view', 'member.view',
-                'master.user', 'master.payment_account', 'master.city', 'master.cost_type', 'master.pricing_package', 'master.role_management'
+                'master.user', 'master.payment_account', 'master.city', 'master.cost_type', 'master.pricing_package', 'master.role_management',
+                'master.branch'
             ],
             'finance' => [
                 'dashboard.view',

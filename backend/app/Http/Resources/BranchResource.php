@@ -20,8 +20,37 @@ class BranchResource extends JsonResource
             'name'       => $this->name,
             'address'    => $this->address,
             'phone'      => $this->phone,
+            'phone_alt'  => $this->phone_alt,
+            'email'      => $this->email,
+            'website'    => $this->website,
+            'instagram'  => $this->instagram,
+            'tiktok'     => $this->tiktok,
+            'facebook'   => $this->facebook,
+            'logo_path'  => $this->logo_path,
+            'logo_url'   => $this->publicStorageUrl($this->logo_path),
+            'city_id'    => $this->city_id,
+            'city'       => $this->whenLoaded('city', function () {
+                return $this->city
+                    ? [
+                        'id'       => $this->city->id,
+                        'nama'     => $this->city->nama,
+                        'provinsi' => $this->city->provinsi,
+                    ]
+                    : null;
+            }),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];
+    }
+
+    private function publicStorageUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $baseUrl = rtrim(request()->getSchemeAndHttpHost() . request()->getBaseUrl(), '/');
+
+        return $baseUrl . '/storage/' . ltrim($path, '/');
     }
 }

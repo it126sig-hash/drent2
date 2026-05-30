@@ -121,6 +121,18 @@ class BookingResource extends JsonResource
                         'merk'         => $d->unit->merk,
                         'tipe'         => $d->unit->tipe,
                         'status'       => $d->unit->status,
+                        'harga_1_hari'          => $d->unit->harga_1_hari,
+                        'harga_1_minggu'        => $d->unit->harga_1_minggu,
+                        'harga_1_bulan'         => $d->unit->harga_1_bulan,
+                        'harga_all_in'          => $d->unit->harga_all_in,
+                        'harga_all_in_1_minggu' => $d->unit->harga_all_in_1_minggu,
+                        'harga_all_in_1_bulan'  => $d->unit->harga_all_in_1_bulan,
+                        'modal_1_hari'          => $d->unit->modal_1_hari,
+                        'modal_1_minggu'        => $d->unit->modal_1_minggu,
+                        'modal_1_bulan'         => $d->unit->modal_1_bulan,
+                        'modal_all_in'          => $d->unit->modal_all_in,
+                        'modal_all_in_1_minggu' => $d->unit->modal_all_in_1_minggu,
+                        'modal_all_in_1_bulan'  => $d->unit->modal_all_in_1_bulan,
                         'rental_owner' => $d->unit->relationLoaded('rentalOwner') && $d->unit->rentalOwner ? [
                             'id'       => $d->unit->rentalOwner->id,
                             'nama'     => $d->unit->rentalOwner->nama,
@@ -194,6 +206,23 @@ class BookingResource extends JsonResource
                     'created_by'         => $r->created_by,
                     'created_at'         => $r->created_at?->toISOString(),
                 ]);
+            }),
+            'invoice'             => $this->whenLoaded('invoices', function () {
+                $invoice = $this->invoices
+                    ->reject(fn($inv) => $inv->status === 'void')
+                    ->sortByDesc('id')
+                    ->first();
+
+                if (! $invoice) {
+                    return null;
+                }
+
+                return [
+                    'id'             => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'status'         => $invoice->status,
+                    'generated_at'   => $invoice->generated_at?->toISOString(),
+                ];
             }),
         ];
     }

@@ -844,7 +844,7 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-          <Column header="Periode" style="min-width: 13rem">
+          <Column header="Periode" style="min-width: 10rem">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
                 <span class="font-medium text-xs">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
