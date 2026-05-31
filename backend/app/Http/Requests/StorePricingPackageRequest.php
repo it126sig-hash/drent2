@@ -22,6 +22,8 @@ class StorePricingPackageRequest extends FormRequest
     {
         return [
             'nama_paket'  => 'required|string|max:150',
+            'kota_asal'   => 'nullable|string|max:100',
+            'kota_tujuan' => 'nullable|string|max:100',
             'cost_type_id' => [
                 'nullable',
                 Rule::exists('cost_types', 'id')->where('tenant_id', auth()->user()->tenant_id),

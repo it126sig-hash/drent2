@@ -1,9 +1,11 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useAuthStore } from '../../stores/auth'
 import { useCity } from '../../composables/useCity'
+import { fetchProvinces } from '../../api/province'
+import AutoComplete from 'primevue/autocomplete'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 import ConfirmDialog from 'primevue/confirmdialog'
@@ -25,12 +27,34 @@ const canDelete = computed(() => ['superadmin', 'admin_branch'].includes(authSto
 const showDialog = ref(false)
 const saving = ref(false)
 const formErrors = ref({})
-const form = ref({ id: null, nama: '', provinsi: '', is_active: true })
+const form = ref({ id: null, nama: '', province_id: null, is_active: true })
+
+const selectedProvince = ref(null)
+const provinces = ref([])
+const searchingProvinces = ref(false)
+
+const searchProvinces = async (event) => {
+  searchingProvinces.value = true
+  try {
+    const response = await fetchProvinces({ search: event.query || '', per_page: 20 })
+    provinces.value = response.data.data
+  } catch {
+    provinces.value = []
+  } finally {
+    searchingProvinces.value = false
+  }
+}
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 onMounted(() => fetchAll())
 
 const openNew = () => {
-  form.value = { id: null, nama: '', provinsi: '', is_active: true }
+  form.value = { id: null, nama: '', province_id: null, is_active: true }
+  selectedProvince.value = null
   formErrors.value = {}
   showDialog.value = true
 }
@@ -39,9 +63,10 @@ const openEdit = (row) => {
   form.value = {
     id: row.id,
     nama: row.nama,
-    provinsi: row.provinsi || '',
+    province_id: row.province_id || null,
     is_active: !!row.is_active
   }
+  selectedProvince.value = row.province || (row.province_id ? { id: row.province_id, nama: row.provinsi } : null)
   formErrors.value = {}
   showDialog.value = true
 }
@@ -49,6 +74,9 @@ const openEdit = (row) => {
 const save = async () => {
   formErrors.value = {}
   saving.value = true
+  form.value.province_id = (selectedProvince.value && typeof selectedProvince.value === 'object')
+    ? selectedProvince.value.id
+    : null
   try {
     if (form.value.id) {
       await update(form.value.id, form.value)
@@ -129,7 +157,7 @@ const onPageChange = (event) => {
       </div>
     </div>
 
-    <div class="table-shell list-tab-fill">
+    <div v-if="!isMobile" class="table-shell list-tab-fill">
       <DataTable :value="cities" :loading="loading" scrollable scrollHeight="flex" responsiveLayout="scroll" class="drent-datatable" stripedRows>
         <template #empty>
           <div class="empty-state">
@@ -173,6 +201,42 @@ const onPageChange = (event) => {
       </div>
     </div>
 
+    <div v-else class="mobile-card-list">
+      <article v-for="city in cities" :key="city.id" class="mobile-card">
+        <div class="card-header">
+          <strong>{{ city.nama }}</strong>
+          <span class="drent-badge" :class="city.is_active ? 'success' : 'neutral'">{{ city.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+        </div>
+        <div class="card-body">
+          <div><span class="field-hint">Provinsi</span> {{ city.provinsi || '-' }}</div>
+        </div>
+        <div v-if="canManage || canDelete" class="card-footer">
+          <button v-if="canManage" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(city)">
+            <i class="pi pi-pencil"></i> Edit
+          </button>
+          <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(city)">
+            <i class="pi pi-trash"></i> Hapus
+          </button>
+        </div>
+      </article>
+
+      <div v-if="!loading && !cities.length" class="empty-state">
+        <i class="pi pi-map-marker"></i>
+        <p>Belum ada data kota.</p>
+      </div>
+
+      <div class="paginator-wrapper">
+        <Paginator
+          :rows="pagination.per_page"
+          :totalRecords="pagination.total"
+          :first="(pagination.current_page - 1) * pagination.per_page"
+          @page="onPageChange"
+          template="PrevPageLink CurrentPageReport NextPageLink"
+          currentPageReportTemplate="{first}-{last} dari {totalRecords}"
+        />
+      </div>
+    </div>
+
     <Dialog v-model:visible="showDialog" :header="form.id ? 'Edit Kota' : 'Tambah Kota'" modal class="custom-dialog" :style="{ width: '460px' }">
       <div class="form-grid">
         <div class="field">
@@ -182,8 +246,20 @@ const onPageChange = (event) => {
         </div>
         <div class="field">
           <label>Provinsi</label>
-          <InputText v-model="form.provinsi" placeholder="DKI Jakarta, Jawa Barat..." class="w-full" :class="{ 'p-invalid': formErrors.provinsi }" />
-          <small v-if="formErrors.provinsi" class="p-error">{{ formErrors.provinsi[0] }}</small>
+          <AutoComplete
+            v-model="selectedProvince"
+            :suggestions="provinces"
+            @complete="searchProvinces"
+            optionLabel="nama"
+            placeholder="Cari & pilih provinsi"
+            dropdown
+            forceSelection
+            :loading="searchingProvinces"
+            class="w-full"
+            inputClass="w-full"
+            :class="{ 'p-invalid': formErrors.province_id }"
+          />
+          <small v-if="formErrors.province_id" class="p-error">{{ formErrors.province_id[0] }}</small>
         </div>
         <div class="field">
           <label>Status</label>
@@ -270,4 +346,7 @@ const onPageChange = (event) => {
 .text-info {
   color: var(--info-cyan);
 }
+
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 </style>

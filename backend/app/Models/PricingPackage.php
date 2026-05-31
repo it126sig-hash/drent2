@@ -14,6 +14,8 @@ class PricingPackage extends Model
         'branch_id',
         'cost_type_id',
         'nama_paket',
+        'kota_asal',
+        'kota_tujuan',
         'harga',
         'keterangan',
         'is_active',

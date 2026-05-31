@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\BookingModificationController;
 use App\Http\Controllers\Api\V1\PaymentAccountController;
 use App\Http\Controllers\Api\V1\CostTypeController;
 use App\Http\Controllers\Api\V1\CityController;
+use App\Http\Controllers\Api\V1\ProvinceController;
 use App\Http\Controllers\Api\V1\PricingPackageController;
 use App\Http\Controllers\Api\V1\BookingPaymentController;
 use App\Http\Controllers\Api\V1\RefundController;
@@ -30,6 +31,9 @@ use App\Http\Controllers\Api\V1\DriverOperationalFundController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\FinanceCategoryController;
 use App\Http\Controllers\Api\V1\MonthlyFinanceReportController;
+use App\Http\Controllers\Api\V1\UnitUsageReportController;
+use App\Http\Controllers\Api\V1\DriverUsageReportController;
+use App\Http\Controllers\Api\V1\CustomerUsageReportController;
 use App\Http\Controllers\Api\V1\PaymentAccountTransactionController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\InvoiceTermsTemplateController;
@@ -104,8 +108,11 @@ Route::prefix('v1')->group(function () {
         // Master Data: Payment Accounts, Cost Types, Pricing Packages
         Route::apiResource('payment-accounts', PaymentAccountController::class);
         Route::apiResource('finance-categories', FinanceCategoryController::class);
+        Route::get('provinces', [ProvinceController::class, 'index']);
         Route::apiResource('cities', CityController::class);
         Route::apiResource('cost-types', CostTypeController::class);
+        Route::get('pricing-packages/import-template', [PricingPackageController::class, 'importTemplate']);
+        Route::post('pricing-packages/import', [PricingPackageController::class, 'import']);
         Route::apiResource('pricing-packages', PricingPackageController::class);
 
         // Physical Checks
@@ -130,6 +137,9 @@ Route::prefix('v1')->group(function () {
 
         // Receivables & Invoices
         Route::get('reports/monthly-finance', MonthlyFinanceReportController::class);
+        Route::get('reports/unit-usage', UnitUsageReportController::class);
+        Route::get('reports/driver-usage', DriverUsageReportController::class);
+        Route::get('reports/customer-usage', CustomerUsageReportController::class);
         Route::get('payment-account-transactions', [PaymentAccountTransactionController::class, 'index']);
         Route::post('payment-account-transactions/transfer', [PaymentAccountTransactionController::class, 'transfer']);
         Route::post('payment-account-transactions/other', [PaymentAccountTransactionController::class, 'other']);

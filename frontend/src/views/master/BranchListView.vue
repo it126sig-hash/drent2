@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import Button from 'primevue/button'
@@ -25,6 +25,11 @@ const search = ref('')
 const showDialog = ref(false)
 const saving = ref(false)
 const selectedBranch = ref(null)
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const isSuperadmin = computed(() => authStore.user?.role === 'superadmin')
 const userBranchId = computed(() => authStore.user?.branch_id)
@@ -158,7 +163,7 @@ const onSearch = () => {
       </div>
     </div>
 
-    <div class="table-shell list-tab-fill">
+    <div v-if="!isMobile" class="table-shell list-tab-fill">
       <DataTable :value="branches" :loading="loading" scrollable scrollHeight="flex" responsiveLayout="scroll"
         class="drent-datatable" stripedRows>
         <template #empty>
@@ -210,6 +215,37 @@ const onSearch = () => {
           template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport"
           currentPageReportTemplate="Menampilkan {first} ke {last} dari {totalRecords} data"
         />
+      </div>
+    </div>
+
+    <div v-else class="mobile-card-list">
+      <article v-for="branch in branches" :key="branch.id" class="mobile-card">
+        <div class="card-header">
+          <strong>{{ branch.name }}</strong>
+          <span class="text-secondary text-xs">{{ branch.city?.nama || '-' }}</span>
+        </div>
+        <div class="card-body">
+          <div><span class="field-hint">Telepon</span> {{ branch.phone || '-' }}</div>
+          <div><span class="field-hint">Email</span> {{ branch.email || '-' }}</div>
+        </div>
+        <div v-if="canEdit(branch) || canDelete(branch)" class="card-footer">
+          <button v-if="canEdit(branch)" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(branch)">
+            <i class="pi pi-pencil"></i> Edit
+          </button>
+          <button v-if="canDelete(branch)" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(branch)">
+            <i class="pi pi-trash"></i> Hapus
+          </button>
+        </div>
+      </article>
+
+      <div v-if="!loading && !branches.length" class="empty-state">
+        <i class="pi pi-sitemap"></i>
+        <p>Belum ada data cabang.</p>
+      </div>
+
+      <div class="paginator-wrapper">
+        <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page"
+          @page="onPageChange" template="PrevPageLink CurrentPageReport NextPageLink" currentPageReportTemplate="{first}-{last} dari {totalRecords}" />
       </div>
     </div>
 
@@ -284,4 +320,7 @@ const onSearch = () => {
 .action-btn-danger { color: var(--negative) !important; }
 
 .text-info { color: var(--info-cyan); }
+
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 </style>

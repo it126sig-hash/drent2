@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRentalOwner } from '../../composables/useRentalOwner'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
@@ -28,6 +28,11 @@ const confirm = useConfirm()
 const searchQuery = ref('')
 const showDialog = ref(false)
 const selectedOwner = ref(null)
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 onMounted(() => {
   fetchData()
@@ -145,6 +150,7 @@ const confirmDelete = (owner) => {
       </div>
 
       <DataTable 
+        v-if="!isMobile"
         :value="rentalOwners" 
         :loading="loading" 
         responsiveLayout="scroll"
@@ -212,6 +218,33 @@ const confirmDelete = (owner) => {
           </template>
         </Column>
       </DataTable>
+
+      <div v-else class="mobile-card-list">
+        <article v-for="owner in rentalOwners" :key="owner.id" class="mobile-card">
+          <div class="card-header">
+            <strong>{{ owner.nama }}</strong>
+            <Tag :severity="owner.is_owner ? 'success' : 'info'" :value="owner.is_owner ? 'Pemilik Sendiri' : 'Pemilik Lain'" class="status-tag" />
+          </div>
+          <div class="card-body">
+            <div><span class="field-hint">Kontak</span> {{ owner.kontak_1 || '-' }}</div>
+            <div><span class="field-hint">Kota</span> {{ owner.kota || '-' }}</div>
+            <div v-if="owner.bank"><span class="field-hint">Bank</span> {{ owner.bank }} · {{ owner.no_rek }} (a.n {{ owner.atas_nama }})</div>
+          </div>
+          <div class="card-footer">
+            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="editOwner(owner)">
+              <i class="pi pi-pencil"></i> Edit
+            </button>
+            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(owner)">
+              <i class="pi pi-trash"></i> Hapus
+            </button>
+          </div>
+        </article>
+
+        <div v-if="!loading && !rentalOwners.length" class="empty-state">
+          <i class="pi pi-users"></i>
+          <p>Belum ada data pemilik rental.</p>
+        </div>
+      </div>
 
       <div class="paginator-wrapper">
         <Paginator 
@@ -507,6 +540,10 @@ const confirmDelete = (owner) => {
   border: none;
   color: var(--text-secondary);
 }
+
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.owner-table-card .mobile-card-list { padding: var(--space-md); }
+.mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 
 @media (max-width: 768px) {
   .rental-owner-page {

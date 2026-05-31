@@ -1578,14 +1578,14 @@ const getBookingCardClass = (booking) => {
     min-width: 36px;
   }
 
-  .create-booking-button {
+  /*.create-booking-button {
     position: fixed;
     right: var(--space-lg);
     bottom: calc(72px + env(safe-area-inset-bottom));
     z-index: 150;
     padding: 12px 16px;
     box-shadow: 0 12px 28px rgba(26, 29, 46, 0.22);
-  }
+  }*/
 
   .create-label-desktop {
     display: none;

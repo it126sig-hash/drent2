@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { format } from 'date-fns'
 import Column from 'primevue/column'
@@ -14,9 +14,13 @@ import { useToast } from 'primevue/usetoast'
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue'
 import { getTransactions, getTransactionDetail } from '../../api/transaction'
 import { fetchCities } from '../../api/city'
+import { getUsers } from '../../api/user'
+import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
 const toast = useToast()
+const authStore = useAuthStore()
+const isCS = computed(() => authStore.user?.role === 'cs')
 
 const activeTab = ref('semua') // semua, waiting_list, rental_unit, selesai, batal
 const transactions = ref([])
@@ -36,10 +40,14 @@ const filters = ref({
   kota: null,
   date_from: null,
   date_to: null,
+  handled_by: null,
 })
 
 const cities = ref([])
 const citiesLoading = ref(false)
+
+const handledByUsers = ref([])
+const handledByLoading = ref(false)
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value || 0)
@@ -86,6 +94,7 @@ const fetchTransactionList = async (page = 1) => {
       kota: filters.value.kota || undefined,
       date_from: toApiDate(filters.value.date_from) || undefined,
       date_to: toApiDate(filters.value.date_to) || undefined,
+      handled_by: (!isCS.value && filters.value.handled_by) ? filters.value.handled_by : undefined,
     }
 
     const response = await getTransactions(params)
@@ -114,6 +123,19 @@ const loadCities = async () => {
     console.error('Failed to load cities', error)
   } finally {
     citiesLoading.value = false
+  }
+}
+
+const loadHandledByUsers = async () => {
+  if (isCS.value) return
+  handledByLoading.value = true
+  try {
+    const response = await getUsers({ role: 'cs', per_page: 100, is_active: true })
+    handledByUsers.value = response.data.data.map(u => ({ label: u.name, value: u.id }))
+  } catch (error) {
+    console.error('Failed to load CS users', error)
+  } finally {
+    handledByLoading.value = false
   }
 }
 
@@ -149,6 +171,7 @@ const resetFilters = () => {
     kota: null,
     date_from: null,
     date_to: null,
+    handled_by: null,
   }
   applyFilters()
 }
@@ -179,7 +202,13 @@ const computedKpis = computed(() => {
 onMounted(() => {
   fetchTransactionList(1)
   loadCities()
+  loadHandledByUsers()
 })
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 </script>
 
 <template>
@@ -277,6 +306,14 @@ onMounted(() => {
             placeholder="Pilih Kota" showClear :loading="citiesLoading" class="w-full" />
         </div>
 
+        <!-- Handled By -->
+        <div v-if="!isCS" class="filter-group" style="min-width: 160px">
+          <label for="handled-by-filter">Ditangani Oleh</label>
+          <Dropdown id="handled-by-filter" v-model="filters.handled_by" :options="handledByUsers"
+            optionLabel="label" optionValue="value" placeholder="Semua CS" showClear
+            :loading="handledByLoading" class="w-full" />
+        </div>
+
         <!-- Date Range -->
         <div class="filter-group" style="min-width: 140px">
           <label for="date-from">Dari Tanggal</label>
@@ -303,7 +340,7 @@ onMounted(() => {
     </div>
 
     <!-- Data Table Shell -->
-    <div class="table-shell app-card">
+    <div v-if="!isMobile" class="table-shell app-card">
       <DataTable :value="transactions" dataKey="id" :loading="loading" scrollable scrollHeight="flex"
         class="w-full drent-datatable">
         <!-- Columns -->
@@ -415,12 +452,48 @@ onMounted(() => {
           </template>
         </Column>
 
+        <Column header="Ditangani" style="min-width: 10rem">
+          <template #body="{ data }">
+            <span v-if="data.handled_by" class="text-primary text-xs font-body font-semibold">
+              {{ data.handled_by.name }}
+            </span>
+            <span v-else class="text-secondary text-xs">-</span>
+          </template>
+        </Column>
+
         <template #empty>
           <div class="py-8 text-center text-secondary font-body">
             Belum ada transaksi pada status ini.
           </div>
         </template>
       </DataTable>
+    </div>
+
+    <div v-else class="mobile-card-list">
+      <article v-for="trx in transactions" :key="trx.id" class="mobile-card" @click="openDetail(trx.id)">
+        <div class="card-header">
+          <button class="booking-code-link font-headline font-semibold text-primary text-sm" @click.stop="openDetail(trx.id)">{{ trx.kode_booking }}</button>
+          <BookingStatusBadge :status="trx.status" />
+        </div>
+        <div class="card-body">
+          <div><span class="field-hint">Konsumen</span> {{ trx.customer?.nama || '-' }}</div>
+          <div v-if="trx.unit"><span class="field-hint">Unit</span> {{ trx.unit.tipe }} · {{ trx.unit.no_polisi }}</div>
+          <div>
+            <span class="field-hint">Total Biaya</span>
+            <span class="font-mono-numeric font-semibold">{{ formatCurrency(trx.total_biaya) }}</span>
+            <span class="status-badge" :class="trx.sisa_tagihan <= 0 ? 'success' : 'error'">{{ trx.sisa_tagihan <= 0 ? 'Lunas' : 'Belum Lunas' }}</span>
+          </div>
+          <div><span class="field-hint">Pengeluaran</span> <span class="font-mono-numeric">{{ formatCurrency(trx.total_pengeluaran) }}</span></div>
+          <div>
+            <span class="field-hint">Margin</span>
+            <span class="font-mono-numeric font-semibold" :class="trx.margin >= 0 ? 'text-positive' : 'text-negative'">{{ trx.margin >= 0 ? '+' : '' }}{{ formatCurrency(trx.margin) }}</span>
+          </div>
+        </div>
+      </article>
+
+      <div v-if="!loading && !transactions.length" class="py-8 text-center text-secondary font-body">
+        Belum ada transaksi pada status ini.
+      </div>
     </div>
 
     <!-- Paginator -->
@@ -613,6 +686,8 @@ onMounted(() => {
 
 <style scoped>
 /* === Custom Layout Utilities === */
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.mobile-card { cursor: pointer; }
 .page-title {
   color: var(--text-primary);
   font-size: 20px;

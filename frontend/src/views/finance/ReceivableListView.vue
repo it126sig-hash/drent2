@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { format } from 'date-fns'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
+import Paginator from 'primevue/paginator'
 import DatePicker from 'primevue/datepicker'
 import Dialog from 'primevue/dialog'
 import Dropdown from 'primevue/dropdown'
@@ -211,13 +212,6 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value || 0)
 }
 
-const formatSignedCurrency = (value) => {
-  const amount = Number(value || 0)
-  if (amount === 0) return formatCurrency(0)
-
-  return `${amount > 0 ? '+' : '-'}${formatCurrency(Math.abs(amount))}`
-}
-
 const getInvoiceDueWarning = (invoice, customerStatus) => {
   if (!invoice || !invoice.due_date) return null
   if (invoice.status === 'paid' || invoice.status === 'void') return null
@@ -324,12 +318,16 @@ const historyEventSeverity = (eventType) => {
   return 'secondary'
 }
 
-const invoiceChangeLabel = (invoice) => {
-  const change = invoiceChange(invoice)
-  if (!change?.is_changed) return ''
-
-  return `Perlu Update ${formatSignedCurrency(change.difference_amount)}`
+const changeLabel = (recon) => {
+  if (!recon?.is_changed) return ''
+  const diff = recon.difference_amount || 0
+  return `${diff > 0 ? 'Penambahan' : 'Pengurangan'} biaya ${formatCurrency(Math.abs(diff))}`
 }
+
+const invoiceChangeLabel = (invoice) => changeLabel(invoiceChange(invoice))
+
+const previousInvoiceAmount = (recon) =>
+  recon ? (recon.current_total_amount || 0) - (recon.difference_amount || 0) : 0
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -691,6 +689,11 @@ const printHistoryPayment = (payment) => {
   printPaymentReceipt(receipt)
 }
 
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
+
 onMounted(async () => {
   // fetchPaymentHistory dipanggil on-demand saat user klik tab Riwayat Pembayaran
   const initialTab = route.query.tab
@@ -795,7 +798,7 @@ onMounted(async () => {
       </div>
 
       <div v-if="activeTab === 'receivables'" class="table-shell">
-        <DataTable v-model:selection="selectedRows" :value="receivables" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
+        <DataTable v-if="!isMobile" v-model:selection="selectedRows" :value="receivables" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
           <Column selectionMode="multiple" headerStyle="width: 3rem" />
           <Column header="Aksi" style="min-width: 15rem">
             <template #body="{ data }">
@@ -843,8 +846,9 @@ onMounted(async () => {
           </Column>
           <Column header="Tanggal Invoice" style="min-width: 12rem">
             <template #body="{ data }">
-              <BookingStatusBadge :status="data.invoice?.number ? 'generated' : 'not_generated'" :text="data.invoice?.number || 'Belum Buat Invoice'" />
+              <BookingStatusBadge :status="(data.invoice?.number || data.paid_invoice_with_delta) ? 'generated' : 'not_generated'" :text="data.invoice?.number || data.paid_invoice_with_delta?.number || 'Belum Buat Invoice'" />
               <Tag v-if="hasInvoiceChange(data.invoice)" :value="invoiceChangeLabel(data.invoice)" severity="warn" class="mt-2" />
+              <Tag v-else-if="data.paid_invoice_with_delta" :value="changeLabel(data.paid_invoice_with_delta.reconciliation)" severity="warn" class="mt-2" />
               <div v-if="data.invoice?.generated" class="flex flex-col gap-1 mt-1">
                 <div class="font-semibold text-italic">Due: {{ formatDate(data.invoice?.due_date || data.due_date) }}</div>
                 <Tag v-if="getInvoiceDueWarning(data.invoice, data.customer?.status)" :value="getInvoiceDueWarning(data.invoice, data.customer?.status).label" :severity="getInvoiceDueWarning(data.invoice, data.customer?.status).severity" class="w-max" />
@@ -881,17 +885,51 @@ onMounted(async () => {
           <Column header="Total Biaya" style="min-width: 8rem">
             <template #body="{ data }">
               <div class="amount-stack">
-                <span>{{ formatCurrency(data.total_biaya?.total) }}</span>
+                <span>{{ formatCurrency(data.paid_invoice_with_delta ? previousInvoiceAmount(data.paid_invoice_with_delta.reconciliation) : data.total_biaya?.total) }}</span>
                 <span class="text-positive">{{ formatCurrency(data.total_biaya?.sudah_bayar) }}</span>
                 <span class="text-info">{{ formatCurrency(data.total_biaya?.sisa) }}</span>
               </div>
             </template>
           </Column>
         </DataTable>
+        <template v-else>
+          <div class="mobile-card-list">
+            <article v-for="data in receivables" :key="data.id" class="mobile-card">
+              <div class="card-header">
+                <button class="link-button" @click="router.push(`/bookings/${data.id}`)">{{ data.kode_booking }}</button>
+                <BookingStatusBadge :status="(data.invoice?.number || data.paid_invoice_with_delta) ? 'generated' : 'not_generated'" :text="data.invoice?.number || data.paid_invoice_with_delta?.number || 'Belum Invoice'" />
+              </div>
+              <div class="card-body">
+                <div><span class="field-hint">Konsumen</span> {{ data.customer?.nama || '-' }}</div>
+                <div><span class="field-hint">Kendaraan</span> {{ data.vehicle?.jenis || '-' }} · {{ data.vehicle?.no_polisi || '-' }}</div>
+                <div><span class="field-hint">Periode</span> {{ formatDate(data.rent_period?.tgl_sewa) }} s/d {{ formatDate(data.rent_period?.tgl_kembali) }}</div>
+                <div><span class="field-hint">Total</span> <span class="font-mono-numeric">{{ formatCurrency(data.paid_invoice_with_delta ? previousInvoiceAmount(data.paid_invoice_with_delta.reconciliation) : data.total_biaya?.total) }}</span></div>
+                <div v-if="data.paid_invoice_with_delta"><span class="field-hint">Perubahan</span> <span class="text-warn">{{ changeLabel(data.paid_invoice_with_delta.reconciliation) }}</span></div>
+                <div><span class="field-hint">Sisa</span> <span class="font-mono-numeric text-info">{{ formatCurrency(data.total_biaya?.sisa) }}</span></div>
+                <div v-if="data.invoice?.generated"><span class="field-hint">Due</span> {{ formatDate(data.invoice?.due_date || data.due_date) }}</div>
+              </div>
+              <div class="card-footer">
+                <button v-if="data.invoice?.generated && canRefreshInvoice(data.invoice)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data.invoice)"><i class="pi pi-refresh"></i> Update Invoice</button>
+                <button v-else-if="data.invoice?.generated" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
+                <button v-else-if="data.paid_invoice_with_delta" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(buildPaidInvoiceForAmend(data))"><i class="pi pi-file-edit"></i> Amend Invoice</button>
+                <button v-else class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openGenerateDialog(data)"><i class="pi pi-file-plus"></i> Buat Invoice</button>
+                <span v-if="data.invoice?.generated" class="action-pill-group">
+                  <button class="action-btn" :disabled="actionLoading" title="Kirim invoice" @click="sendInvoice(data.invoice.id)"><i class="pi pi-send"></i></button>
+                  <button class="action-btn" :disabled="!getInvoicePublicUrl(data.invoice)" title="Lihat invoice" @click="openInvoiceView(data.invoice)"><i class="pi pi-eye"></i></button>
+                  <button class="action-btn" title="Lihat history perubahan" @click="openHistoryDialog(data.invoice.id, data.invoice.number)"><i class="pi pi-history"></i></button>
+                </span>
+              </div>
+            </article>
+            <div v-if="!loading && !receivables.length" class="empty-state"><p>Belum ada data piutang.</p></div>
+          </div>
+          <div class="paginator-wrapper">
+            <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page" @page="onPage" template="PrevPageLink CurrentPageReport NextPageLink" currentPageReportTemplate="{first}-{last} dari {totalRecords}" />
+          </div>
+        </template>
       </div>
 
       <div v-else class="table-shell">
-        <DataTable :value="invoices" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
+        <DataTable v-if="!isMobile" :value="invoices" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
           <Column header="Aksi" style="min-width: 15rem">
             <template #body="{ data }">
               <div class="table-actions">
@@ -963,6 +1001,39 @@ onMounted(async () => {
           </Column>
 
         </DataTable>
+        <template v-else>
+          <div class="mobile-card-list">
+            <article v-for="data in invoices" :key="data.id" class="mobile-card">
+              <div class="card-header">
+                <strong class="font-bold">{{ data.invoice_number }}</strong>
+                <Tag :value="data.status" :severity="invoiceSeverity(data.status)" />
+              </div>
+              <div class="card-body">
+                <div class="booking-list">
+                  <button v-for="booking in data.bookings" :key="booking.id" class="link-button text-xs flex" @click="router.push(`/bookings/${booking.id}`)">{{ booking.kode_booking }} - {{ booking.customer_name || '-' }}</button>
+                </div>
+                <div><span class="field-hint">Nilai</span> <span class="font-mono-numeric">{{ formatCurrency(data.total_amount) }}</span></div>
+                <div><span class="field-hint">Dibayar</span> <span class="font-mono-numeric text-positive">{{ formatCurrency(data.paid_amount) }}</span></div>
+                <div><span class="field-hint">Sisa</span> <span class="font-mono-numeric text-info">{{ formatCurrency(data.remaining_amount) }}</span></div>
+                <div><span class="field-hint">Due</span> {{ formatDate(data.due_date) }}</div>
+              </div>
+              <div class="card-footer">
+                <button v-if="canRefreshInvoice(data)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data)"><i class="pi pi-refresh"></i> Update Invoice</button>
+                <button v-else class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
+                <span class="action-pill-group">
+                  <button class="action-btn" :disabled="actionLoading" title="Kirim invoice" @click="sendInvoice(data.id)"><i class="pi pi-send"></i></button>
+                  <button class="action-btn" :disabled="!getInvoicePublicUrl(data)" title="Lihat invoice" @click="openInvoiceView(data)"><i class="pi pi-eye"></i></button>
+                  <button class="action-btn" :disabled="actionLoading" title="Unduh PDF" @click="openInvoicePdf(data)"><i class="pi pi-file-pdf"></i></button>
+                  <button class="action-btn" title="Lihat history perubahan" @click="openHistoryDialog(data.id, data.invoice_number)"><i class="pi pi-history"></i></button>
+                </span>
+              </div>
+            </article>
+            <div v-if="!loading && !invoices.length" class="empty-state"><p>Belum ada invoice.</p></div>
+          </div>
+          <div class="paginator-wrapper">
+            <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page" @page="onPage" template="PrevPageLink CurrentPageReport NextPageLink" currentPageReportTemplate="{first}-{last} dari {totalRecords}" />
+          </div>
+        </template>
       </div>
     </div>
 
@@ -1368,6 +1439,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.mobile-card-list .card-footer { flex-wrap: wrap; gap: var(--space-sm); }
+.mobile-card-list .empty-state { padding: 32px 0; text-align: center; color: var(--text-tertiary); }
+.mobile-card-list .booking-list { display: flex; flex-direction: column; gap: 2px; }
+.paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
 .table-actions {
   display: flex;
   align-items: center;

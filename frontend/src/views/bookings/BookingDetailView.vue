@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useBooking } from '../../composables/useBooking';
 import { useUnit } from '../../composables/useUnit';
@@ -32,6 +32,11 @@ import SelectButton from 'primevue/selectbutton';
 
 const route = useRoute();
 const router = useRouter();
+
+const isMobile = ref(window.innerWidth < 768);
+const onResize = () => { isMobile.value = window.innerWidth < 768; };
+onMounted(() => window.addEventListener('resize', onResize));
+onUnmounted(() => window.removeEventListener('resize', onResize));
 const toast = useToast();
 const confirm = useConfirm();
 const authStore = useAuthStore();
@@ -1054,6 +1059,7 @@ const refreshSelectedUnit = async (unitId) => {
 };
 
 const saveUnitPrice = async (data) => {
+  if (unitPriceSaving.value) return;
   if (!selectedDetailUnit.value?.id) return;
 
   const pricePayload = unitPriceFields.reduce((payload, field) => {
@@ -1610,6 +1616,7 @@ const validateUnitSchedule = async (unitId, startDate, endDate, onProceed) => {
 };
 
 const doSubmitDetail = async () => {
+  if (loading.value) return;
   try {
     const selectedPackage = findPricingPackage(detailForm.value.pricing_package_id);
     const payload = {
@@ -1725,6 +1732,7 @@ const submitDetail = async () => {
 };
 
 const submitBookingEdit = async () => {
+  if (loading.value) return;
   try {
     const payload = { ...bookingForm.value };
     if (!payload.dp || payload.dp <= 0) {
@@ -1740,6 +1748,7 @@ const submitBookingEdit = async () => {
 };
 
 const submitCost = async () => {
+  if (loading.value) return;
   try {
     if (editingCostId.value) {
       await updateCost(editingCostId.value, costForm.value);
@@ -1755,6 +1764,7 @@ const submitCost = async () => {
 
 // Modification Submits
 const submitExtend = async () => {
+  if (loading.value) return;
   try {
     const selectedPackage = findPricingPackage(extendForm.value.pricing_package_id);
     const payload = {
@@ -1774,6 +1784,7 @@ const submitExtend = async () => {
 };
 
 const submitRolling = async () => {
+  if (loading.value) return;
   try {
     syncRollingOldReturnDate();
     syncRollingNewSchedule();
@@ -1811,6 +1822,7 @@ const submitRolling = async () => {
 };
 
 const submitBatal = async () => {
+  if (loading.value) return;
   try {
     await cancel(booking.value.id, batalForm.value);
     showBatalDialog.value = false;
@@ -1821,6 +1833,7 @@ const submitBatal = async () => {
 };
 
 const submitStopEarly = async () => {
+  if (loading.value) return;
   try {
     const payload = {
       ...stopEarlyForm.value,
@@ -1835,6 +1848,7 @@ const submitStopEarly = async () => {
 };
 
 const submitAdditionalCost = async () => {
+  if (loading.value) return;
   try {
     const selectedCostType = costTypesMaster.value.find(c => c.id === additionalCostForm.value.cost_type_id);
     await addAdditionalCost(booking.value.id, {
@@ -1872,6 +1886,7 @@ const onHandle = () => {
 };
 
 const submitHandle = async () => {
+  if (loading.value) return;
   try {
     const primaryDetail = booking.value?.booking_details?.[0];
     if (!primaryDetail) {
@@ -1961,6 +1976,7 @@ const openVoidPaymentDialog = (payment) => {
 };
 
 const submitVoidPaymentRequest = async () => {
+  if (loading.value) return;
   voidPaymentFormErrors.value = {};
   try {
     await requestVoidPayment(selectedVoidPayment.value.id, voidPaymentForm.value);
@@ -1994,6 +2010,7 @@ const openRejectVoidDialog = (payment) => {
 };
 
 const submitRejectVoid = async () => {
+  if (loading.value) return;
   await rejectVoidPayment(selectedVoidPayment.value.id, rejectVoidForm.value);
   showRejectVoidDialog.value = false;
   await loadBooking();
@@ -2072,6 +2089,7 @@ const requestPhysicalCheckFromBooking = async (type) => {
 };
 
 const submitCheckout = async () => {
+  if (loading.value || physicalCheckLoading.value) return;
   try {
     if (!checkoutSkip.value && !departureCheckDone.value) {
       await requestPhysicalCheckFromBooking('departure');
@@ -2088,6 +2106,7 @@ const submitCheckout = async () => {
 };
 
 const submitComplete = async () => {
+  if (loading.value || physicalCheckLoading.value) return;
   try {
     if (!completeSkip.value && !returnCheckDone.value) {
       await requestPhysicalCheckFromBooking('return');
@@ -2539,7 +2558,7 @@ const auditUserName = (user) => user?.name || '-';
 
                   <div v-if="detail.costs?.length"
                     class="mt-4 bg-white rounded-lg border border-slate-100 overflow-hidden">
-                    <DataTable :value="detail.costs" class="p-datatable-sm custom-mini-table">
+                    <DataTable v-if="!isMobile" :value="detail.costs" class="p-datatable-sm custom-mini-table">
                       <Column field="type" header="TIPE">
                         <template #body="{ data }">
                           <div class="flex items-center gap-1.5">
@@ -2569,6 +2588,20 @@ const auditUserName = (user) => user?.name || '-';
                         </template>
                       </Column>
                     </DataTable>
+                    <div v-else class="cost-mobile-list">
+                      <div v-for="(c, i) in detail.costs" :key="i" class="cost-mobile-row">
+                        <div class="cost-mobile-info">
+                          <div class="flex items-center gap-1.5">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+                              :class="c.type === 'diskon' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'">{{ c.type || 'biaya' }}</span>
+                            <Tag v-if="c.is_additional" value="Di luar deal" severity="warning" class="text-[10px]" />
+                          </div>
+                          <span class="text-sm text-slate-600">{{ c.cost_type?.nama || c.label }}</span>
+                          <span v-if="c.keterangan" class="text-xs text-slate-400">{{ c.keterangan }}</span>
+                        </div>
+                        <span class="text-sm font-bold" :class="c.type === 'diskon' ? 'text-rose-600' : 'text-slate-800'">{{ formatSignedCostAmount(c) }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3951,6 +3984,12 @@ const auditUserName = (user) => user?.name || '-';
 </template>
 
 <style scoped>
+/* ── Mobile cost breakdown list ─────────────────────────── */
+.cost-mobile-list { display: flex; flex-direction: column; }
+.cost-mobile-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-md); padding: var(--space-md); border-bottom: 1px solid var(--surface-border); }
+.cost-mobile-row:last-child { border-bottom: none; }
+.cost-mobile-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
 /* ── City filter chip ─────────────────────────────────── */
 .unit-city-filter-chip {
   display: inline-flex;

@@ -252,7 +252,7 @@ const paymentStatusLabel = (status) => {
 const applyFilters = () => {
   selectedRows.value = []
   pagination.value.current_page = 1
-  if (activeTab.value === 'debts') {
+  if (activeTab.value === 'debts' || activeTab.value === 'history') {
     fetchDebts(1)
     return
   }
@@ -266,14 +266,14 @@ const applyFilters = () => {
 }
 
 const resetFilters = () => {
-  filters.value = { search: '', rental_owner_id: null, status: null }
+  filters.value = { search: '', rental_owner_id: null, status: activeTab.value === 'history' ? 'paid' : null }
   billFilters.value = { rental_owner_id: null, status: null }
   applyFilters()
 }
 
 const onPage = (event) => {
   pagination.value.current_page = event.page + 1
-  if (activeTab.value === 'debts') {
+  if (activeTab.value === 'debts' || activeTab.value === 'history') {
     fetchDebts(pagination.value.current_page)
     return
   }
@@ -304,6 +304,12 @@ const switchTab = (tab) => {
   selectedRows.value = []
   pagination.value.current_page = 1
   if (tab === 'debts') {
+    if (filters.value.status === 'paid') filters.value.status = null
+    fetchDebts(1)
+    return
+  }
+  if (tab === 'history') {
+    filters.value.status = 'paid'
     fetchDebts(1)
     return
   }
@@ -554,10 +560,11 @@ onMounted(async () => {
           <div class="pill-toggle">
             <button class="toggle-item" :class="{ active: activeTab === 'debts' }" @click="switchTab('debts')">Transaksi</button>
             <button class="toggle-item" :class="{ active: activeTab === 'bills' }" @click="switchTab('bills')">Dokumen Tagihan</button>
+            <button class="toggle-item" :class="{ active: activeTab === 'history' }" @click="switchTab('history')">Riwayat Selesai</button>
             <button class="toggle-item" :class="{ active: activeTab === 'payments' }" @click="switchTab('payments')">Riwayat Pembayaran</button>
           </div>
         </div>
-        <button v-if="activeTab === 'debts'" class="btn-pill btn-primary" :disabled="!canGenerateBill || actionLoading" @click="openGenerateDialog">
+        <button class="btn-pill btn-primary" :disabled="!canGenerateBill || actionLoading" @click="openGenerateDialog">
           <i class="pi pi-file-plus"></i>
           Buat Dokumen Tagihan
         </button>
@@ -582,7 +589,7 @@ onMounted(async () => {
     <div v-if="activeTab !== 'payments'" class="list-tab-fill rent-list-tab">
       <div class="filter-bar surface-card">
         <div class="filter-groups">
-          <div v-if="activeTab === 'debts'" class="filter-group filter-group-wide">
+          <div v-if="activeTab === 'debts' || activeTab === 'history'" class="filter-group filter-group-wide">
             <label>Pencarian</label>
             <span class="filter-search">
               <i class="pi pi-search"></i>
@@ -591,47 +598,13 @@ onMounted(async () => {
           </div>
           <div class="filter-group">
             <label>Pemilik Rental</label>
-            <Dropdown
-              v-if="activeTab === 'debts'"
-              v-model="filters.rental_owner_id"
-              :options="ownerOptions"
-              optionLabel="nama"
-              optionValue="id"
-              placeholder="Semua Pemilik"
-              filter
-              class="w-full md:w-56"
-            />
-            <Dropdown
-              v-else
-              v-model="billFilters.rental_owner_id"
-              :options="ownerOptions"
-              optionLabel="nama"
-              optionValue="id"
-              placeholder="Semua Pemilik"
-              filter
-              class="w-full md:w-56"
-            />
+            <Dropdown v-if="activeTab === 'debts' || activeTab === 'history'" v-model="filters.rental_owner_id" :options="ownerOptions" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" filter class="w-full md:w-56" />
+            <Dropdown v-else v-model="billFilters.rental_owner_id" :options="ownerOptions" optionLabel="nama" optionValue="id" placeholder="Semua Pemilik" filter class="w-full md:w-56" />
           </div>
-          <div class="filter-group">
+          <div v-if="activeTab !== 'history'" class="filter-group">
             <label>Status</label>
-            <Dropdown
-              v-if="activeTab === 'debts'"
-              v-model="filters.status"
-              :options="debtStatusOptions"
-              optionLabel="label"
-              optionValue="value"
-              placeholder="Semua"
-              class="w-full md:w-52"
-            />
-            <Dropdown
-              v-else
-              v-model="billFilters.status"
-              :options="billStatusOptions"
-              optionLabel="label"
-              optionValue="value"
-              placeholder="Semua"
-              class="w-full md:w-52"
-            />
+            <Dropdown v-if="activeTab === 'debts'" v-model="filters.status" :options="debtStatusOptions" optionLabel="label" optionValue="value" placeholder="Semua" class="w-full md:w-52" />
+            <Dropdown v-else v-model="billFilters.status" :options="billStatusOptions" optionLabel="label" optionValue="value" placeholder="Semua" class="w-full md:w-52" />
           </div>
         </div>
         <div class="filter-actions">
@@ -646,7 +619,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-if="activeTab === 'debts'" class="summary-grid">
+      <div v-if="activeTab === 'debts' || activeTab === 'history'" class="summary-grid">
         <div class="summary-tile">
           <span>Total Rent to Rent</span>
           <strong>{{ formatCurrency(computedSummary.total_amount) }}</strong>
@@ -665,164 +638,140 @@ onMounted(async () => {
         </div>
       </div>
 
-      <section v-if="activeTab === 'debts'" class="debt-groups">
-      <div v-for="group in debtGroups" :key="group.owner?.id || 'unknown'" class="owner-section">
-        <div class="owner-section-head">
-          <div>
-            <h2>{{ group.owner?.nama || 'Tanpa Pemilik' }}</h2>
-            <p>{{ group.owner?.bank || '-' }} <span v-if="group.owner?.no_rek">- {{ group.owner.no_rek }}</span></p>
+      <section v-if="activeTab === 'debts' || activeTab === 'history'" class="debt-groups">
+        <div v-for="group in debtGroups" :key="group.owner?.id || 'unknown'" class="owner-section">
+          <div class="owner-section-head">
+            <div>
+              <h2>{{ group.owner?.nama || 'Tanpa Pemilik' }}</h2>
+              <p>{{ group.owner?.bank || '-' }} <span v-if="group.owner?.no_rek">- {{ group.owner.no_rek }}</span></p>
+            </div>
+            <div class="owner-totals">
+              <span>{{ formatCurrency(group.total_amount) }}</span>
+              <small>Sisa {{ formatCurrency(group.remaining_amount) }}</small>
+            </div>
           </div>
-          <div class="owner-totals">
-            <span>{{ formatCurrency(group.total_amount) }}</span>
-            <small>Sisa {{ formatCurrency(group.remaining_amount) }}</small>
-          </div>
-        </div>
 
-        <DataTable
-          v-model:selection="selectedRows"
-          :value="group.rows"
-          dataKey="id"
-          responsiveLayout="scroll"
-          class="drent-datatable desktop-table"
-        >
-          <Column selectionMode="multiple" headerStyle="width: 3rem" />
-          <Column header="Aksi" style="min-width: 9rem">
-            <template #body="{ data }">
-              <div class="table-actions">
-                <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['cancelled', 'paid'].includes(data.status)" @click="openDirectPayment(data)">
+          <DataTable v-model:selection="selectedRows" :value="group.rows" dataKey="id" responsiveLayout="scroll" class="drent-datatable desktop-table">
+            <Column v-if="activeTab === 'debts'" selectionMode="multiple" headerStyle="width: 3rem" />
+            <Column header="Aksi" style="min-width: 9rem">
+              <template #body="{ data }">
+                <div class="table-actions">
+                  <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['cancelled', 'paid'].includes(data.status)" @click="openDirectPayment(data)">
+                    <i class="pi pi-wallet"></i>
+                    Bayar
+                  </button>
+                  <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(data.status)" @click="submitMarkDebtPaid(data)">
+                    <i class="pi pi-check"></i>
+                    Selesai
+                  </button>
+                  <button class="btn-pill btn-secondary btn-pill-compact" :class="{ 'warning-btn': data.pending_amount_request }" :disabled="actionLoading" @click="openDebtDetail(data)">
+                    <i class="pi" :class="data.pending_amount_request ? 'pi-clock' : 'pi-pencil'"></i>
+                    {{ data.pending_amount_request ? 'Pending ACC' : 'Nominal' }}
+                  </button>
+                </div>
+              </template>
+            </Column>
+            <Column header="Kode Booking" style="min-width: 10rem">
+              <template #body="{ data }">
+                <button class="link-button" @click="router.push(`/bookings/${data.booking_id}`)">{{ data.kode_booking }}</button>
+                <div class="mt-2">
+                  <Tag :value="statusLabel(data.status)" :severity="statusSeverity(data.status)" />
+                </div>
+              </template>
+            </Column>
+            <Column header="Rent to Rent" style="min-width: 9rem">
+              <template #body="{ data }">
+                <div class="amount-stack">
+                  <strong>{{ formatCurrency(data.total_amount) }}</strong>
+                  <span v-if="data.pending_amount_request" style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; width: fit-content; margin-top: 4px; display: inline-block;">Pending ACC: {{ data.pending_amount_request.requested_amount_override !== null ? formatCurrency(data.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
+                  <span v-else-if="data.amount_override !== null">Manual override</span>
+                  <span v-else>Modal default booking</span>
+                </div>
+              </template>
+            </Column>
+            <Column header="Sudah Bayar" style="min-width: 9em">
+              <template #body="{ data }">
+                <div class="amount-stack">
+                  <strong>{{ formatCurrency(data.paid_amount) }}</strong>
+                  <span>Sisa {{ formatCurrency(data.remaining_amount) }}</span>
+                </div>
+              </template>
+            </Column>
+            <Column header="Unit" style="min-width: 10rem">
+              <template #body="{ data }">
+                <strong>{{ data.unit?.name || '-' }}</strong>
+                <div class="text-secondary text-xs">{{ data.unit?.no_polisi || '-' }}</div>
+                <div class="text-secondary text-xs">{{ data.unit?.lama_sewa || 0 }} {{ data.unit?.paket_sewa || 'harian' }}</div>
+              </template>
+            </Column>
+            <Column header="Nama Pelanggan" style="min-width: 10rem">
+              <template #body="{ data }">{{ data.booking?.customer_name || '-' }}</template>
+            </Column>
+            <Column header="Tujuan" style="min-width: 14rem">
+              <template #body="{ data }">{{ data.booking?.tujuan || '-' }}</template>
+            </Column>
+
+          </DataTable>
+          <div class="mobile-card-list rent-mobile-list">
+            <article v-for="debt in group.rows" :key="debt.id" class="mobile-list-card">
+              <div class="mobile-card-head">
+                <div>
+                  <button class="link-button" @click="router.push(`/bookings/${debt.booking_id}`)">{{ debt.kode_booking }}</button>
+                  <p>{{ debt.booking?.customer_name || '-' }}</p>
+                </div>
+                <Tag :value="statusLabel(debt.status)" :severity="statusSeverity(debt.status)" />
+              </div>
+              <div class="mobile-card-meta">
+                <div><span>Unit</span><strong>{{ debt.unit?.name || '-' }}</strong><small>{{ debt.unit?.no_polisi || '-' }}</small></div>
+                <div><span>Tujuan</span><strong>{{ debt.booking?.tujuan || '-' }}</strong><small>{{ debt.unit?.lama_sewa || 0 }} {{ debt.unit?.paket_sewa || 'harian' }}</small></div>
+              </div>
+              <div class="mobile-card-amount">
+                <div><span>Total</span><strong>{{ formatCurrency(debt.total_amount) }}</strong></div>
+                <div v-if="debt.pending_amount_request" style="grid-column: span 2; margin-top: 4px;">
+                  <span style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block;">Pending ACC: {{ debt.pending_amount_request.requested_amount_override !== null ? formatCurrency(debt.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
+                </div>
+                <div><span>Sisa</span><strong>{{ formatCurrency(debt.remaining_amount) }}</strong></div>
+              </div>
+              <div class="mobile-card-actions">
+                <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || debt.remaining_amount <= 0 || ['cancelled', 'paid'].includes(debt.status)" @click="openDirectPayment(debt)">
                   <i class="pi pi-wallet"></i>
                   Bayar
                 </button>
-                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(data.status)" @click="submitMarkDebtPaid(data)">
+                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(debt.status)" @click="submitMarkDebtPaid(debt)">
                   <i class="pi pi-check"></i>
-                  Selesai
+                  Tag Paid
                 </button>
-                <button class="btn-pill btn-secondary btn-pill-compact" :class="{ 'warning-btn': data.pending_amount_request }" :disabled="actionLoading" @click="openDebtDetail(data)">
-                  <i class="pi" :class="data.pending_amount_request ? 'pi-clock' : 'pi-pencil'"></i>
-                  {{ data.pending_amount_request ? 'Pending ACC' : 'Nominal' }}
+                <button class="btn-pill btn-secondary btn-pill-compact" :class="{ 'warning-btn': debt.pending_amount_request }" :disabled="actionLoading" @click="openDebtDetail(debt)">
+                  <i class="pi" :class="debt.pending_amount_request ? 'pi-clock' : 'pi-pencil'"></i>
+                  {{ debt.pending_amount_request ? 'Pending ACC' : 'Ubah Nominal' }}
                 </button>
               </div>
-            </template>
-          </Column>
-          <Column header="Kode Booking" style="min-width: 10rem">
-            <template #body="{ data }">
-              <button class="link-button" @click="router.push(`/bookings/${data.booking_id}`)">{{ data.kode_booking }}</button>
-              <div class="mt-2"><Tag :value="statusLabel(data.status)" :severity="statusSeverity(data.status)" /></div>
-            </template>
-          </Column>
-          <Column header="Rent to Rent" style="min-width: 9rem">
-            <template #body="{ data }">
-              <div class="amount-stack">
-                <strong>{{ formatCurrency(data.total_amount) }}</strong>
-                <span v-if="data.pending_amount_request" style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; width: fit-content; margin-top: 4px; display: inline-block;">Pending ACC: {{ data.pending_amount_request.requested_amount_override !== null ? formatCurrency(data.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
-                <span v-else-if="data.amount_override !== null">Manual override</span>
-                <span v-else>Modal default booking</span>
-              </div>
-            </template>
-          </Column>
-          <Column header="Sudah Bayar" style="min-width: 9em">
-            <template #body="{ data }">
-              <div class="amount-stack">
-                <strong>{{ formatCurrency(data.paid_amount) }}</strong>
-                <span>Sisa {{ formatCurrency(data.remaining_amount) }}</span>
-              </div>
-            </template>
-          </Column>
-          <Column header="Unit" style="min-width: 10rem">
-            <template #body="{ data }">
-              <strong>{{ data.unit?.name || '-' }}</strong>
-              <div class="text-secondary text-xs">{{ data.unit?.no_polisi || '-' }}</div>
-              <div class="text-secondary text-xs">{{ data.unit?.lama_sewa || 0 }} {{ data.unit?.paket_sewa || 'harian' }}</div>
-            </template>
-          </Column>
-          <Column header="Nama Pelanggan" style="min-width: 10rem">
-            <template #body="{ data }">{{ data.booking?.customer_name || '-' }}</template>
-          </Column>
-          <Column header="Tujuan" style="min-width: 14rem">
-            <template #body="{ data }">{{ data.booking?.tujuan || '-' }}</template>
-          </Column>
-          
-        </DataTable>
-        <div class="mobile-card-list rent-mobile-list">
-          <article v-for="debt in group.rows" :key="debt.id" class="mobile-list-card">
-            <div class="mobile-card-head">
-              <div>
-                <button class="link-button" @click="router.push(`/bookings/${debt.booking_id}`)">{{ debt.kode_booking }}</button>
-                <p>{{ debt.booking?.customer_name || '-' }}</p>
-              </div>
-              <Tag :value="statusLabel(debt.status)" :severity="statusSeverity(debt.status)" />
-            </div>
-            <div class="mobile-card-meta">
-              <div><span>Unit</span><strong>{{ debt.unit?.name || '-' }}</strong><small>{{ debt.unit?.no_polisi || '-' }}</small></div>
-              <div><span>Tujuan</span><strong>{{ debt.booking?.tujuan || '-' }}</strong><small>{{ debt.unit?.lama_sewa || 0 }} {{ debt.unit?.paket_sewa || 'harian' }}</small></div>
-            </div>
-            <div class="mobile-card-amount">
-              <div><span>Total</span><strong>{{ formatCurrency(debt.total_amount) }}</strong></div>
-              <div v-if="debt.pending_amount_request" style="grid-column: span 2; margin-top: 4px;">
-                <span style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block;">Pending ACC: {{ debt.pending_amount_request.requested_amount_override !== null ? formatCurrency(debt.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
-              </div>
-              <div><span>Sisa</span><strong>{{ formatCurrency(debt.remaining_amount) }}</strong></div>
-            </div>
-            <div class="mobile-card-actions">
-              <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || debt.remaining_amount <= 0 || ['cancelled', 'paid'].includes(debt.status)" @click="openDirectPayment(debt)">
-                <i class="pi pi-wallet"></i>
-                Bayar
-              </button>
-              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(debt.status)" @click="submitMarkDebtPaid(debt)">
-                <i class="pi pi-check"></i>
-                Tag Paid
-              </button>
-              <button class="btn-pill btn-secondary btn-pill-compact" :class="{ 'warning-btn': debt.pending_amount_request }" :disabled="actionLoading" @click="openDebtDetail(debt)">
-                <i class="pi" :class="debt.pending_amount_request ? 'pi-clock' : 'pi-pencil'"></i>
-                {{ debt.pending_amount_request ? 'Pending ACC' : 'Ubah Nominal' }}
-              </button>
-            </div>
-          </article>
+            </article>
+          </div>
         </div>
-      </div>
-      <div v-if="!debtGroups.length && !loading" class="empty-state">Belum ada hutang rent-to-rent sesuai filter.</div>
+        <div v-if="!debtGroups.length && !loading" class="empty-state">Belum ada hutang rent-to-rent sesuai filter.</div>
 
-      <Paginator
-        v-if="debtGroups.length > 0"
-        :rows="pagination.per_page"
-        :totalRecords="pagination.total"
-        :first="(pagination.current_page - 1) * pagination.per_page"
-        @page="onPage"
-        class="mt-4"
-      ></Paginator>
+        <Paginator v-if="debtGroups.length > 0" :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page" @page="onPage" class="mt-4"></Paginator>
       </section>
 
       <div v-if="activeTab === 'bills'" class="table-shell">
-        <DataTable
-          :value="bills"
-          dataKey="id"
-          lazy
-          paginator
-          scrollable
-          scrollHeight="flex"
-          :rows="pagination.per_page"
-          :totalRecords="pagination.total"
-          :loading="loading"
-          @page="onPage"
-          responsiveLayout="scroll"
-          class="drent-datatable desktop-table"
-        >
-        <Column header="Aksi" style="min-width: 15rem">
-        <template #body="{ data }">
-          <div class="table-actions">
-            <button class="btn-pill btn-primary btn-pill-compact" :disabled="data.remaining_amount <= 0 || ['void', 'void_requested'].includes(data.status)" @click="openPaymentDialog(data)">
-              <i class="pi pi-wallet"></i>
-              Bayar
-            </button>
-              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="sendBill(data.id)">
-              <i class="pi pi-send"></i>
-              Kirim
-            </button>
-            <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['void', 'void_requested', 'paid'].includes(data.status)" @click="submitMarkBillPaid(data)">
-              <i class="pi pi-check"></i>
-              Selesai
-            </button>
-            <!-- <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="openPublicBill(data)">
+        <DataTable :value="bills" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable desktop-table">
+          <Column header="Aksi" style="min-width: 15rem">
+            <template #body="{ data }">
+              <div class="table-actions">
+                <button class="btn-pill btn-primary btn-pill-compact" :disabled="data.remaining_amount <= 0 || ['void', 'void_requested'].includes(data.status)" @click="openPaymentDialog(data)">
+                  <i class="pi pi-wallet"></i>
+                  Bayar
+                </button>
+                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="sendBill(data.id)">
+                  <i class="pi pi-send"></i>
+                  Kirim
+                </button>
+                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['void', 'void_requested', 'paid'].includes(data.status)" @click="submitMarkBillPaid(data)">
+                  <i class="pi pi-check"></i>
+                  Selesai
+                </button>
+                <!-- <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="openPublicBill(data)">
               <i class="pi pi-external-link"></i>
               Public
             </button>
@@ -830,45 +779,51 @@ onMounted(async () => {
               <i class="pi pi-download"></i>
               PDF
             </button> -->
-            <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['void', 'void_requested'].includes(data.status)" @click="openVoidDialog(data)">
-              <i class="pi pi-ban"></i>
-              Void
-            </button>
-          </div>
-        </template>
-      </Column>
-      <Column header="Kode" style="min-width: 13rem">
-        <template #body="{ data }">
-          <strong>{{ data.bill_number }}</strong>
-          <div class="mt-2"><Tag :value="statusLabel(data.status)" :severity="statusSeverity(data.status)" /></div>
-        </template>
-      </Column>
-      <Column header="Pemilik Rental" style="min-width: 9rem">
-        <template #body="{ data }">
-          <strong>{{ data.rental_owner?.nama || '-' }}</strong>
-          <div class="text-secondary text-xs">{{ data.rental_owner?.bank || '-' }} {{ data.rental_owner?.no_rek || '' }}</div>
-        </template>
-      </Column>
-      <Column header="Transaksi" style="min-width: 14rem">
-        <template #body="{ data }">
-          <div class="booking-list">
-            <span v-for="item in data.items" :key="item.id">{{ item.kode_booking }} - {{ item.unit_plate || '-' }}</span>
-          </div>
-        </template>
-      </Column>
-      <Column header="Total" style="min-width: 9rem">
-        <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.total_amount) }}</div></template>
-      </Column>
-      <Column header="Sudah Bayar" style="min-width: 9rem">
-        <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.paid_amount) }}</div></template>
-      </Column>
-      <Column header="Tanggal" style="min-width: 12rem">
-        <template #body="{ data }">
-          <div>{{ formatDate(data.generated_at) }}</div>
-          <div class="text-secondary text-xs">Kirim {{ formatDateTime(data.sent_at) }}</div>
-        </template>
-      </Column>
-      
+                <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['void', 'void_requested'].includes(data.status)" @click="openVoidDialog(data)">
+                  <i class="pi pi-ban"></i>
+                  Void
+                </button>
+              </div>
+            </template>
+          </Column>
+          <Column header="Kode" style="min-width: 13rem">
+            <template #body="{ data }">
+              <strong>{{ data.bill_number }}</strong>
+              <div class="mt-2">
+                <Tag :value="statusLabel(data.status)" :severity="statusSeverity(data.status)" />
+              </div>
+            </template>
+          </Column>
+          <Column header="Pemilik Rental" style="min-width: 9rem">
+            <template #body="{ data }">
+              <strong>{{ data.rental_owner?.nama || '-' }}</strong>
+              <div class="text-secondary text-xs">{{ data.rental_owner?.bank || '-' }} {{ data.rental_owner?.no_rek || '' }}</div>
+            </template>
+          </Column>
+          <Column header="Transaksi" style="min-width: 14rem">
+            <template #body="{ data }">
+              <div class="booking-list">
+                <span v-for="item in data.items" :key="item.id">{{ item.kode_booking }} - {{ item.unit_plate || '-' }}</span>
+              </div>
+            </template>
+          </Column>
+          <Column header="Total" style="min-width: 9rem">
+            <template #body="{ data }">
+              <div class="amount-stack">{{ formatCurrency(data.total_amount) }}</div>
+            </template>
+          </Column>
+          <Column header="Sudah Bayar" style="min-width: 9rem">
+            <template #body="{ data }">
+              <div class="amount-stack">{{ formatCurrency(data.paid_amount) }}</div>
+            </template>
+          </Column>
+          <Column header="Tanggal" style="min-width: 12rem">
+            <template #body="{ data }">
+              <div>{{ formatDate(data.generated_at) }}</div>
+              <div class="text-secondary text-xs">Kirim {{ formatDateTime(data.sent_at) }}</div>
+            </template>
+          </Column>
+
         </DataTable>
         <div class="mobile-card-list rent-mobile-list">
           <article v-for="bill in bills" :key="bill.id" class="mobile-list-card">
@@ -950,7 +905,9 @@ onMounted(async () => {
               <template #body="{ data }">{{ formatDateTime(data.paid_at) }}</template>
             </Column>
             <Column header="Nominal" style="min-width: 11rem">
-              <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.amount) }}</div></template>
+              <template #body="{ data }">
+                <div class="amount-stack">{{ formatCurrency(data.amount) }}</div>
+              </template>
             </Column>
             <Column header="Status" style="min-width: 9rem">
               <template #body="{ data }">
@@ -966,15 +923,7 @@ onMounted(async () => {
               </template>
             </Column>
           </DataTable>
-          <Paginator
-            :rows="paymentHistoryPagination.latest.per_page"
-            :totalRecords="paymentHistoryPagination.latest.total"
-            :first="(paymentHistoryPagination.latest.current_page - 1) * paymentHistoryPagination.latest.per_page"
-            template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
-            currentPageReportTemplate="{first} - {last} dari {totalRecords}"
-            class="history-paginator"
-            @page="onLatestPaymentHistoryPage"
-          />
+          <Paginator :rows="paymentHistoryPagination.latest.per_page" :totalRecords="paymentHistoryPagination.latest.total" :first="(paymentHistoryPagination.latest.current_page - 1) * paymentHistoryPagination.latest.per_page" template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink" currentPageReportTemplate="{first} - {last} dari {totalRecords}" class="history-paginator" @page="onLatestPaymentHistoryPage" />
           <div class="mobile-card-list rent-mobile-list">
             <article v-for="payment in paymentHistory.latest" :key="payment.id" class="mobile-list-card">
               <div class="mobile-card-head">
@@ -1030,18 +979,12 @@ onMounted(async () => {
               <template #body="{ data }">{{ formatDateTime(data.latest_paid_at) }}</template>
             </Column>
             <Column header="Total Terbayar" style="min-width: 12rem">
-              <template #body="{ data }"><div class="amount-stack">{{ formatCurrency(data.total_amount) }}</div></template>
+              <template #body="{ data }">
+                <div class="amount-stack">{{ formatCurrency(data.total_amount) }}</div>
+              </template>
             </Column>
           </DataTable>
-          <Paginator
-            :rows="paymentHistoryPagination.groups.per_page"
-            :totalRecords="paymentHistoryPagination.groups.total"
-            :first="(paymentHistoryPagination.groups.current_page - 1) * paymentHistoryPagination.groups.per_page"
-            template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
-            currentPageReportTemplate="{first} - {last} dari {totalRecords}"
-            class="history-paginator"
-            @page="onGroupPaymentHistoryPage"
-          />
+          <Paginator :rows="paymentHistoryPagination.groups.per_page" :totalRecords="paymentHistoryPagination.groups.total" :first="(paymentHistoryPagination.groups.current_page - 1) * paymentHistoryPagination.groups.per_page" template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink" currentPageReportTemplate="{first} - {last} dari {totalRecords}" class="history-paginator" @page="onGroupPaymentHistoryPage" />
           <div class="mobile-card-list rent-mobile-list">
             <article v-for="group in paymentHistory.groups" :key="group.booking_id" class="mobile-list-card">
               <div class="mobile-card-head">
@@ -1109,7 +1052,9 @@ onMounted(async () => {
             <div><span>Periode</span><strong>{{ formatDate(selectedDebt.unit?.tgl_sewa) }} - {{ formatDate(selectedDebt.unit?.tgl_kembali) }}</strong></div>
           </div>
           <section class="history-panel">
-            <div class="section-heading"><h2>Riwayat Bayar</h2></div>
+            <div class="section-heading">
+              <h2>Riwayat Bayar</h2>
+            </div>
             <DataTable :value="selectedDebt.payments" dataKey="id" responsiveLayout="scroll" class="mini-table">
               <Column header="Dokumen">
                 <template #body="{ data }">{{ data.bill_number || '-' }}</template>
@@ -1149,7 +1094,7 @@ onMounted(async () => {
           </div>
           <div class="payment-form-panel" style="display: flex; flex-direction: column; gap: 12px; padding: 12px;">
             <div class="section-label" style="margin-bottom: 4px;">Edit Harga Modal</div>
-            
+
             <div v-if="selectedDebt.pending_amount_request" class="pending-request-banner" style="background-color: #FDF4D9; color: #8C660A; border: 1px solid #D4A017; border-radius: 6px; padding: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 4px;">
               <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
                 <i class="pi pi-clock"></i> Menunggu ACC Supervisor
@@ -1361,7 +1306,7 @@ onMounted(async () => {
   display: block;
 }
 
-.filter-search > i {
+.filter-search>i {
   position: absolute;
   left: 12px;
   top: 50%;
@@ -1646,7 +1591,7 @@ onMounted(async () => {
   background: var(--surface-border);
 }
 
-.info-grid > div {
+.info-grid>div {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1749,6 +1694,7 @@ onMounted(async () => {
   color: #8C660A !important;
   border-color: #D4A017 !important;
 }
+
 .warning-btn:hover {
   background-color: #fdf0c3 !important;
 }

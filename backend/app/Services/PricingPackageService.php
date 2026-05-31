@@ -75,6 +75,72 @@ class PricingPackageService
         return $pricingPackage->delete();
     }
 
+    public function importFromCsv($file): array
+    {
+        $imported = 0;
+        $skipped  = 0;
+        $errors   = [];
+
+        $handle = fopen($file->getRealPath(), 'r');
+
+        // Strip UTF-8 BOM if present
+        $bom = fread($handle, 3);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
+
+        $header = fgetcsv($handle);
+        if (!$header) {
+            fclose($handle);
+            return ['imported' => 0, 'skipped' => 0, 'errors' => ['File kosong atau format tidak valid']];
+        }
+
+        $header = array_map('trim', $header);
+        $required = ['nama_paket', 'harga'];
+        foreach ($required as $col) {
+            if (!in_array($col, $header)) {
+                fclose($handle);
+                return ['imported' => 0, 'skipped' => 0, 'errors' => ["Kolom wajib '$col' tidak ditemukan"]];
+            }
+        }
+
+        $row = 1;
+        while (($data = fgetcsv($handle)) !== false) {
+            $row++;
+            $record = array_combine($header, array_pad($data, count($header), null));
+
+            if (empty(trim($record['nama_paket'] ?? ''))) {
+                $skipped++;
+                continue;
+            }
+
+            $harga = intval(str_replace([',', '.', ' '], '', $record['harga'] ?? 0));
+
+            try {
+                DB::transaction(function () use ($record, $harga) {
+                    $package = PricingPackage::create([
+                        'tenant_id'   => Auth::user()->tenant_id,
+                        'branch_id'   => Auth::user()->branch_id,
+                        'nama_paket'  => trim($record['nama_paket']),
+                        'kota_asal'   => trim($record['kota_asal'] ?? '') ?: null,
+                        'kota_tujuan' => trim($record['kota_tujuan'] ?? '') ?: null,
+                        'harga'       => $harga,
+                        'keterangan'  => trim($record['keterangan'] ?? '') ?: null,
+                        'is_active'   => isset($record['is_active']) ? filter_var($record['is_active'], FILTER_VALIDATE_BOOLEAN) : true,
+                    ]);
+                });
+                $imported++;
+            } catch (\Exception $e) {
+                $skipped++;
+                $errors[] = "Baris $row: " . $e->getMessage();
+            }
+        }
+
+        fclose($handle);
+
+        return ['imported' => $imported, 'skipped' => $skipped, 'errors' => $errors];
+    }
+
     protected function syncItems(PricingPackage $pricingPackage, array $items): void
     {
         $pricingPackage->items()->delete();

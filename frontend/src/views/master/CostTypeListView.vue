@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useCostType } from '../../composables/useCostType'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
@@ -26,6 +26,11 @@ const showDialog = ref(false)
 const form = ref({ id: null, nama: '', kode: '', require_description: false, sort_order: 0, is_active: true })
 const formErrors = ref({})
 const saving = ref(false)
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 onMounted(() => fetchAll())
 
@@ -124,7 +129,7 @@ const onPageChange = (event) => {
       </div>
     </div>
 
-    <div class="table-shell list-tab-fill">
+    <div v-if="!isMobile" class="table-shell list-tab-fill">
       <DataTable :value="costTypes" :loading="loading" scrollable scrollHeight="flex" responsiveLayout="scroll" class="drent-datatable" stripedRows>
         <template #empty>
           <div class="empty-state">
@@ -181,6 +186,38 @@ const onPageChange = (event) => {
         <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page"
           @page="onPageChange" template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport"
           currentPageReportTemplate="Menampilkan {first} ke {last} dari {totalRecords} data" />
+      </div>
+    </div>
+
+    <div v-else class="mobile-card-list">
+      <article v-for="ct in costTypes" :key="ct.id" class="mobile-card">
+        <div class="card-header">
+          <strong>{{ ct.nama }}</strong>
+          <span class="drent-badge" :class="ct.is_active ? 'success' : 'neutral'">{{ ct.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+        </div>
+        <div class="card-body">
+          <div><span class="field-hint">Kode</span> <span class="kode-badge">{{ ct.kode }}</span></div>
+          <div><span class="field-hint">Urutan</span> {{ ct.sort_order }}</div>
+          <div><span class="field-hint">Butuh Keterangan</span> {{ ct.require_description ? 'Ya' : 'Tidak' }}</div>
+        </div>
+        <div class="card-footer">
+          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(ct)">
+            <i class="pi pi-pencil"></i> Edit
+          </button>
+          <button v-if="canManage" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(ct)">
+            <i class="pi pi-trash"></i> Hapus
+          </button>
+        </div>
+      </article>
+
+      <div v-if="!loading && !costTypes.length" class="empty-state">
+        <i class="pi pi-list"></i>
+        <p>Belum ada tipe biaya.</p>
+      </div>
+
+      <div class="paginator-wrapper">
+        <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page"
+          @page="onPageChange" template="PrevPageLink CurrentPageReport NextPageLink" currentPageReportTemplate="{first}-{last} dari {totalRecords}" />
       </div>
     </div>
 
@@ -302,4 +339,7 @@ const onPageChange = (event) => {
 .text-info {
   color: var(--info-cyan);
 }
+
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 </style>

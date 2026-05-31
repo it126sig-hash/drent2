@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMember } from '../../composables/useMember'
 import { useToast } from 'primevue/usetoast'
@@ -25,6 +25,11 @@ const authStore = useAuthStore()
 
 const searchQuery = ref('')
 const statusFilter = ref(null)
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const statusOptions = [
   { label: 'Semua Status', value: null },
@@ -129,6 +134,7 @@ const getStatusSeverity = (status) => {
 
     <div class="table-shell app-card rounded-lg border border-[var(--surface-border)] overflow-hidden bg-[var(--surface-default)] flex-col">
       <DataTable 
+        v-if="!isMobile"
         :value="members" 
         :loading="loading" 
         scrollable 
@@ -187,6 +193,30 @@ const getStatusSeverity = (status) => {
         </Column>
       </DataTable>
 
+      <div v-else class="mobile-card-list">
+        <article v-for="member in members" :key="member.id" class="mobile-card" @click="viewDetail(member.id)">
+          <div class="card-header">
+            <strong>{{ member.customer?.nama }}</strong>
+            <Tag :severity="getStatusSeverity(member.status_member)" :value="member.status_member" class="status-badge" />
+          </div>
+          <div class="card-body">
+            <div><span class="field-hint">Kontak</span> {{ member.customer?.kontak_1 || '-' }}</div>
+            <div><span class="field-hint">ID Member</span> <span class="font-mono">{{ member.id_member || '-' }}</span></div>
+            <div><span class="field-hint">Kedaluwarsa</span> {{ member.tanggal_exp || '-' }}</div>
+          </div>
+          <div class="card-footer">
+            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click.stop="viewDetail(member.id)">
+              <i class="pi pi-eye"></i> Detail
+            </button>
+          </div>
+        </article>
+
+        <div v-if="!loading && !members.length" class="flex flex-col items-center justify-center p-5 text-[var(--text-secondary)]">
+          <i class="pi pi-id-card text-4xl mb-3 opacity-50"></i>
+          <p>Belum ada data member.</p>
+        </div>
+      </div>
+
       <div class="border-t border-[var(--surface-border)] p-2">
         <Paginator 
           :rows="pagination.per_page" 
@@ -203,4 +233,8 @@ const getStatusSeverity = (status) => {
 
 <style scoped>
 /* Mewarisi token global DRENT dari src/style.css */
+.mobile-card-list { padding: var(--space-md); }
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
+.mobile-card { cursor: pointer; }
 </style>

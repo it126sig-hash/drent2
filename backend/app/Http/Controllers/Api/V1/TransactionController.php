@@ -53,6 +53,7 @@ class TransactionController extends Controller
                 'customer:id,nama,status',
                 'bookingDetails.unit.rentalOwner:id,nama,is_owner',
                 'bookingDetails.costs.costType',
+                'handledBy:id,name',
             ])
             ->whereIn('status', $statuses);
 
@@ -72,6 +73,9 @@ class TransactionController extends Controller
                 $q->where('kode_booking', 'like', "%{$search}%")
                   ->orWhereHas('customer', fn($c) => $c->where('nama', 'like', "%{$search}%"));
             });
+        }
+        if ($request->filled('handled_by') && $user->role !== 'cs') {
+            $query->where('handled_by', $request->handled_by);
         }
 
         $query->orderBy('created_at', 'desc');

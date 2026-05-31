@@ -70,4 +70,38 @@ class PricingPackageController extends Controller
         $this->service->delete($pricingPackage);
         return response()->noContent();
     }
+
+    public function importTemplate()
+    {
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="template_import_paket_harga.csv"',
+        ];
+
+        return response()->streamDownload(function () {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM for Excel compatibility
+            fputs($out, "\xEF\xBB\xBF");
+            fputcsv($out, ['nama_paket', 'kota_asal', 'kota_tujuan', 'harga', 'keterangan', 'is_active']);
+            fputcsv($out, ['All In Avanza Bandung-Jakarta', 'Bandung', 'Jakarta', '1500000', 'Include: Driver, BBM, Tol', '1']);
+            fputcsv($out, ['All In Innova Surabaya-Malang', 'Surabaya', 'Malang', '800000', '', '1']);
+            fclose($out);
+        }, 'template_import_paket_harga.csv', $headers);
+    }
+
+    public function import(Request $request)
+    {
+        $this->authorize('create', PricingPackage::class);
+
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt|max:2048',
+        ]);
+
+        $result = $this->service->importFromCsv($request->file('file'));
+
+        return response()->json([
+            'message' => "Berhasil import {$result['imported']} paket, {$result['skipped']} dilewati.",
+            'data'    => $result,
+        ]);
+    }
 }

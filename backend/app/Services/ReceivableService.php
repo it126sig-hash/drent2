@@ -209,6 +209,7 @@ class ReceivableService
                 'total_amount' => $totalAmount,
                 'paid_amount' => $paidAmount,
                 'status' => $this->invoiceStatus($totalAmount, $paidAmount),
+                'items_snapshot' => $this->computeInvoiceItems($invoice)->all(),
             ]);
 
             if ($amountBefore !== $totalAmount) {
@@ -448,7 +449,10 @@ class ReceivableService
                 $invoice->bookings()->attach($bookingId, ['amount' => (int) $amount]);
             }
 
-            $invoice->update(['status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount)]);
+            $invoice->update([
+                'status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount),
+                'items_snapshot' => $this->computeInvoiceItems($invoice)->all(),
+            ]);
 
             InvoiceHistory::create([
                 'invoice_id'   => $invoice->id,
@@ -699,6 +703,15 @@ class ReceivableService
     }
 
     public function invoiceItems(Invoice $invoice)
+    {
+        if (is_array($invoice->items_snapshot)) {
+            return collect($invoice->items_snapshot);
+        }
+
+        return $this->computeInvoiceItems($invoice);
+    }
+
+    private function computeInvoiceItems(Invoice $invoice)
     {
         $invoice->loadMissing(['bookings.bookingDetails.unit', 'bookings.bookingDetails.costs']);
 
