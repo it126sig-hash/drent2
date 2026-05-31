@@ -208,6 +208,24 @@ const router = createRouter({
           meta: { permission: "finance.monthly_report" },
         },
         {
+          path: "/reports/unit-usage",
+          name: "UnitUsageReport",
+          component: () => import("../views/reports/UnitUsageReportView.vue"),
+          meta: { permission: "finance.monthly_report" },
+        },
+        {
+          path: "/reports/driver-usage",
+          name: "DriverUsageReport",
+          component: () => import("../views/reports/DriverUsageReportView.vue"),
+          meta: { permission: "finance.monthly_report" },
+        },
+        {
+          path: "/reports/customer-usage",
+          name: "CustomerUsageReport",
+          component: () => import("../views/reports/CustomerUsageReportView.vue"),
+          meta: { permission: "finance.monthly_report" },
+        },
+        {
           path: "/driver/operational",
           name: "DriverOperational",
           component: () => import("../views/driver/DriverOperationalView.vue"),

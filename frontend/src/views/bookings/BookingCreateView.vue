@@ -1332,7 +1332,7 @@ const formatDate = (value) => {
   <div class="booking-create-container">
     <Dialog v-model:visible="showCreateModeDialog" modal :closable="false" :style="{ width: '560px' }" :breakpoints="{ '640px': '94vw' }" header="Pilih Jenis Input Booking" class="create-mode-dialog">
       <div class="create-mode-grid">
-        <button v-for="option in createModeOptions" :key="option.value" type="button" class="create-mode-card" @click="selectCreateMode(option.value)">
+        <button v-for="option in createModeOptions" :key="option.value" type="button" :class="['create-mode-card', `create-mode-card--${option.value.replace('_', '-')}`]" @click="selectCreateMode(option.value)">
           <span class="create-mode-icon"><i :class="option.icon"></i></span>
           <span class="create-mode-title">{{ option.title }}</span>
           <span class="create-mode-description">{{ option.description }}</span>
@@ -2287,6 +2287,37 @@ const formatDate = (value) => {
 .create-mode-card:hover {
   border-color: #0D8091;
   background: var(--card-bg-hover);
+}
+
+.create-mode-card--booking {
+  border-color: #0D8091;
+  border-left-width: 4px;
+  background: linear-gradient(160deg, #f0fafb 0%, var(--surface-default) 60%);
+}
+
+.create-mode-card--booking:hover {
+  background: linear-gradient(160deg, #e1f4f6 0%, var(--card-bg-hover) 60%);
+}
+
+.create-mode-card--booking .create-mode-icon {
+  background: #C7EEF2;
+  color: #085A66;
+}
+
+.create-mode-card--waiting-list {
+  border-color: #D97706;
+  border-left-width: 4px;
+  background: linear-gradient(160deg, #fffbf0 0%, var(--surface-default) 60%);
+}
+
+.create-mode-card--waiting-list:hover {
+  background: linear-gradient(160deg, #fef3c7 0%, var(--card-bg-hover) 60%);
+  border-color: #B45309;
+}
+
+.create-mode-card--waiting-list .create-mode-icon {
+  background: #FEF3C7;
+  color: #92400E;
 }
 
 .create-mode-icon {

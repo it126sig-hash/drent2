@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import DataTable from 'primevue/datatable'
@@ -28,6 +28,11 @@ const showDialog = ref(false)
 const emptyForm = () => ({ id: null, name: '', content: '', is_default: false, is_active: true })
 const form = ref(emptyForm())
 const formErrors = ref({})
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const fetchAll = async () => {
   loading.value = true
@@ -147,7 +152,7 @@ const confirmDelete = (row) => {
       </div>
     </div>
 
-    <div class="table-shell list-tab-fill">
+    <div v-if="!isMobile" class="table-shell list-tab-fill">
       <DataTable :value="templates" :loading="loading" scrollable scrollHeight="flex"
         responsiveLayout="scroll" class="drent-datatable" stripedRows>
         <template #empty>
@@ -191,6 +196,32 @@ const confirmDelete = (row) => {
           </template>
         </Column>
       </DataTable>
+    </div>
+
+    <div v-else class="mobile-card-list">
+      <article v-for="tpl in templates" :key="tpl.id" class="mobile-card">
+        <div class="card-header">
+          <strong>{{ tpl.name }}</strong>
+          <span class="drent-badge" :class="tpl.is_active ? 'success' : 'neutral'">{{ tpl.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+        </div>
+        <div class="card-body">
+          <Tag v-if="tpl.is_default" value="Default" severity="success" style="font-size:10px; width: fit-content" />
+          <div class="content-preview" v-html="tpl.content"></div>
+        </div>
+        <div class="card-footer">
+          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(tpl)">
+            <i class="pi pi-pencil"></i> Edit
+          </button>
+          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(tpl)">
+            <i class="pi pi-trash"></i> Hapus
+          </button>
+        </div>
+      </article>
+
+      <div v-if="!loading && !templates.length" class="empty-state">
+        <i class="pi pi-file-edit"></i>
+        <p>Belum ada template syarat &amp; ketentuan.</p>
+      </div>
     </div>
 
     <Dialog v-model:visible="showDialog"
@@ -308,4 +339,5 @@ const confirmDelete = (row) => {
 }
 .drent-badge.success { background-color: #E6F6EC; color: #147239; }
 .drent-badge.neutral { background-color: #E4E8F3; color: #4A5060; }
+.mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 </style>

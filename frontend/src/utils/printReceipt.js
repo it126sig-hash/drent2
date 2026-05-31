@@ -65,32 +65,11 @@ export function printPaymentReceipt(receipt) {
       </div>`
   }).join('')
 
-  const hasSummary = receipt.summary && (
-    receipt.summary.total_tagihan != null ||
-    receipt.summary.total_paid_before != null ||
-    receipt.summary.remaining_after != null
-  )
-
-  const summaryHtml = hasSummary ? `
-    <div class="total-row">
-      <span>Total Tagihan</span>
-      <span>${fmt(receipt.summary.total_tagihan)}</span>
-    </div>
-    <div class="total-row">
-      <span>Sudah Dibayar Sebelumnya</span>
-      <span>${fmt(receipt.summary.total_paid_before)}</span>
-    </div>
-    <div class="total-row grand-payment">
-      <span>Pembayaran Ini</span>
-      <span>${fmt(receipt.summary.this_payment)}</span>
-    </div>
-    <div class="total-row remaining">
-      <span>Sisa Tagihan</span>
-      <span>${fmt(receipt.summary.remaining_after)}</span>
-    </div>` : `
+  const thisPayment = receipt.summary?.this_payment ?? receipt.items?.[0]?.amount
+  const summaryHtml = `
     <div class="total-row grand-payment">
       <span>Jumlah Diterima</span>
-      <span>${fmt(receipt.items?.[0]?.amount)}</span>
+      <span>${fmt(thisPayment)}</span>
     </div>`
 
   const noteHtml = receipt.note ? `

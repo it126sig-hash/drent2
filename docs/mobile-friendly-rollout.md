@@ -1,5 +1,7 @@
 # Rencana Rollout Mobile-Friendly — Per Halaman
 
+> **Progres (branch `redesign/mobile-friendly`):** Fase 0–5 ✅ SELESAI. Build hijau. Belum di-commit (menunggu instruksi). Catatan terbuka: (1) aturan border global menimpa aksen border-left status di BookingListView — perlu konfirmasi; (2) tab "Riwayat Pembayaran" Receivable (tabel history nested) sengaja belum dikonversi (sekunder).
+
 Acuan aturan: `.agents/rules/mobile.md`. Prinsip: **jangan ubah desktop**, semua di `@media (max-width: 768px)` / `isMobile`.
 
 Status: ✅ selesai · 🟡 ada pola, perlu disesuaikan ke aturan baru · 🔴 belum ada pola card mobile · ⚪ non-tabel (form/detail/public)

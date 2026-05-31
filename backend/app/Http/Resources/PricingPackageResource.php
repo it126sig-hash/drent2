@@ -45,6 +45,8 @@ class PricingPackageResource extends JsonResource
                 'sort_order'   => (int) $item->sort_order,
             ])),
             'nama_paket'  => $this->nama_paket,
+            'kota_asal'   => $this->kota_asal,
+            'kota_tujuan' => $this->kota_tujuan,
             'harga'       => (int) $this->harga,
             'keterangan'  => $this->keterangan,
             'is_active'   => (bool) $this->is_active,

@@ -17,6 +17,7 @@ class Invoice extends Model
         'status',
         'total_amount',
         'paid_amount',
+        'items_snapshot',
         'due_date',
         'terms_and_conditions',
         'generated_at',
@@ -29,6 +30,7 @@ class Invoice extends Model
     protected $casts = [
         'total_amount' => 'integer',
         'paid_amount' => 'integer',
+        'items_snapshot' => 'array',
         'due_date' => 'datetime',
         'generated_at' => 'datetime',
         'sent_at' => 'datetime',

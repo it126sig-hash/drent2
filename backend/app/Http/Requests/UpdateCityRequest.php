@@ -26,6 +26,7 @@ class UpdateCityRequest extends FormRequest
                     ->where('tenant_id', auth()->user()?->tenant_id)
                     ->whereNull('deleted_at'),
             ],
+            'province_id' => ['nullable', 'exists:provinces,id'],
             'provinsi' => ['nullable', 'string', 'max:100'],
             'is_active' => ['boolean'],
         ];

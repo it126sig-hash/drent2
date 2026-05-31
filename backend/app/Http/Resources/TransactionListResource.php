@@ -91,6 +91,10 @@ class TransactionListResource extends JsonResource
             'total_modal'           => $totalModal,
             'total_pengeluaran'     => $totalPengeluaran,
             'margin'                => $margin,
+            'handled_by'            => $this->handledBy ? [
+                'id'   => $this->handledBy->id,
+                'name' => $this->handledBy->name,
+            ] : null,
         ];
     }
 

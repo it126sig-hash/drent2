@@ -1,10 +1,12 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { usePricingPackage } from '../../composables/usePricingPackage'
 import { useCostType } from '../../composables/useCostType'
+import { useCity } from '../../composables/useCity'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useAuthStore } from '../../stores/auth'
+import { downloadImportTemplate, importPricingPackages } from '../../api/pricingPackage'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -20,6 +22,7 @@ import Paginator from 'primevue/paginator'
 
 const { packages, loading, pagination, fetchAll, store, update, remove } = usePricingPackage()
 const { costTypes, fetchAll: fetchCostTypes } = useCostType()
+const { cities, fetchAll: fetchCities } = useCity()
 const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
@@ -30,6 +33,11 @@ const costTypeOptions = computed(() =>
     .filter((type) => type.is_active)
     .map((type) => ({ id: type.id, label: type.nama, kode: type.kode, require_description: type.require_description }))
 )
+const cityOptions = computed(() =>
+  cities.value
+    .filter((c) => c.is_active)
+    .map((c) => ({ label: c.nama, value: c.nama }))
+)
 const itemTypeOptions = [
   { label: 'Biaya', value: 'biaya' },
   { label: 'Diskon', value: 'diskon' },
@@ -37,14 +45,26 @@ const itemTypeOptions = [
 
 const showDialog = ref(false)
 const emptyItem = () => ({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' })
-const emptyForm = () => ({ id: null, nama_paket: '', harga: null, keterangan: '', is_active: true, items: [] })
+const emptyForm = () => ({ id: null, nama_paket: '', kota_asal: null, kota_tujuan: null, harga: null, keterangan: '', is_active: true, items: [] })
 const form = ref(emptyForm())
 const formErrors = ref({})
 const saving = ref(false)
 
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
+
+// Import state
+const showImportDialog = ref(false)
+const importFile = ref(null)
+const importing = ref(false)
+const importFileInput = ref(null)
+
 onMounted(() => {
   fetchAll()
   fetchCostTypes({ per_page: 100 })
+  fetchCities({ per_page: 200, is_active: 1 })
 })
 
 const openNew = () => {
@@ -57,6 +77,8 @@ const openEdit = (row) => {
   form.value = {
     id: row.id,
     nama_paket: row.nama_paket,
+    kota_asal: row.kota_asal || null,
+    kota_tujuan: row.kota_tujuan || null,
     harga: row.harga,
     keterangan: row.keterangan || '',
     is_active: !!row.is_active,
@@ -144,6 +166,57 @@ const onPageChange = (event) => {
 
 const formatCurrency = (v) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(v)
+
+// Import handlers
+const openImportDialog = () => {
+  importFile.value = null
+  showImportDialog.value = true
+}
+
+const onFileChange = (e) => {
+  importFile.value = e.target.files[0] || null
+}
+
+const handleDownloadTemplate = async () => {
+  try {
+    const res = await downloadImportTemplate()
+    const url = URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'template_import_paket_harga.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    toast.add({ severity: 'error', summary: 'Gagal', detail: 'Gagal mengunduh template', life: 3000 })
+  }
+}
+
+const handleImport = async () => {
+  if (!importFile.value) {
+    toast.add({ severity: 'warn', summary: 'Perhatian', detail: 'Pilih file CSV terlebih dahulu', life: 3000 })
+    return
+  }
+  importing.value = true
+  try {
+    const res = await importPricingPackages(importFile.value)
+    const { imported, skipped, errors } = res.data.data
+    toast.add({
+      severity: 'success',
+      summary: 'Import Selesai',
+      detail: `${imported} paket ditambahkan, ${skipped} dilewati.`,
+      life: 5000
+    })
+    if (errors?.length) {
+      errors.forEach((e) => toast.add({ severity: 'warn', summary: 'Peringatan', detail: e, life: 6000 }))
+    }
+    showImportDialog.value = false
+    await fetchAll()
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || 'Import gagal', life: 4000 })
+  } finally {
+    importing.value = false
+  }
+}
 </script>
 
 <template>
@@ -158,6 +231,10 @@ const formatCurrency = (v) =>
         </div>
       </div>
       <div class="header-actions">
+        <button v-if="canManage" class="btn-pill btn-secondary" type="button" @click="openImportDialog">
+          <i class="pi pi-upload"></i>
+          <span>Import CSV</span>
+        </button>
         <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Paket</span>
@@ -181,7 +258,7 @@ const formatCurrency = (v) =>
       </div>
     </div>
 
-    <div class="table-shell list-tab-fill">
+    <div v-if="!isMobile" class="table-shell list-tab-fill">
       <DataTable :value="packages" :loading="loading" scrollable scrollHeight="flex" responsiveLayout="scroll" class="drent-datatable" stripedRows>
         <template #empty>
           <div class="empty-state">
@@ -191,6 +268,17 @@ const formatCurrency = (v) =>
         </template>
 
         <Column field="nama_paket" header="Nama Paket" style="min-width:200px" />
+
+        <Column header="Rute" style="min-width:180px">
+          <template #body="{ data }">
+            <div v-if="data.kota_asal || data.kota_tujuan" class="route-cell">
+              <span class="route-kota">{{ data.kota_asal || '-' }}</span>
+              <i class="pi pi-arrow-right route-arrow"></i>
+              <span class="route-kota">{{ data.kota_tujuan || '-' }}</span>
+            </div>
+            <span v-else class="text-tertiary text-sm">-</span>
+          </template>
+        </Column>
 
         <Column header="Item Biaya" style="min-width:260px">
           <template #body="{ data }">
@@ -242,6 +330,43 @@ const formatCurrency = (v) =>
       </div>
     </div>
 
+    <div v-else class="mobile-card-list">
+      <article v-for="pkg in packages" :key="pkg.id" class="mobile-card">
+        <div class="card-header">
+          <strong>{{ pkg.nama_paket }}</strong>
+          <span class="drent-badge" :class="pkg.is_active ? 'success' : 'neutral'">{{ pkg.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+        </div>
+        <div class="card-body">
+          <div v-if="pkg.kota_asal || pkg.kota_tujuan" class="route-cell">
+            <span class="route-kota">{{ pkg.kota_asal || '-' }}</span>
+            <i class="pi pi-arrow-right route-arrow"></i>
+            <span class="route-kota">{{ pkg.kota_tujuan || '-' }}</span>
+          </div>
+          <div><span class="field-hint">Harga</span> <span class="amount-text font-mono-numeric">{{ formatCurrency(pkg.harga) }}</span></div>
+          <div><span class="field-hint">Item</span> {{ formatItemsSummary(pkg.items) }}</div>
+          <div v-if="pkg.keterangan"><span class="field-hint">Ket.</span> {{ pkg.keterangan }}</div>
+        </div>
+        <div class="card-footer">
+          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(pkg)">
+            <i class="pi pi-pencil"></i> Edit
+          </button>
+          <button v-if="canManage" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(pkg)">
+            <i class="pi pi-trash"></i> Hapus
+          </button>
+        </div>
+      </article>
+
+      <div v-if="!loading && !packages.length" class="empty-state">
+        <i class="pi pi-tag"></i>
+        <p>Belum ada paket harga.</p>
+      </div>
+
+      <div class="paginator-wrapper">
+        <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page"
+          @page="onPageChange" template="PrevPageLink CurrentPageReport NextPageLink" currentPageReportTemplate="{first}-{last} dari {totalRecords}" />
+      </div>
+    </div>
+
     <!-- Dialog Form -->
     <Dialog v-model:visible="showDialog" :header="form.id ? 'Edit Paket Harga' : 'Tambah Paket Harga'" modal class="custom-dialog" :style="{ width: '760px' }" :breakpoints="{ '820px': '95vw' }">
       <div class="form-grid">
@@ -250,6 +375,22 @@ const formatCurrency = (v) =>
           <InputText v-model="form.nama_paket" placeholder="All In Avanza Bandung..." class="w-full" :class="{ 'p-invalid': formErrors.nama_paket }" />
           <small class="p-error" v-if="formErrors.nama_paket">{{ formErrors.nama_paket[0] }}</small>
         </div>
+
+        <div class="field-row-2">
+          <div class="field">
+            <label>Kota Asal</label>
+            <Dropdown v-model="form.kota_asal" :options="cityOptions" optionLabel="label" optionValue="value"
+              placeholder="Pilih kota asal" showClear editable class="w-full" :class="{ 'p-invalid': formErrors.kota_asal }" />
+            <small class="p-error" v-if="formErrors.kota_asal">{{ formErrors.kota_asal[0] }}</small>
+          </div>
+          <div class="field">
+            <label>Kota Tujuan</label>
+            <Dropdown v-model="form.kota_tujuan" :options="cityOptions" optionLabel="label" optionValue="value"
+              placeholder="Pilih kota tujuan" showClear editable class="w-full" :class="{ 'p-invalid': formErrors.kota_tujuan }" />
+            <small class="p-error" v-if="formErrors.kota_tujuan">{{ formErrors.kota_tujuan[0] }}</small>
+          </div>
+        </div>
+
         <div class="field">
           <label>Harga All In (IDR) <span class="req">*</span></label>
           <InputNumber v-model="form.harga" :min="0" mode="currency" currency="IDR" locale="id-ID" class="w-full" :class="{ 'p-invalid': formErrors.harga }" />
@@ -325,6 +466,45 @@ const formatCurrency = (v) =>
         </button>
       </template>
     </Dialog>
+
+    <!-- Import Dialog -->
+    <Dialog v-model:visible="showImportDialog" header="Import Paket Harga dari CSV" modal class="custom-dialog" :style="{ width: '480px' }" :breakpoints="{ '520px': '95vw' }">
+      <div class="import-body">
+        <div class="import-info app-card">
+          <i class="pi pi-info-circle text-info"></i>
+          <div>
+            <p>Upload file <strong>.csv</strong> dengan kolom:</p>
+            <code class="import-cols">nama_paket, kota_asal, kota_tujuan, harga, keterangan, is_active</code>
+            <p class="text-tertiary text-xs mt-1">Kolom <strong>is_active</strong>: isi 1 (aktif) atau 0 (nonaktif)</p>
+          </div>
+        </div>
+
+        <button class="btn-pill btn-secondary w-full mt-2" type="button" @click="handleDownloadTemplate">
+          <i class="pi pi-download"></i>
+          <span>Unduh Template CSV</span>
+        </button>
+
+        <div class="field mt-3">
+          <label>Pilih File CSV <span class="req">*</span></label>
+          <div class="file-upload-area" @click="importFileInput?.click()">
+            <i class="pi pi-upload"></i>
+            <span>{{ importFile ? importFile.name : 'Klik untuk pilih file .csv' }}</span>
+          </div>
+          <input ref="importFileInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="onFileChange" />
+        </div>
+      </div>
+
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" type="button" :disabled="importing" @click="showImportDialog = false">
+          <i class="pi pi-times"></i>
+          Batal
+        </button>
+        <button class="app-dialog-button app-dialog-button-primary" type="button" :disabled="importing || !importFile" @click="handleImport">
+          <i :class="importing ? 'pi pi-spin pi-spinner' : 'pi pi-upload'"></i>
+          Import
+        </button>
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -364,6 +544,7 @@ const formatCurrency = (v) =>
 .form-grid { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
+.field-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .section-label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .empty-items { border: 1px dashed var(--surface-border); border-radius: var(--radius-default); background: var(--card-bg); color: var(--text-tertiary); padding: 18px; text-align: center; font-size: 12px; }
 .item-row { border: 1px solid var(--surface-border); border-radius: var(--radius-default); background: var(--surface-default); padding: 12px; margin-bottom: var(--space-md); }
@@ -381,6 +562,32 @@ const formatCurrency = (v) =>
   overflow: hidden;
   line-height: 1.4;
 }
+
+/* Route cell */
+.route-cell { display: flex; align-items: center; gap: 6px; }
+.route-kota { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.route-arrow { font-size: 10px; color: var(--text-tertiary); }
+
+/* Import dialog */
+.import-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.import-info { display: flex; gap: 12px; align-items: flex-start; padding: 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.import-info i { font-size: 18px; margin-top: 2px; flex-shrink: 0; }
+.import-cols { display: block; margin-top: 4px; padding: 4px 8px; background: var(--card-bg); border-radius: 4px; font-size: 11px; color: var(--text-primary); font-family: var(--font-mono); }
+.file-upload-area {
+  display: flex; align-items: center; gap: 10px;
+  border: 2px dashed var(--surface-border);
+  border-radius: var(--radius-default);
+  padding: 16px 18px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: border-color 0.2s;
+}
+.file-upload-area:hover { border-color: var(--primary-color); color: var(--primary-color); }
+.hidden-input { display: none; }
+.mt-1 { margin-top: 4px; }
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 12px; }
 
 /* Premium Drent Badge styling matching design.md rules */
 .drent-badge {
@@ -409,11 +616,14 @@ const formatCurrency = (v) =>
 .text-info {
   color: var(--info-cyan);
 }
-.mt-2 { margin-top: 8px; }
+
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 
 @media (max-width: 640px) {
   .item-grid { grid-template-columns: 1fr; }
   .item-label-field, .item-note-field { grid-column: auto; }
   .items-footer { align-items: flex-start; flex-direction: column; }
+  .field-row-2 { grid-template-columns: 1fr; }
 }
 </style>

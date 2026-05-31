@@ -772,6 +772,36 @@ button[aria-disabled="true"],
   cursor: not-allowed;
 }
 
+/* === Canonical Mobile Card (see .agents/rules/mobile.md) === */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.mobile-card {
+  background: var(--surface-default);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  padding: var(--space-md);
+  box-shadow: var(--shadow-tile);
+}
+
+.mobile-card .card-header,
+.mobile-card .card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.mobile-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--space-md) 0;
+}
+
 @media (max-width: 768px) {
   :root {
     --space-2xl: 16px;
@@ -829,8 +859,8 @@ button[aria-disabled="true"],
   }
 
   .pill-toggle {
-    width: fit-content;
-    max-width: 100%;
+    flex-wrap: nowrap;
+    min-width: max-content;
     padding: 4px;
   }
 
@@ -852,7 +882,8 @@ button[aria-disabled="true"],
   .filter-groups,
   .advanced-filter-groups {
     width: 100%;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-md);
   }
 
@@ -860,10 +891,16 @@ button[aria-disabled="true"],
     padding-top: 0;
   }
 
-  .filter-group,
+  .filter-group {
+    min-width: 0;
+    max-width: none;
+    gap: 6px;
+  }
+
+  /* Field lebar & grup status memenuhi selebar baris agar field pendek (tanggal) berbagi 2 kolom */
   .filter-group-wide,
   .filter-group-status {
-    width: 100%;
+    grid-column: 1 / -1;
     min-width: 0;
     max-width: none;
     gap: 6px;
@@ -887,5 +924,37 @@ button[aria-disabled="true"],
   .filter-bar .btn-pill {
     min-height: 30px;
     padding: 6px 12px;
+  }
+
+  /* Card filter tidak ikut stretch dari parent flex (fix bug card filter tinggi) */
+  .filter-bar {
+    flex: 0 0 auto;
+  }
+
+  /* Tombol aksi primary selalu 100% di mobile (btn sekunder tetap natural/sebaris) */
+  .btn-pill.btn-primary,
+  .app-dialog-button-primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Header: tombol primary "Tambah" dkk penuh selebar header */
+  .header-actions .btn-pill.btn-primary {
+    flex: 1 1 100%;
+  }
+
+  /* Tombol filter (Reset + Filter) tetap satu baris agar card filter ringkas */
+  .filter-actions .btn-pill,
+  .filter-actions .btn-pill.btn-primary {
+    flex: 1 1 0;
+    width: auto;
+    justify-content: center;
+  }
+
+  /* Setiap card di list mobile diberi border konsisten text-secondary (mobile-only).
+     .booking-card dikecualikan agar warna border status-nya tetap dipertahankan. */
+  .mobile-card,
+  .mobile-card-list > [class*="card"]:not(.booking-card) {
+    border: 1px solid var(--text-secondary) !important;
   }
 }

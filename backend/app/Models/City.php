@@ -13,6 +13,7 @@ class City extends Model
     protected $fillable = [
         'tenant_id',
         'nama',
+        'province_id',
         'provinsi',
         'is_active',
     ];
@@ -24,5 +25,10 @@ class City extends Model
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function province()
+    {
+        return $this->belongsTo(Province::class);
     }
 }

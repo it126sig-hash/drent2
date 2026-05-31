@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useUser } from '../../composables/useUser'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
@@ -40,6 +40,11 @@ const showDialog = ref(false)
 const showResetDialog = ref(false)
 const showPermissionDialog = ref(false)
 const selectedUser = ref(null)
+
+const isMobile = ref(window.innerWidth < 768)
+const onResize = () => { isMobile.value = window.innerWidth < 768 }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const statusOptions = [
   { label: 'Semua Status', value: null },
@@ -230,7 +235,7 @@ const getRoleBadgeClass = (role) => {
       </div>
     </div>
 
-    <div class="table-shell list-tab-fill">
+    <div v-if="!isMobile" class="table-shell list-tab-fill">
       <DataTable 
         :value="users" 
         :loading="loading" 
@@ -330,6 +335,40 @@ const getRoleBadgeClass = (role) => {
       </div>
     </div>
 
+    <div v-else class="mobile-card-list">
+      <article v-for="user in users" :key="user.id" class="mobile-card">
+        <div class="card-header">
+          <div class="user-info">
+            <span class="user-name">{{ user.name }}</span>
+            <span class="user-email">{{ user.email }}</span>
+          </div>
+          <span class="drent-badge" :class="user.is_active ? 'success' : 'neutral'">{{ user.is_active ? 'Aktif' : 'Non-Aktif' }}</span>
+        </div>
+        <div class="card-body">
+          <div><span class="field-hint">Role</span> <span class="drent-badge" :class="getRoleBadgeClass(user.role)">{{ user.role_label }}</span></div>
+          <div><span class="field-hint">Branch</span> {{ user.branch_name || '-' }}</div>
+        </div>
+        <div v-if="canManage" class="card-footer">
+          <div class="action-pill-group">
+            <button class="action-btn" type="button" @click="openPermissions(user)" v-tooltip.top="'Hak Akses'"><i class="pi pi-shield" /></button>
+            <button class="action-btn" type="button" @click="openReset(user)" v-tooltip.top="'Reset Password'"><i class="pi pi-key" /></button>
+            <button class="action-btn" type="button" @click="editUser(user)" v-tooltip.top="'Edit'"><i class="pi pi-pencil" /></button>
+            <button class="action-btn action-btn-danger" type="button" @click="confirmDelete(user)" :disabled="user.id === authStore.user?.id" v-tooltip.top="'Hapus'"><i class="pi pi-trash" /></button>
+          </div>
+        </div>
+      </article>
+
+      <div v-if="!loading && !users.length" class="empty-state">
+        <i class="pi pi-users"></i>
+        <p>Belum ada data user.</p>
+      </div>
+
+      <div class="paginator-wrapper">
+        <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page"
+          @page="onPageChange" template="PrevPageLink CurrentPageReport NextPageLink" currentPageReportTemplate="{first}-{last} dari {totalRecords}" />
+      </div>
+    </div>
+
     <UserFormDialog 
       v-model:visible="showDialog" 
       :user="selectedUser" 
@@ -384,6 +423,9 @@ const getRoleBadgeClass = (role) => {
 .action-btn-danger {
   color: var(--negative) !important;
 }
+
+.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.mobile-card-list .card-footer { justify-content: flex-end; }
 
 .empty-state {
   display: flex;
