@@ -15,7 +15,10 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    // CORS ditangani di public/.htaccess (level Apache) supaya konsisten di
+    // shared hosting & preflight OPTIONS tidak bergantung ke PHP. Dikosongkan
+    // agar Laravel tidak menambah header Access-Control-* ganda.
+    'paths' => [],
 
     'allowed_methods' => ['*'],
 

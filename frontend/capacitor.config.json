@@ -1,5 +1,10 @@
 {
   "appId": "com.drent.vibe",
   "appName": "Drent Vibe",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }

@@ -352,25 +352,60 @@ const handleLogin = async () => {
 @media (max-width: 992px) {
   .login-container {
     display: flex;
+    flex-direction: column;
     min-height: 100dvh;
   }
 
   .login-info-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 220px;
+    padding: clamp(28px, 7vw, 48px) clamp(24px, 6vw, 40px) clamp(24px, 5vw, 32px);
+    gap: 0;
+  }
+
+  .ops-summary {
     display: none;
   }
 
+  .brand-lockup p {
+    display: none;
+  }
+
+  .brand-lockup {
+    margin-bottom: 0;
+  }
+
+  .brand-kicker {
+    margin-bottom: var(--space-md);
+  }
+
   .login-form-panel {
+    flex: 1;
     width: 100%;
+    border-radius: 24px 24px 0 0;
+    background: var(--page-bg);
+    padding: clamp(28px, 6vw, 40px);
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
+    box-shadow: none;
+    background: transparent !important;
+  }
+
+  .form-logo {
+    display: none;
   }
 }
 
 @media (max-width: 560px) {
   .login-form-panel {
-    align-items: stretch;
-    padding: var(--space-lg);
-  }
-
-  .login-card {
     padding: var(--space-xl);
   }
 

@@ -34,7 +34,7 @@ export default {
         return axios.get(`${prefix}/${id}/extensions`);
     },
     getDocumentUrl(id, type) {
-        // This returns the API endpoint URL for the document
-        return `${import.meta.env.VITE_API_URL}/v1/members/${id}/documents/${type}`;
+        // Use VITE_API_BASE_URL (includes /api) so the path resolves correctly
+        return `${import.meta.env.VITE_API_BASE_URL}/v1/members/${id}/documents/${type}`;
     }
 };

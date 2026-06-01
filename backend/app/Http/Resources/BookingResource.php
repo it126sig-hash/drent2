@@ -100,10 +100,10 @@ class BookingResource extends JsonResource
             ],
             'booking_details'     => $this->whenLoaded('bookingDetails', function () {
                 return $this->bookingDetails->map(fn($d) => [
-                    'id'                 => $d->id,
-                    'unit_id'            => $d->unit_id,
+                    'id'                 => (int) $d->id,
+                    'unit_id'            => $d->unit_id !== null ? (int) $d->unit_id : null,
                     'unit_placeholder'   => $d->unit_placeholder,
-                    'driver_id'          => $d->driver_id,
+                    'driver_id'          => $d->driver_id !== null ? (int) $d->driver_id : null,
                     'tgl_sewa'           => $d->tgl_sewa,
                     'tgl_kembali'        => $d->tgl_kembali,
                     'harga_mobil'        => (int) $d->harga_mobil,
@@ -111,12 +111,12 @@ class BookingResource extends JsonResource
                     'lama_sewa'          => $d->lama_sewa,
                     'paket_sewa'         => $d->paket_sewa,
                     'pricing_mode'       => $d->pricing_mode,
-                    'pricing_package_id' => $d->pricing_package_id,
+                    'pricing_package_id' => $d->pricing_package_id !== null ? (int) $d->pricing_package_id : null,
                     'harga_all_in'       => $d->harga_all_in ? (int) $d->harga_all_in : null,
                     'detail_type'        => $d->detail_type,
                     'status'             => $d->status,
                     'unit'               => $d->unit ? [
-                        'id'           => $d->unit->id,
+                        'id'           => (int) $d->unit->id,
                         'no_polisi'    => $d->unit->no_polisi,
                         'merk'         => $d->unit->merk,
                         'tipe'         => $d->unit->tipe,
@@ -140,7 +140,7 @@ class BookingResource extends JsonResource
                         ] : null,
                     ] : null,
                     'driver'             => $d->driver ? [
-                        'id'   => $d->driver->id,
+                        'id'   => (int) $d->driver->id,
                         'nama' => $d->driver->nama,
                     ] : null,
                     'costs'              => $d->relationLoaded('costs')
