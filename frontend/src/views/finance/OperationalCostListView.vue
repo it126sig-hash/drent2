@@ -2453,6 +2453,12 @@ onUnmounted(() => {
     width: 100% !important;
   }
 
+  .card-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
   .card-footer .btn-pill {
     width: 100%;
     justify-content: center;

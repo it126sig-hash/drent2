@@ -15,7 +15,7 @@ class PricingPackageResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'          => $this->id,
+            'id'          => (int) $this->id,
             'tenant_id'   => $this->tenant_id,
             'branch_id'   => $this->branch_id,
             'cost_type_id' => $this->cost_type_id,

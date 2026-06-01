@@ -99,6 +99,7 @@ const showEditBookingDialog = ref(false);
 const editingDetailId = ref(null);
 const editingCostId = ref(null);
 const detailDialogMode = ref('detail');
+const detailSaving = ref(false);
 
 // Payment dialog
 const showPaymentDialog = ref(false);
@@ -1589,7 +1590,7 @@ const confirmScheduleConflict = (conflictMessage, onConfirm) => {
   });
 };
 
-const validateUnitSchedule = async (unitId, startDate, endDate, onProceed) => {
+const validateUnitSchedule = async (unitId, startDate, endDate, onProceed, onConflictPrompt) => {
   if (!unitId || !startDate || !endDate) return onProceed();
 
   try {
@@ -1602,6 +1603,7 @@ const validateUnitSchedule = async (unitId, startDate, endDate, onProceed) => {
 
     const response = await checkUnitSchedule(payload);
     if (!response.data.available) {
+      onConflictPrompt?.();
       confirmScheduleConflict(
         'Unit sudah dijadwalkan/sedang berjalan pada tanggal tersebut. Tetap gunakan unit ini?',
         onProceed
@@ -1681,10 +1683,13 @@ const doSubmitDetail = async () => {
     }
   } catch (err) {
     console.error(err);
+  } finally {
+    detailSaving.value = false;
   }
 };
 
 const submitDetail = async () => {
+  if (loading.value || detailSaving.value) return;
   if (detailForm.value.tgl_sewa && detailForm.value.tgl_kembali && detailForm.value.tgl_kembali < detailForm.value.tgl_sewa) {
     toast.add({
       severity: 'warn',
@@ -1723,11 +1728,13 @@ const submitDetail = async () => {
     return;
   }
 
+  detailSaving.value = true;
   await validateUnitSchedule(
     detailForm.value.unit_id,
     detailForm.value.tgl_sewa,
     detailForm.value.tgl_kembali,
-    doSubmitDetail
+    doSubmitDetail,
+    () => { detailSaving.value = false; }
   );
 };
 
@@ -3221,7 +3228,7 @@ const auditUserName = (user) => user?.name || '-';
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4 btn-secondary"
             @click="requestCloseDialog('showDetailDialog')" />
           <Button :label="detailSubmitLabel" icon="pi pi-check" :class="detailSubmitButtonClass" @click="submitDetail"
-            :loading="loading" :disabled="isInitializingDetailDialog" />
+            :loading="loading || detailSaving" :disabled="isInitializingDetailDialog || loading || detailSaving" />
         </div>
       </template>
     </Dialog>

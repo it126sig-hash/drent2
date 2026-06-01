@@ -49,7 +49,7 @@ const bookingBars = computed(() => {
   const result = [];
   const start = startOfDay(parseISO(props.startDate));
   const end = addDays(start, daysCount.value);
-  const visibleUnitIds = new Set(props.units.map(unit => unit.id));
+  const visibleUnitIds = new Set(props.units.map(unit => String(unit.id)));
 
   props.bookings.forEach(booking => {
     const totalTagihan = booking.total_tagihan ?? 0;
@@ -58,7 +58,7 @@ const bookingBars = computed(() => {
     const isLunas = sisaTagihan <= 0 && totalTagihan > 0;
 
     booking.booking_details.forEach(detail => {
-      const targetUnitId = detail.unit_id || `placeholder-${booking.id}-${detail.id || ''}`;
+      const targetUnitId = detail.unit_id ? String(detail.unit_id) : `placeholder-${booking.id}-${detail.id || ''}`;
       if (!visibleUnitIds.has(targetUnitId)) return;
 
       const dStart = startOfDay(parseISO(detail.tgl_sewa));
@@ -230,7 +230,7 @@ const handleBookingClick = (event, bar) => {
           :class="`bar-status-${bar.status}`"
           :style="{
             gridColumn: `${bar.startCol} / span ${bar.span}`,
-            gridRow: units.findIndex(u => u.id === bar.unitId) + 2,
+            gridRow: units.findIndex(u => String(u.id) === bar.unitId) + 2,
             backgroundColor: getStatusConfig(bar.status).bg,
             color: getStatusConfig(bar.status).color,
             borderLeft: `3px solid ${getStatusConfig(bar.status).border}`
