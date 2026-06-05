@@ -217,11 +217,16 @@ class BookingResource extends JsonResource
                     return null;
                 }
 
+                $receivableService = app(\App\Services\ReceivableService::class);
+
                 return [
-                    'id'             => $invoice->id,
-                    'invoice_number' => $invoice->invoice_number,
-                    'status'         => $invoice->status,
-                    'generated_at'   => $invoice->generated_at?->toISOString(),
+                    'id'                     => $invoice->id,
+                    'invoice_number'         => $invoice->invoice_number,
+                    'status'                 => $invoice->status,
+                    'generated_at'           => $invoice->generated_at?->toISOString(),
+                    'sent_at'                => $invoice->sent_at?->toISOString(),
+                    'sent_by_name'           => $invoice->sentBy?->name,
+                    'invoice_reconciliation' => $receivableService->invoiceReconciliation($invoice),
                 ];
             }),
         ];

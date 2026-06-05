@@ -24,6 +24,7 @@ import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue
 import { fetchCities } from '../../api/city'
 import GenerateInvoiceDialog from '../../components/invoices/GenerateInvoiceDialog.vue'
 import InvoicePaymentDialog from '../../components/invoices/InvoicePaymentDialog.vue'
+import InvoiceHistoryDialog from '../../components/invoices/InvoiceHistoryDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -50,7 +51,6 @@ const {
   openPdf,
   addPayment,
   requestVoidPayment,
-  fetchInvoiceHistories,
 } = useReceivable()
 const { accounts, fetchAll: fetchPaymentAccounts } = usePaymentAccount()
 
@@ -70,9 +70,8 @@ const voidPaymentForm = ref({ void_reason: '' })
 const voidPaymentFormErrors = ref({})
 
 const showHistoryDialog = ref(false)
+const historyDialogInvoiceId = ref(null)
 const historyDialogTitle = ref('')
-const invoiceHistories = ref([])
-const historyLoading2 = ref(false)
 
 const cities = ref([])
 const loadingCities = ref(false)
@@ -220,34 +219,12 @@ const buildPaidInvoiceForAmend = (row) => ({
   sent_at: row.paid_invoice_with_delta.sent_at,
 })
 
-const openHistoryDialog = async (invoiceId, invoiceNumber) => {
+const openHistoryDialog = (invoiceId, invoiceNumber) => {
+  historyDialogInvoiceId.value = invoiceId
   historyDialogTitle.value = invoiceNumber || 'Invoice'
-  invoiceHistories.value = []
   showHistoryDialog.value = true
-  historyLoading2.value = true
-  invoiceHistories.value = await fetchInvoiceHistories(invoiceId)
-  historyLoading2.value = false
 }
 
-const historyEventLabel = (eventType) => {
-  const map = {
-    created: 'Invoice Dibuat',
-    sent: 'Invoice Dikirim',
-    amended: 'Nominal Diperbarui',
-    payment_received: 'Pembayaran Diterima',
-    voided: 'Invoice Void',
-  }
-  return map[eventType] || eventType
-}
-
-const historyEventSeverity = (eventType) => {
-  if (eventType === 'created') return 'info'
-  if (eventType === 'sent') return 'secondary'
-  if (eventType === 'amended') return 'warn'
-  if (eventType === 'payment_received') return 'success'
-  if (eventType === 'voided') return 'danger'
-  return 'secondary'
-}
 
 const changeLabel = (recon) => {
   if (!recon?.is_changed) return ''
@@ -1197,45 +1174,11 @@ onMounted(async () => {
         </button>
       </template>
     </Dialog>
-    <Dialog v-model:visible="showHistoryDialog" :header="`History — ${historyDialogTitle}`" modal :style="{ width: 'min(560px, 96vw)' }" class="custom-dialog">
-      <div v-if="historyLoading2" class="loading-strip">
-        <ProgressBar mode="indeterminate" style="height: 4px" />
-      </div>
-      <div v-else-if="!invoiceHistories.length" class="payment-invoice-empty">Belum ada riwayat untuk invoice ini.
-      </div>
-      <div v-else class="invoice-history-timeline">
-        <div v-for="entry in invoiceHistories" :key="entry.id" class="history-entry">
-          <div class="history-dot-col">
-            <span class="history-dot" :class="`history-dot-${historyEventSeverity(entry.event_type)}`"></span>
-            <span class="history-line"></span>
-          </div>
-          <div class="history-content">
-            <div class="history-header">
-              <Tag :value="historyEventLabel(entry.event_type)" :severity="historyEventSeverity(entry.event_type)" class="history-tag" />
-              <span class="history-time text-xs text-secondary">{{ formatDateTime(entry.created_at) }}</span>
-            </div>
-            <div v-if="entry.actor_name" class="text-xs text-secondary mt-1">{{ entry.actor_name }}</div>
-            <div v-if="entry.event_type === 'amended'" class="history-amount-change">
-              <span>{{ formatCurrency(entry.amount_before) }}</span>
-              <i class="pi pi-arrow-right text-xs"></i>
-              <span class="font-semibold">{{ formatCurrency(entry.amount_after) }}</span>
-            </div>
-            <div v-else-if="entry.event_type === 'created' && entry.amount_after" class="text-xs mt-1">
-              Nominal: <strong>{{ formatCurrency(entry.amount_after) }}</strong>
-            </div>
-            <div v-else-if="entry.event_type === 'payment_received'" class="text-xs mt-1 text-positive font-semibold">
-              +{{ formatCurrency(entry.payment_amount) }}
-            </div>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <button class="app-dialog-button app-dialog-button-secondary" @click="showHistoryDialog = false">
-          <i class="pi pi-times"></i>
-          Tutup
-        </button>
-      </template>
-    </Dialog>
+    <InvoiceHistoryDialog
+      v-model="showHistoryDialog"
+      :invoiceId="historyDialogInvoiceId"
+      :invoiceNumber="historyDialogTitle"
+    />
   </div>
 </template>
 

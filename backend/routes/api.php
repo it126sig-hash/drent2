@@ -154,6 +154,7 @@ Route::prefix('v1')->group(function () {
         Route::get('receivables/payment-history', [ReceivableController::class, 'paymentHistory']);
         Route::post('receivables/invoices', [ReceivableController::class, 'generateInvoice']);
         Route::get('invoices', [ReceivableController::class, 'invoices']);
+        Route::get('invoices/{invoice}', [ReceivableController::class, 'showInvoice']);
         Route::get('invoices/{invoice}/pdf', [ReceivableController::class, 'invoicePdf']);
         Route::post('invoices/{invoice}/mark-sent', [ReceivableController::class, 'markInvoiceSent']);
         Route::post('invoices/{invoice}/refresh-amount', [ReceivableController::class, 'refreshInvoiceAmount']);

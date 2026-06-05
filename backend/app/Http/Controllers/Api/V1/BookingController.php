@@ -44,6 +44,7 @@ class BookingController extends Controller
         'refunds',
         'physicalChecks',
         'invoices',
+        'invoices.sentBy',
         'cancellation',
     ];
 

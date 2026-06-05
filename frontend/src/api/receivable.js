@@ -18,6 +18,10 @@ export const getInvoices = (params) => {
   return api.get('/v1/invoices', { params })
 }
 
+export const getInvoice = (invoiceId) => {
+  return api.get(`/v1/invoices/${invoiceId}`)
+}
+
 export const markInvoiceSent = (invoiceId) => {
   return api.post(`/v1/invoices/${invoiceId}/mark-sent`)
 }
@@ -47,6 +51,7 @@ export default {
   getPaymentHistory,
   generateInvoice,
   getInvoices,
+  getInvoice,
   markInvoiceSent,
   refreshInvoiceAmount,
   downloadInvoicePdf,

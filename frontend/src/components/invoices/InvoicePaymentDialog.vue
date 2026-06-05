@@ -133,14 +133,7 @@ const close = () => emit('update:modelValue', false)
 </script>
 
 <template>
-  <Dialog
-    :visible="modelValue"
-    @update:visible="close"
-    header="Pembayaran Invoice"
-    modal
-    :style="{ width: 'min(1180px, 96vw)' }"
-    class="custom-dialog payment-invoice-dialog"
-  >
+  <Dialog :visible="modelValue" @update:visible="close" header="Pembayaran Invoice" modal :style="{ width: 'min(1180px, 96vw)' }" class="custom-dialog payment-invoice-dialog">
     <div class="payment-invoice-modal" v-if="invoice">
       <section class="payment-invoice-preview">
         <div class="payment-invoice-top">
@@ -175,11 +168,7 @@ const close = () => emit('update:modelValue', false)
             <span>Qty</span>
             <span>Total</span>
           </div>
-          <div
-            v-for="(item, index) in selectedInvoiceItems"
-            :key="`${item.type || 'item'}-${item.booking_code || index}-${index}`"
-            class="payment-invoice-table-row"
-          >
+          <div v-for="(item, index) in selectedInvoiceItems" :key="`${item.type || 'item'}-${item.booking_code || index}-${index}`" class="payment-invoice-table-row">
             <span>{{ index + 1 }}</span>
             <div>
               <strong>{{ item.description || item.booking_code || 'Rental Service' }}</strong>
@@ -220,17 +209,15 @@ const close = () => emit('update:modelValue', false)
         <div class="payment-history-panel">
           <div class="section-label">Riwayat Pembayaran</div>
           <template v-if="invoice.payments?.length">
-            <div
-              class="payment-history-row"
-              v-for="payment in invoice.payments"
-              :key="payment.id || `${payment.paid_at}-${payment.amount}`"
-            >
+            <div class="payment-history-row" v-for="payment in invoice.payments" :key="payment.id || `${payment.paid_at}-${payment.amount}`">
               <div>
                 <strong>{{ formatDate(payment.paid_at) }}</strong>
-                <span>{{ payment.payment_account_name || '-' }}</span>
                 <small v-if="payment.source === 'booking'">Pembayaran transaksi</small>
               </div>
-              <strong>{{ formatCurrency(payment.amount) }}</strong>
+              <div class="payment-amount-col">
+                <strong>{{ formatCurrency(payment.amount) }}</strong>
+                <small>{{ payment.payment_account_name || '-' }}</small>
+              </div>
             </div>
           </template>
           <div v-else class="payment-invoice-empty">Belum ada pembayaran.</div>
@@ -240,26 +227,11 @@ const close = () => emit('update:modelValue', false)
           <div class="section-label">Catat Pembayaran</div>
           <fieldset class="form-fieldset">
             <label>Akun Pembayaran</label>
-            <Dropdown
-              v-model="paymentForm.payment_account_id"
-              :options="paymentAccountOptions"
-              optionLabel="label"
-              optionValue="value"
-              placeholder="Pilih akun"
-              class="w-full"
-            />
+            <Dropdown v-model="paymentForm.payment_account_id" :options="paymentAccountOptions" optionLabel="label" optionValue="value" placeholder="Pilih akun" class="w-full" />
           </fieldset>
           <fieldset class="form-fieldset">
             <label>Nominal</label>
-            <InputNumber
-              v-model="paymentForm.amount"
-              mode="currency"
-              currency="IDR"
-              locale="id-ID"
-              :min="1"
-              :max="selectedInvoiceRemaining"
-              class="w-full"
-            />
+            <InputNumber v-model="paymentForm.amount" mode="currency" currency="IDR" locale="id-ID" :min="1" :max="selectedInvoiceRemaining" class="w-full" />
           </fieldset>
           <fieldset class="form-fieldset">
             <label>Tanggal Bayar</label>
@@ -338,7 +310,7 @@ const close = () => emit('update:modelValue', false)
   background: var(--surface-border);
 }
 
-.payment-invoice-meta > div {
+.payment-invoice-meta>div {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -385,13 +357,13 @@ const close = () => emit('update:modelValue', false)
   font-size: 12px;
 }
 
-.payment-invoice-table-row > span,
-.payment-invoice-table-row > strong {
+.payment-invoice-table-row>span,
+.payment-invoice-table-row>strong {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.payment-invoice-table-row > span:first-child {
+.payment-invoice-table-row>span:first-child {
   text-align: center;
 }
 
@@ -456,7 +428,14 @@ const close = () => emit('update:modelValue', false)
   border-bottom: 0;
 }
 
-.payment-history-row > strong {
+.payment-amount-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.payment-amount-col strong {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -501,7 +480,9 @@ const close = () => emit('update:modelValue', false)
   text-align: center;
 }
 
-.text-positive { color: var(--positive, #10b981); }
+.text-positive {
+  color: var(--positive, #10b981);
+}
 
 @media (max-width: 768px) {
   .payment-invoice-modal {
@@ -529,8 +510,8 @@ const close = () => emit('update:modelValue', false)
     gap: 6px;
   }
 
-  .payment-invoice-table-row > span,
-  .payment-invoice-table-row > strong {
+  .payment-invoice-table-row>span,
+  .payment-invoice-table-row>strong {
     text-align: left;
   }
 }

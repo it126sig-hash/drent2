@@ -72,6 +72,14 @@ class ReceivableController extends Controller
         return new InvoiceResource($invoice);
     }
 
+    public function showInvoice(Invoice $invoice): InvoiceResource
+    {
+        $this->authorize('view', $invoice);
+        $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy']);
+
+        return new InvoiceResource($invoice);
+    }
+
     public function invoices(Request $request)
     {
         $this->authorize('viewAny', Invoice::class);
