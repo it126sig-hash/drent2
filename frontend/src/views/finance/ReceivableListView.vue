@@ -21,9 +21,9 @@ import { useReceivable } from '../../composables/useReceivable'
 import { useAuthStore } from '../../stores/auth'
 import { printPaymentReceipt, buildReceiptFromPaymentHistory } from '../../utils/printReceipt'
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue'
-import InvoiceTermsEditor from '../../components/InvoiceTermsEditor.vue'
 import { fetchCities } from '../../api/city'
-import { getInvoiceTermsTemplates } from '../../api/invoiceTermsTemplate'
+import GenerateInvoiceDialog from '../../components/invoices/GenerateInvoiceDialog.vue'
+import InvoicePaymentDialog from '../../components/invoices/InvoicePaymentDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -95,48 +95,6 @@ const loadCities = async () => {
   }
 }
 
-const generateForm = ref({
-  due_date: null,
-  terms_and_conditions: '',
-})
-
-const termsTemplates = ref([])
-const selectedTemplateId = ref(null)
-const loadingTemplates = ref(false)
-
-const termsTemplateOptions = computed(() => {
-  const opts = [{ label: 'Tidak ada template', value: null }]
-  termsTemplates.value.forEach(t => {
-    opts.push({ label: t.name + (t.is_default ? ' (Default)' : ''), value: t.id })
-  })
-  return opts
-})
-
-const loadTermsTemplates = async () => {
-  loadingTemplates.value = true
-  try {
-    const res = await getInvoiceTermsTemplates()
-    termsTemplates.value = res.data.data || []
-  } catch {
-    // silently ignore
-  } finally {
-    loadingTemplates.value = false
-  }
-}
-
-const onTemplateSelect = (templateId) => {
-  if (!templateId) {
-    generateForm.value.terms_and_conditions = ''
-    return
-  }
-  const tpl = termsTemplates.value.find(t => t.id === templateId)
-  if (tpl) generateForm.value.terms_and_conditions = tpl.content
-}
-const paymentForm = ref({
-  payment_account_id: null,
-  amount: null,
-  paid_at: new Date(),
-})
 
 const invoiceStatusOptions = [
   { label: 'Semua', value: null },
@@ -169,44 +127,17 @@ const defaultDueDate = computed(() => {
 
   return dates[0] || null
 })
-const paymentAccountOptions = computed(() => accounts.value.map(account => ({
-  label: `${account.nama_bank} - ${account.nomor_rekening}`,
-  value: account.id,
-})))
-const selectedInvoiceRemaining = computed(() => selectedInvoice.value?.remaining_amount || 0)
-const selectedInvoiceItems = computed(() => {
-  if (selectedInvoice.value?.items?.length) return selectedInvoice.value.items
-
-  return (selectedInvoice.value?.bookings || []).map(booking => ({
-    type: 'booking',
-    description: booking.kode_booking,
-    booking_code: booking.kode_booking,
-    customer_name: booking.customer_name,
-    price: booking.amount,
-    qty: 1,
-    amount: booking.amount,
+const generateInvoiceBookings = computed(() =>
+  selectedReceivableRows.value.map(r => ({
+    id: r.id,
+    kode_booking: r.kode_booking,
+    total: r.total_biaya?.total || 0,
+    due_date: r.rent_period?.tgl_kembali || r.due_date || null,
   }))
-})
-const selectedInvoiceCustomerNames = computed(() => {
-  const names = (selectedInvoice.value?.bookings || [])
-    .map(booking => booking.customer_name)
-    .filter(Boolean)
-
-  return [...new Set(names)].join(', ') || '-'
-})
-const isPaymentSubmitDisabled = computed(() =>
-  actionLoading.value
-  || paymentConfirming.value
-  || paymentSubmitting.value
-  || !paymentForm.value.payment_account_id
-  || !paymentForm.value.amount
 )
 
 const selectedVoidPaymentId = computed(() => bookingPaymentId(selectedVoidPayment.value))
 
-watch(defaultDueDate, (date) => {
-  generateForm.value.due_date = date
-})
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value || 0)
@@ -409,10 +340,7 @@ const switchPaymentHistoryView = (view) => {
 
 const openGenerateDialog = (row = null) => {
   const rows = row ? [row] : selectedRows.value
-
-  if (!rows.length) {
-    return
-  }
+  if (!rows.length) return
 
   const generatedRows = rows.filter(item => item.invoice?.generated)
   if (generatedRows.length) {
@@ -427,32 +355,13 @@ const openGenerateDialog = (row = null) => {
   }
 
   selectedReceivableRows.value = rows
-  generateForm.value.due_date = defaultDueDate.value
-
-  // Auto-load default template content if templates already fetched
-  const defaultTpl = termsTemplates.value.find(t => t.is_default)
-  if (defaultTpl) {
-    selectedTemplateId.value = defaultTpl.id
-    generateForm.value.terms_and_conditions = defaultTpl.content
-  } else {
-    selectedTemplateId.value = null
-    generateForm.value.terms_and_conditions = ''
-  }
-
   showGenerateDialog.value = true
 }
 
-const submitGenerateInvoice = async () => {
-  if (!selectedReceivableRows.value.length) return
-
-  await generate({
-    booking_ids: selectedReceivableRows.value.map(row => row.id),
-    due_date: toApiDate(generateForm.value.due_date),
-    terms_and_conditions: generateForm.value.terms_and_conditions || null,
-  })
+const onInvoiceCreated = async () => {
   selectedRows.value = []
   selectedReceivableRows.value = []
-  showGenerateDialog.value = false
+  await fetchAll(pagination.value.current_page)
   if (activeTab.value === 'invoices') {
     await fetchInvoices(1)
   }
@@ -527,12 +436,15 @@ const openInvoiceView = (invoice) => {
 
 const openPaymentDialog = (invoice) => {
   selectedInvoice.value = invoice
-  paymentForm.value = {
-    payment_account_id: paymentAccountOptions.value[0]?.value || null,
-    amount: invoice.remaining_amount || null,
-    paid_at: new Date(),
-  }
   showPaymentDialog.value = true
+}
+
+const onInvoicePaid = async () => {
+  selectedInvoice.value = null
+  await Promise.all([
+    fetchAll(pagination.value.current_page),
+    fetchInvoices(pagination.value.current_page),
+  ])
 }
 
 const openPaymentFromReceivable = (row) => {
@@ -588,42 +500,6 @@ const openInvoicePdf = async (invoice) => {
   await openPdf(invoice.id, invoice.invoice_number || invoice.number)
 }
 
-const submitInvoicePayment = async () => {
-  if (!selectedInvoice.value || isPaymentSubmitDisabled.value) return
-  paymentConfirming.value = true
-
-  confirm.require({
-    message: `Catat pembayaran ${formatCurrency(paymentForm.value.amount)} untuk invoice ${selectedInvoice.value.invoice_number || selectedInvoice.value.number || ''}?`,
-    header: 'Konfirmasi Pembayaran',
-    icon: 'pi pi-credit-card',
-    acceptLabel: 'Ya, Simpan',
-    rejectLabel: 'Batal',
-    acceptClass: 'app-dialog-button app-dialog-button-primary',
-    rejectClass: 'app-dialog-button app-dialog-button-secondary',
-    accept: async () => {
-      if (paymentSubmitting.value) return
-      paymentConfirming.value = false
-      paymentSubmitting.value = true
-      try {
-        await addPayment(selectedInvoice.value.id, {
-          payment_account_id: paymentForm.value.payment_account_id,
-          amount: paymentForm.value.amount,
-          paid_at: toApiDate(paymentForm.value.paid_at),
-        })
-        showPaymentDialog.value = false
-        selectedInvoice.value = null
-      } finally {
-        paymentSubmitting.value = false
-      }
-    },
-    reject: () => {
-      paymentConfirming.value = false
-    },
-    onHide: () => {
-      paymentConfirming.value = false
-    },
-  })
-}
 
 const bookingPaymentId = (payment) => {
   if (!payment?.id) return null
@@ -709,7 +585,7 @@ onMounted(async () => {
     activeTab.value = 'payments'
   }
 
-  const promises = [fetchPaymentAccounts({ per_page: 100 }), loadCities(), loadTermsTemplates()]
+  const promises = [fetchPaymentAccounts({ per_page: 100 }), loadCities()]
   if (activeTab.value === 'invoices') {
     promises.push(fetchInvoices(1))
   } else if (activeTab.value === 'payments') {
@@ -894,20 +770,65 @@ onMounted(async () => {
         </DataTable>
         <template v-else>
           <div class="mobile-card-list">
-            <article v-for="data in receivables" :key="data.id" class="mobile-card">
-              <div class="card-header">
-                <button class="link-button" @click="router.push(`/bookings/${data.id}`)">{{ data.kode_booking }}</button>
+            <article v-for="data in receivables" :key="data.id" class="mobile-card" :class="rowClass(data)">
+
+              <!-- Head: booking code + invoice status -->
+              <div class="card-head">
+                <div class="card-head-left">
+                  <button class="card-code-btn" @click="router.push(`/bookings/${data.id}`)">
+                    {{ data.kode_booking }}
+                    <i class="pi pi-arrow-up-right"></i>
+                  </button>
+                  <span v-if="data.customer?.status" class="card-customer-tag">{{ data.customer.status }}</span>
+                </div>
                 <BookingStatusBadge :status="(data.invoice?.number || data.paid_invoice_with_delta) ? 'generated' : 'not_generated'" :text="data.invoice?.number || data.paid_invoice_with_delta?.number || 'Belum Invoice'" />
               </div>
-              <div class="card-body">
-                <div><span class="field-hint">Konsumen</span> {{ data.customer?.nama || '-' }}</div>
-                <div><span class="field-hint">Kendaraan</span> {{ data.vehicle?.jenis || '-' }} · {{ data.vehicle?.no_polisi || '-' }}</div>
-                <div><span class="field-hint">Periode</span> {{ formatDate(data.rent_period?.tgl_sewa) }} s/d {{ formatDate(data.rent_period?.tgl_kembali) }}</div>
-                <div><span class="field-hint">Total</span> <span class="font-mono-numeric">{{ formatCurrency(data.paid_invoice_with_delta ? previousInvoiceAmount(data.paid_invoice_with_delta.reconciliation) : data.total_biaya?.total) }}</span></div>
-                <div v-if="data.paid_invoice_with_delta"><span class="field-hint">Perubahan</span> <span class="text-warn">{{ changeLabel(data.paid_invoice_with_delta.reconciliation) }}</span></div>
-                <div><span class="field-hint">Sisa</span> <span class="font-mono-numeric text-info">{{ formatCurrency(data.total_biaya?.sisa) }}</span></div>
-                <div v-if="data.invoice?.generated"><span class="field-hint">Due</span> {{ formatDate(data.invoice?.due_date || data.due_date) }}</div>
+
+              <!-- Customer name — primary title -->
+              <div class="card-title">{{ data.customer?.nama || '-' }}</div>
+
+              <!-- Meta: vehicle + period -->
+              <div class="card-meta">
+                <div class="card-meta-row">
+                  <i class="pi pi-car card-meta-icon"></i>
+                  <span>{{ data.vehicle?.jenis || '-' }}</span>
+                  <span class="card-plate">{{ data.vehicle?.no_polisi || '-' }}</span>
+                </div>
+                <div class="card-meta-row">
+                  <i class="pi pi-calendar card-meta-icon"></i>
+                  <span class="font-mono-numeric">{{ formatDate(data.rent_period?.tgl_sewa) }}</span>
+                  <span class="card-meta-sep">—</span>
+                  <span class="font-mono-numeric">{{ formatDate(data.rent_period?.tgl_kembali) }}</span>
+                </div>
               </div>
+
+              <!-- Warnings: invoice change + due date -->
+              <div v-if="hasInvoiceChange(data.invoice) || data.paid_invoice_with_delta || (data.invoice?.generated && (getInvoiceDueWarning(data.invoice, data.customer?.status) || data.invoice?.due_date))" class="card-warnings">
+                <Tag v-if="hasInvoiceChange(data.invoice)" :value="invoiceChangeLabel(data.invoice)" severity="warn" />
+                <Tag v-else-if="data.paid_invoice_with_delta" :value="changeLabel(data.paid_invoice_with_delta.reconciliation)" severity="warn" />
+                <div v-if="data.invoice?.generated" class="card-due-row">
+                  <Tag v-if="getInvoiceDueWarning(data.invoice, data.customer?.status)" :value="getInvoiceDueWarning(data.invoice, data.customer?.status).label" :severity="getInvoiceDueWarning(data.invoice, data.customer?.status).severity" />
+                  <span class="card-due-text">Due: {{ formatDate(data.invoice?.due_date || data.due_date) }}</span>
+                </div>
+              </div>
+
+              <!-- Amounts: Total / Dibayar / Sisa -->
+              <div class="card-amounts">
+                <div class="card-amount-item">
+                  <span>Total</span>
+                  <strong>{{ formatCurrency(data.paid_invoice_with_delta ? previousInvoiceAmount(data.paid_invoice_with_delta.reconciliation) : data.total_biaya?.total) }}</strong>
+                </div>
+                <div class="card-amount-item">
+                  <span>Dibayar</span>
+                  <strong class="text-positive">{{ formatCurrency(data.total_biaya?.sudah_bayar) }}</strong>
+                </div>
+                <div class="card-amount-item card-amount-highlight">
+                  <span>Sisa</span>
+                  <strong class="text-info">{{ formatCurrency(data.total_biaya?.sisa) }}</strong>
+                </div>
+              </div>
+
+              <!-- Footer: actions -->
               <div class="card-footer">
                 <button v-if="data.invoice?.generated && canRefreshInvoice(data.invoice)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data.invoice)"><i class="pi pi-refresh"></i> Update Invoice</button>
                 <button v-else-if="data.invoice?.generated" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
@@ -919,6 +840,7 @@ onMounted(async () => {
                   <button class="action-btn" title="Lihat history perubahan" @click="openHistoryDialog(data.invoice.id, data.invoice.number)"><i class="pi pi-history"></i></button>
                 </span>
               </div>
+
             </article>
             <div v-if="!loading && !receivables.length" class="empty-state"><p>Belum ada data piutang.</p></div>
           </div>
@@ -1003,20 +925,51 @@ onMounted(async () => {
         </DataTable>
         <template v-else>
           <div class="mobile-card-list">
-            <article v-for="data in invoices" :key="data.id" class="mobile-card">
-              <div class="card-header">
-                <strong class="font-bold">{{ data.invoice_number }}</strong>
+            <article v-for="data in invoices" :key="data.id" class="mobile-card" :class="rowClass(data)">
+
+              <!-- Head: invoice number + status -->
+              <div class="card-head">
+                <div class="card-head-left">
+                  <span class="card-invoice-num">{{ data.invoice_number }}</span>
+                  <Tag v-if="hasInvoiceChange(data)" :value="invoiceChangeLabel(data)" severity="warn" style="font-size:10px" />
+                </div>
                 <Tag :value="data.status" :severity="invoiceSeverity(data.status)" />
               </div>
-              <div class="card-body">
-                <div class="booking-list">
-                  <button v-for="booking in data.bookings" :key="booking.id" class="link-button text-xs flex" @click="router.push(`/bookings/${booking.id}`)">{{ booking.kode_booking }} - {{ booking.customer_name || '-' }}</button>
-                </div>
-                <div><span class="field-hint">Nilai</span> <span class="font-mono-numeric">{{ formatCurrency(data.total_amount) }}</span></div>
-                <div><span class="field-hint">Dibayar</span> <span class="font-mono-numeric text-positive">{{ formatCurrency(data.paid_amount) }}</span></div>
-                <div><span class="field-hint">Sisa</span> <span class="font-mono-numeric text-info">{{ formatCurrency(data.remaining_amount) }}</span></div>
-                <div><span class="field-hint">Due</span> {{ formatDate(data.due_date) }}</div>
+
+              <!-- Booking links -->
+              <div class="card-bookings">
+                <button v-for="booking in data.bookings" :key="booking.id" class="card-booking-link" @click="router.push(`/bookings/${booking.id}`)">
+                  <i class="pi pi-hashtag card-meta-icon"></i>
+                  <span class="card-booking-code">{{ booking.kode_booking }}</span>
+                  <span v-if="booking.customer_name" class="card-booking-customer">{{ booking.customer_name }}</span>
+                </button>
               </div>
+
+              <!-- Due date + warning -->
+              <div v-if="data.due_date" class="card-warnings">
+                <div class="card-due-row">
+                  <Tag v-if="getInvoiceDueWarning(data, data.bookings?.[0]?.customer_status)" :value="getInvoiceDueWarning(data, data.bookings?.[0]?.customer_status).label" :severity="getInvoiceDueWarning(data, data.bookings?.[0]?.customer_status).severity" />
+                  <span class="card-due-text">Due: {{ formatDate(data.due_date) }}</span>
+                </div>
+              </div>
+
+              <!-- Amounts: Nilai / Dibayar / Sisa -->
+              <div class="card-amounts">
+                <div class="card-amount-item">
+                  <span>Nilai</span>
+                  <strong>{{ formatCurrency(data.total_amount) }}</strong>
+                </div>
+                <div class="card-amount-item">
+                  <span>Dibayar</span>
+                  <strong class="text-positive">{{ formatCurrency(data.paid_amount) }}</strong>
+                </div>
+                <div class="card-amount-item card-amount-highlight">
+                  <span>Sisa</span>
+                  <strong class="text-info">{{ formatCurrency(data.remaining_amount) }}</strong>
+                </div>
+              </div>
+
+              <!-- Footer: actions -->
               <div class="card-footer">
                 <button v-if="canRefreshInvoice(data)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data)"><i class="pi pi-refresh"></i> Update Invoice</button>
                 <button v-else class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
@@ -1027,6 +980,7 @@ onMounted(async () => {
                   <button class="action-btn" title="Lihat history perubahan" @click="openHistoryDialog(data.id, data.invoice_number)"><i class="pi pi-history"></i></button>
                 </span>
               </div>
+
             </article>
             <div v-if="!loading && !invoices.length" class="empty-state"><p>Belum ada invoice.</p></div>
           </div>
@@ -1198,170 +1152,17 @@ onMounted(async () => {
       </section>
     </div>
 
-    <Dialog v-model:visible="showGenerateDialog" header="Buat Invoice" modal :style="{ width: 'min(640px, 96vw)' }" class="custom-dialog">
-      <div class="dialog-stack">
-        <div v-if="isCombinedInvoice" class="warning-panel">
-          <i class="pi pi-exclamation-triangle"></i>
-          <span>Beberapa booking terpilih akan digabungkan menjadi satu invoice.</span>
-        </div>
-        <div class="app-muted-panel">
-          <div class="summary-row">
-            <span>Jumlah booking</span>
-            <strong>{{ selectedReceivableRows.length }}</strong>
-          </div>
-          <div class="summary-row">
-            <span>Booking</span>
-            <strong>{{ selectedBookingCodes || '-' }}</strong>
-          </div>
-          <div class="summary-row">
-            <span>Total invoice</span>
-            <strong>{{ formatCurrency(selectedTotal) }}</strong>
-          </div>
-        </div>
-        <fieldset class="form-fieldset">
-          <label>Due Date Invoice</label>
-          <DatePicker v-model="generateForm.due_date" dateFormat="dd M yy" class="w-full" showIcon />
-          <span class="field-hint">Otomatis dari ketentuan pelanggan. Untuk invoice gabungan, sistem memakai due date
-            paling
-            akhir dari booking terpilih.</span>
-        </fieldset>
+    <GenerateInvoiceDialog
+      v-model="showGenerateDialog"
+      :bookings="generateInvoiceBookings"
+      @created="onInvoiceCreated"
+    />
 
-        <fieldset class="form-fieldset">
-          <label>Syarat &amp; Ketentuan</label>
-          <Dropdown v-model="selectedTemplateId" :options="termsTemplateOptions" optionLabel="label" optionValue="value" placeholder="Pilih template..." class="w-full" style="margin-bottom: 8px" :loading="loadingTemplates" @update:modelValue="onTemplateSelect" />
-          <InvoiceTermsEditor v-model="generateForm.terms_and_conditions" placeholder="Tulis syarat & ketentuan invoice di sini..." />
-          <span class="field-hint">Opsional. Pilih template lalu edit sesuai kebutuhan, atau tulis langsung.</span>
-        </fieldset>
-      </div>
-      <template #footer>
-        <button class="app-dialog-button app-dialog-button-secondary" @click="showGenerateDialog = false">
-          <i class="pi pi-times"></i>
-          Batal
-        </button>
-        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading" @click="submitGenerateInvoice">
-          <i class="pi pi-check"></i>
-          Buat Invoice
-        </button>
-      </template>
-    </Dialog>
-
-    <Dialog v-model:visible="showPaymentDialog" header="Pembayaran Invoice" modal :style="{ width: 'min(1180px, 96vw)' }" class="custom-dialog payment-invoice-dialog">
-      <div class="payment-invoice-modal" v-if="selectedInvoice">
-        <section class="payment-invoice-preview">
-          <div class="payment-invoice-top">
-            <div>
-              <div class="payment-invoice-kicker">INVOICE</div>
-              <h2>{{ selectedInvoice.invoice_number || selectedInvoice.number }}</h2>
-              <p>{{ selectedInvoiceCustomerNames }}</p>
-            </div>
-            <Tag :value="selectedInvoice.status" :severity="invoiceSeverity(selectedInvoice.status)" />
-          </div>
-
-          <div class="payment-invoice-meta">
-            <div>
-              <span>Tanggal Invoice</span>
-              <strong>{{ formatDate(selectedInvoice.generated_at) }}</strong>
-            </div>
-            <div>
-              <span>Due Date</span>
-              <strong>{{ formatDate(selectedInvoice.due_date) }}</strong>
-            </div>
-            <div>
-              <span>Terakhir Kirim</span>
-              <strong>{{ formatDateTime(selectedInvoice.sent_at) }}</strong>
-            </div>
-          </div>
-
-          <div class="payment-invoice-table">
-            <div class="payment-invoice-table-header">
-              <span>No.</span>
-              <span>Item Description</span>
-              <span>Price</span>
-              <span>Qty</span>
-              <span>Total</span>
-            </div>
-            <div v-for="(item, index) in selectedInvoiceItems" :key="`${item.type || 'item'}-${item.booking_code || index}-${index}`" class="payment-invoice-table-row">
-              <span>{{ index + 1 }}</span>
-              <div>
-                <strong>{{ item.description || item.booking_code || 'Rental Service' }}</strong>
-                <small v-if="item.booking_code && item.description !== item.booking_code">{{ item.booking_code
-                }}</small>
-                <small v-if="item.label">{{ item.label }}<template v-if="item.note">: {{ item.note }}</template></small>
-                <small v-if="item.vehicle_name || item.vehicle_plate">
-                  {{ item.vehicle_name || 'Rental Service' }} <span v-if="item.vehicle_plate" class="font-mono-numeric">({{
-                    item.vehicle_plate }})</span>
-                </small>
-                <small v-if="item.rental_start_date || item.rental_end_date">
-                  {{ formatDate(item.rental_start_date) }} - {{ formatDate(item.rental_end_date) }}
-                </small>
-              </div>
-              <span>{{ formatCurrency(item.price ?? item.amount) }}</span>
-              <span>{{ item.qty || 1 }}</span>
-              <strong>{{ formatCurrency(item.amount) }}</strong>
-            </div>
-            <div v-if="!selectedInvoiceItems.length" class="payment-invoice-empty">Belum ada detail item invoice.</div>
-          </div>
-        </section>
-
-        <aside class="payment-invoice-side">
-          <div class="payment-total-panel">
-            <div class="payment-total-row">
-              <span>Sub Total</span>
-              <strong>{{ formatCurrency(selectedInvoice.total_amount) }}</strong>
-            </div>
-            <div class="payment-total-row">
-              <span>Paid</span>
-              <strong class="text-positive">{{ formatCurrency(selectedInvoice.paid_amount) }}</strong>
-            </div>
-            <div class="payment-total-row grand">
-              <span>Remaining</span>
-              <strong>{{ formatCurrency(selectedInvoiceRemaining) }}</strong>
-            </div>
-          </div>
-
-          <div class="payment-history-panel">
-            <div class="section-label">Riwayat Pembayaran</div>
-            <template v-if="selectedInvoice.payments?.length">
-              <div class="payment-history-row" v-for="payment in selectedInvoice.payments" :key="payment.id || `${payment.paid_at}-${payment.amount}`">
-                <div>
-                  <strong>{{ formatDate(payment.paid_at) }}</strong>
-                  <span>{{ payment.payment_account_name || '-' }}</span>
-                  <small v-if="payment.source === 'booking'">Pembayaran transaksi</small>
-                </div>
-                <strong>{{ formatCurrency(payment.amount) }}</strong>
-              </div>
-            </template>
-            <div v-else class="payment-invoice-empty">Belum ada pembayaran.</div>
-          </div>
-
-          <div class="payment-form-panel">
-            <div class="section-label">Catat Pembayaran</div>
-            <fieldset class="form-fieldset">
-              <label>Akun Pembayaran</label>
-              <Dropdown v-model="paymentForm.payment_account_id" :options="paymentAccountOptions" optionLabel="label" optionValue="value" placeholder="Pilih akun" class="w-full" />
-            </fieldset>
-            <fieldset class="form-fieldset">
-              <label>Nominal</label>
-              <InputNumber v-model="paymentForm.amount" mode="currency" currency="IDR" locale="id-ID" :min="1" :max="selectedInvoiceRemaining" class="w-full" />
-            </fieldset>
-            <fieldset class="form-fieldset">
-              <label>Tanggal Bayar</label>
-              <DatePicker v-model="paymentForm.paid_at" dateFormat="dd M yy" class="w-full" showIcon />
-            </fieldset>
-          </div>
-        </aside>
-      </div>
-      <template #footer>
-        <button class="app-dialog-button app-dialog-button-secondary" @click="showPaymentDialog = false">
-          <i class="pi pi-times"></i>
-          Batal
-        </button>
-        <button class="app-dialog-button app-dialog-button-primary" :disabled="isPaymentSubmitDisabled" @click="submitInvoicePayment">
-          <i class="pi pi-check"></i>
-          Simpan Pembayaran
-        </button>
-      </template>
-    </Dialog>
+    <InvoicePaymentDialog
+      v-model="showPaymentDialog"
+      :invoice="selectedInvoice"
+      @paid="onInvoicePaid"
+    />
 
     <Dialog v-model:visible="showVoidPaymentDialog" header="Request Void Pembayaran" modal :style="{ width: '460px' }" class="custom-dialog">
       <div class="dialog-stack">
@@ -1439,9 +1240,240 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.mobile-card-list .card-footer { flex-wrap: wrap; gap: var(--space-sm); }
-.mobile-card-list .empty-state { padding: 32px 0; text-align: center; color: var(--text-tertiary); }
-.mobile-card-list .booking-list { display: flex; flex-direction: column; gap: 2px; }
+/* === Mobile Card List === */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.mobile-card {
+  background: var(--surface-default);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  box-shadow: var(--shadow-tile);
+  overflow: hidden;
+}
+
+.mobile-card.row-due-warning {
+  border-left: 3px solid var(--warning);
+}
+
+.mobile-card.row-due-overdue {
+  border-left: 3px solid var(--negative);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 8px;
+}
+
+.card-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.card-code-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  touch-action: manipulation;
+}
+
+.card-code-btn i {
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+.card-customer-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card-invoice-num {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.card-title {
+  padding: 0 14px 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--card-bg);
+  border-top: 1px solid var(--surface-border);
+}
+
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.card-meta-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  width: 14px;
+}
+
+.card-plate {
+  display: inline-flex;
+  padding: 1px 6px;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  background: var(--surface-default);
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  letter-spacing: 0.03em;
+}
+
+.card-meta-sep {
+  color: var(--text-tertiary);
+}
+
+.card-bookings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.card-booking-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  touch-action: manipulation;
+}
+
+.card-booking-code {
+  font-size: 12px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--primary);
+}
+
+.card-booking-customer {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.card-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--surface-border);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.card-due-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card-due-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.card-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--surface-border);
+  border-top: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.card-amount-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  background: var(--card-bg);
+}
+
+.card-amount-item span {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.card-amount-item strong {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-amount-highlight {
+  background: var(--surface-default);
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.mobile-card-list .empty-state {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--text-tertiary);
+}
 .paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
 .table-actions {
   display: flex;

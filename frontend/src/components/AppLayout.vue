@@ -48,7 +48,8 @@ const menuSections = [
   {
     label: 'Transaksi',
     items: [
-      { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings', permission: 'booking.view' },
+      { label: 'Booking', icon: 'pi pi-calendar', route: '/bookings', permission: 'booking.view', exact: true },
+      { label: 'Pembatalan Booking', icon: 'pi pi-ban', route: '/bookings/cancellations', permission: 'booking.view' },
       { label: 'Request Supervisor', icon: 'pi pi-inbox', route: '/supervisor/requests', permission: 'booking.supervisor_request' },
       { label: 'Riwayat Request Saya', icon: 'pi pi-history', route: '/my-requests' },
       { label: 'Cek Fisik', icon: 'pi pi-check-square', route: '/physical-checks', permission: 'physical_check.view' },
@@ -103,12 +104,18 @@ const menuSections = [
 
 const normalizePath = (path) => path.replace(/\/+$/, '') || '/'
 
-const isMenuItemActive = (targetRoute) => {
+const isMenuItemActive = (itemOrPath) => {
   const currentPath = normalizePath(route.path)
-  const itemPath = normalizePath(targetRoute)
+  const isObject = typeof itemOrPath === 'object' && itemOrPath !== null
+  const itemPath = normalizePath(isObject ? itemOrPath.route : itemOrPath)
+  const exact = isObject ? !!itemOrPath.exact : false
 
   if (itemPath === '/') {
     return currentPath === '/'
+  }
+
+  if (exact) {
+    return currentPath === itemPath
   }
 
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`)
@@ -173,7 +180,7 @@ const filteredMenuSections = computed(() => {
               :key="item.route" 
               :to="item.route" 
               class="nav-item"
-              :class="{ active: isMenuItemActive(item.route) }"
+              :class="{ active: isMenuItemActive(item) }"
               v-tooltip.right="isSidebarCompact ? item.label : null"
             >
               <i :class="item.icon"></i>

@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\V1\CustomerUsageReportController;
 use App\Http\Controllers\Api\V1\PaymentAccountTransactionController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\InvoiceTermsTemplateController;
+use App\Http\Controllers\Api\V1\BookingCancellationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -134,6 +135,11 @@ Route::prefix('v1')->group(function () {
         // Refunds (C2)
         Route::get('bookings/{booking}/refunds', [RefundController::class, 'index']);
         Route::post('bookings/{booking}/refund', [RefundController::class, 'store']);
+
+        // Booking Cancellations
+        Route::get('booking-cancellations', [BookingCancellationController::class, 'index']);
+        Route::get('booking-cancellations/{bookingCancellation}', [BookingCancellationController::class, 'show']);
+        Route::post('booking-cancellations/{bookingCancellation}/pay-refund', [BookingCancellationController::class, 'payRefund']);
 
         // Receivables & Invoices
         Route::get('reports/monthly-finance', MonthlyFinanceReportController::class);

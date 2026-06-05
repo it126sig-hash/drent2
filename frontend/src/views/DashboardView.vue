@@ -1275,9 +1275,21 @@ onMounted(fetchData)
   }
 
   .kpi-grid,
-  .alert-grid,
-  .finance-grid {
-    grid-template-columns: 1fr;
+  .alert-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpi-tile {
+    padding: 12px;
+  }
+
+  .kpi-body strong {
+    font-size: 17px;
+  }
+
+  .kpi-icon {
+    width: 30px;
+    height: 30px;
   }
 
   .booking-row {

@@ -188,4 +188,9 @@ class Booking extends Model
     {
         return $this->hasMany(RentToRentDebt::class);
     }
+
+    public function cancellation()
+    {
+        return $this->hasOne(BookingCancellation::class);
+    }
 }

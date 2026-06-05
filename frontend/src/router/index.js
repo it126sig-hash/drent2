@@ -150,6 +150,11 @@ const router = createRouter({
           meta: { permission: "booking.supervisor_request", keepAlive: false },
         },
         {
+          path: "/bookings/cancellations",
+          name: "BookingCancellationList",
+          component: () => import("../views/bookings/BookingCancellationListView.vue"),
+        },
+        {
           path: "/bookings/create",
           name: "BookingCreate",
           component: () => import("../views/bookings/BookingCreateView.vue"),

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useSwipe } from '@vueuse/core'
 import { format } from 'date-fns'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -62,6 +63,22 @@ const completeOperationalNote = ref('')
 const revertOperationalReason = ref('')
 const detailLoadingFundId = ref(null)
 const detailDialogTab = ref('selected')
+const swipeTarget = ref(null)
+const transitionName = ref('slide-left')
+
+useSwipe(swipeTarget, {
+  threshold: 60,
+  onSwipeEnd(_e, direction) {
+    if (!isMobile.value) return
+    const tabs = ['active', 'completed', 'history']
+    const idx = tabs.indexOf(activeTab.value)
+    if (direction === 'left' && idx < tabs.length - 1) {
+      switchTab(tabs[idx + 1])
+    } else if (direction === 'right' && idx > 0) {
+      switchTab(tabs[idx - 1])
+    }
+  },
+})
 
 const fundForm = ref({
   booking_detail_id: null,
@@ -588,6 +605,11 @@ const onPage = (event) => {
 }
 
 const switchTab = (tab) => {
+  const tabs = ['active', 'completed', 'history']
+  const nextIdx = tabs.indexOf(tab)
+  const currentIdx = tabs.indexOf(activeTab.value)
+  transitionName.value = nextIdx >= currentIdx ? 'slide-left' : 'slide-right'
+
   activeTab.value = tab
   pagination.value.current_page = 1
 
@@ -892,11 +914,12 @@ onUnmounted(() => {
               {{ tab.label }}
             </button>
           </div>
+          <p v-if="isMobile" class="swipe-hint">← Geser untuk pindah tab →</p>
         </div>
       </div>
     </div>
 
-    <div class="list-tab-fill operational-list-tab">
+    <div ref="swipeTarget" class="list-tab-fill operational-list-tab">
       <div class="filter-bar surface-card">
         <div class="filter-groups">
           <div class="filter-group filter-group-wide">
@@ -942,6 +965,8 @@ onUnmounted(() => {
       <ProgressBar v-if="loading" mode="indeterminate" style="height: 4px" class="mb-4" />
       <ProgressBar v-if="detailLoadingFundId" mode="indeterminate" style="height: 4px" class="mb-4 detail-loading-strip" />
 
+      <Transition :name="transitionName" mode="out-in">
+        <div :key="activeTab + (isMobile ? '-m' : '-d')" class="tab-content-wrapper">
       <div v-if="!isMobile && activeTab !== 'history'" class="table-shell operational-table-shell">
         <DataTable :value="operationalRows" dataKey="row_key" rowGroupMode="rowspan" groupRowsBy="booking_group_id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="operationalRowClass">
           <Column field="booking_group_id" header="Booking" style="min-width: 10rem">
@@ -1136,44 +1161,59 @@ onUnmounted(() => {
       </div>
 
       <div v-else-if="activeTab !== 'history'" class="mobile-card-list">
-        <article v-for="booking in bookings" :key="booking.id" class="app-card operational-card">
-          <div class="card-header">
-            <div>
-              <div class="booking-code-badge">{{ booking.kode_booking }}</div>
-              <p class="text-xs text-secondary mt-2">{{ booking.customer?.nama || '-' }}</p>
+        <article v-for="booking in bookings" :key="booking.id" class="mobile-card">
+
+          <!-- Head: booking code + status -->
+          <div class="card-head">
+            <div class="card-head-left">
+              <button class="card-code-btn" @click="router.push(`/bookings/${booking.id}`)">
+                {{ booking.kode_booking }}
+                <i class="pi pi-arrow-up-right"></i>
+              </button>
             </div>
             <BookingStatusBadge :status="booking.status" />
           </div>
-          <div class="card-body">
-            <div class="info-row">
-              <span>Rencana</span>
-              <strong>{{ formatCurrency(booking.summary.booking_operational_total + booking.summary.all_in_total)
-              }}</strong>
+
+          <!-- Customer name -->
+          <div class="card-title">{{ booking.customer?.nama || '-' }}</div>
+
+          <!-- Warnings: pending ACC tags -->
+          <div v-if="hasPendingDriverAcceptance(booking) || hasPendingDriverReceipts(booking)" class="card-warnings">
+            <Tag v-if="hasPendingDriverAcceptance(booking)" value="Belum di ACC driver" severity="warn" />
+            <Tag v-if="hasPendingDriverReceipts(booking)" value="Request ACC" severity="warn" />
+          </div>
+
+          <!-- Amounts: Deposit / Realisasi / Kembali -->
+          <div class="card-amounts">
+            <div class="card-amount-item">
+              <span>Deposit</span>
+              <strong>{{ formatCurrency(booking.summary.finance_disbursed_total) }}</strong>
             </div>
-            <div class="info-row">
-              <span>Deposit OP</span>
-              <div class="mobile-amount-note">
-                <strong>{{ formatCurrency(booking.summary.finance_disbursed_total) }}</strong>
-                <Tag v-if="hasPendingDriverAcceptance(booking)" value="Belum di ACC driver" severity="warn" />
-              </div>
+            <div class="card-amount-item">
+              <span>Realisasi</span>
+              <strong>{{ formatCurrency(booking.summary.approved_reimbursement_total || booking.summary.approved_expense_total) }}</strong>
             </div>
-            <div class="info-row">
-              <span>Gaji driver</span>
-              <strong>{{ formatCurrency(booking.summary.driver_salary_total) }}</strong>
-            </div>
-            <div class="info-row">
-              <span>Dana reimburs</span>
-              <div class="mobile-amount-note">
-                <strong>{{ formatCurrency(booking.summary.approved_reimbursement_total ||
-                  booking.summary.approved_expense_total) }}</strong>
-                <Tag v-if="hasPendingDriverReceipts(booking)" value="Request ACC" severity="warn" />
-              </div>
-            </div>
-            <div class="info-row">
-              <span>Pengembalian</span>
-              <strong>{{ formatCurrency(booking.summary.approved_return_total) }}</strong>
+            <div class="card-amount-item card-amount-highlight">
+              <span>Kembali</span>
+              <strong class="text-positive">{{ formatCurrency(booking.summary.approved_return_total) }}</strong>
             </div>
           </div>
+
+          <!-- Meta: rencana + gaji -->
+          <div class="card-meta">
+            <div class="card-meta-row">
+              <i class="pi pi-file card-meta-icon"></i>
+              <span>Rencana:</span>
+              <span style="font-weight:700;font-variant-numeric:tabular-nums;">{{ formatCurrency(booking.summary.booking_operational_total + booking.summary.all_in_total) }}</span>
+            </div>
+            <div class="card-meta-row">
+              <i class="pi pi-money-bill card-meta-icon"></i>
+              <span>Gaji driver:</span>
+              <span style="font-weight:700;font-variant-numeric:tabular-nums;">{{ formatCurrency(booking.summary.driver_salary_total) }}</span>
+            </div>
+          </div>
+
+          <!-- Footer: actions -->
           <div class="card-footer">
             <button v-if="activeTab !== 'completed'" class="btn-pill btn-primary btn-pill-compact" @click="openFundDialog(booking)">
               <i class="pi pi-plus"></i>
@@ -1195,7 +1235,7 @@ onUnmounted(() => {
               <i class="pi pi-check"></i>
               Tandai selesai
             </button>
-            <span v-if="booking.operational_revert_status === 'pending'" class="status-badge warning mt-2 block text-center">
+            <span v-if="booking.operational_revert_status === 'pending'" class="status-badge warning text-center" style="padding:6px 0;font-size:12px;">
               Menunggu ACC
             </span>
             <button v-else-if="activeTab === 'completed'" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="handleRevertOperational(booking)">
@@ -1203,29 +1243,55 @@ onUnmounted(() => {
               Aktifkan Kembali
             </button>
           </div>
+
         </article>
       </div>
 
       <div v-else class="mobile-card-list">
-        <article v-for="item in history" :key="item.id" class="app-card operational-card">
-          <div class="card-header">
-            <div>
-              <Tag :value="item.label" :severity="historyKindSeverity(item)" />
-              <p class="text-xs text-secondary mt-2">{{ item.booking_code || '-' }}</p>
+        <article v-for="item in history" :key="item.id" class="mobile-card">
+
+          <!-- Head: booking code + kind tag -->
+          <div class="card-head">
+            <div class="card-head-left">
+              <span class="card-invoice-num">{{ item.booking_code || '-' }}</span>
             </div>
-            <strong>{{ formatCurrency(item.amount) }}</strong>
+            <Tag :value="item.label" :severity="historyKindSeverity(item)" />
           </div>
-          <div class="card-body">
-            <div class="info-row"><span>Driver</span><strong>{{ item.driver_name || '-' }}</strong></div>
-            <div class="info-row"><span>Rekening</span><strong>{{ item.payment_account?.nama_bank || '-' }}</strong>
+
+          <!-- Meta: driver + rekening + tanggal -->
+          <div class="card-meta">
+            <div class="card-meta-row">
+              <i class="pi pi-user card-meta-icon"></i>
+              <span>{{ item.driver_name || item.customer_name || '-' }}</span>
             </div>
-            <div class="info-row"><span>Arus</span><strong :class="historyDirectionClass(item)">{{
-              historyDirectionLabel(item)
-                }}</strong></div>
-            <div class="info-row"><span>Tanggal</span><strong>{{ formatDateTime(item.happened_at) }}</strong></div>
+            <div v-if="item.payment_account?.nama_bank" class="card-meta-row">
+              <i class="pi pi-credit-card card-meta-icon"></i>
+              <span>{{ item.payment_account.nama_bank }}</span>
+              <span v-if="item.payment_account?.nomor_rekening" class="card-meta-sep">·</span>
+              <span v-if="item.payment_account?.nomor_rekening" class="font-mono-numeric">{{ item.payment_account.nomor_rekening }}</span>
+            </div>
+            <div class="card-meta-row">
+              <i class="pi pi-clock card-meta-icon"></i>
+              <span>{{ formatDateTime(item.happened_at) }}</span>
+            </div>
           </div>
+
+          <!-- Amounts: nominal + arus (2 kolom) -->
+          <div class="card-amounts card-amounts-2col">
+            <div class="card-amount-item card-amount-highlight">
+              <span>Nominal</span>
+              <strong>{{ formatCurrency(item.amount) }}</strong>
+            </div>
+            <div class="card-amount-item">
+              <span>Arus</span>
+              <strong :class="historyDirectionClass(item)">{{ historyDirectionLabel(item) }}</strong>
+            </div>
+          </div>
+
         </article>
       </div>
+        </div>
+      </Transition>
     </div>
 
     <Dialog v-model:visible="showFundDialog" :header="fundDialogTitle" modal :style="{ width: 'min(1080px, 96vw)' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog deposit-dialog']">
@@ -2354,30 +2420,203 @@ onUnmounted(() => {
   padding: 0;
 }
 
+.swipe-hint {
+  margin: 6px 0 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-align: center;
+}
+
+.tab-content-wrapper {
+  min-height: 0;
+}
+
+.list-tab-fill.operational-list-tab {
+  overflow-x: hidden;
+}
+
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.26s ease;
+}
+
+.slide-left-enter-from {
+  transform: translateX(28px);
+  opacity: 0;
+}
+
+.slide-left-leave-to {
+  transform: translateX(-20px) scale(0.97);
+  opacity: 0;
+}
+
+.slide-right-enter-from {
+  transform: translateX(-28px);
+  opacity: 0;
+}
+
+.slide-right-leave-to {
+  transform: translateX(20px) scale(0.97);
+  opacity: 0;
+}
+
 .mobile-card-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: 10px;
   padding-bottom: 80px;
 }
 
-.operational-card {
-  padding: var(--space-md);
+/* === Mobile Card System === */
+.mobile-card {
+  background: var(--surface-default);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  box-shadow: var(--shadow-tile);
+  overflow: hidden;
 }
 
-.card-header,
-.card-footer {
+.card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-md);
+  gap: 10px;
+  padding: 12px 14px 8px;
 }
 
-.card-body {
+.card-head-left {
   display: flex;
   flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.card-code-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  touch-action: manipulation;
+}
+
+.card-code-btn i {
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+.card-invoice-num {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.card-title {
+  padding: 0 14px 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--card-bg);
+  border-top: 1px solid var(--surface-border);
+}
+
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.card-meta-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  width: 14px;
+}
+
+.card-meta-sep {
+  color: var(--text-tertiary);
+}
+
+.card-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--surface-border);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.card-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--surface-border);
+  border-top: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.card-amounts-2col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card-amount-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  background: var(--card-bg);
+}
+
+.card-amount-item span {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.card-amount-item strong {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-amount-highlight {
+  background: var(--surface-default);
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: var(--space-md) 0;
+  padding: 10px 14px;
+  flex-wrap: wrap;
 }
 
 .field-hint {
@@ -2453,14 +2692,8 @@ onUnmounted(() => {
     width: 100% !important;
   }
 
-  .card-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-sm);
-  }
-
   .card-footer .btn-pill {
-    width: 100%;
+    flex: 1 1 calc(50% - 4px);
     justify-content: center;
   }
 }

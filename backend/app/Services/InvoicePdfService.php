@@ -17,12 +17,10 @@ class InvoicePdfService
     {
         $invoice->loadMissing([
             'branch',
+            'creator',
             'bookings.customer',
             'bookings.bookingDetails.unit',
             'bookings.bookingDetails.costs',
-            'bookings.payments.paymentAccount',
-            'payments.paymentAccount',
-            'payments.bookingPayments',
         ]);
 
         $paymentAccounts = PaymentAccount::query()
@@ -55,7 +53,6 @@ class InvoicePdfService
         ]));
 
         $items = $this->receivableService->invoiceItems($invoice)->all();
-        $payments = $this->receivableService->invoicePaymentHistory($invoice)->all();
         $paidAmount = $this->receivableService->invoicePaidAmount($invoice);
 
         $totalAmount = (int) $invoice->total_amount;
@@ -65,20 +62,43 @@ class InvoicePdfService
 
         $invoiceDateRaw = $invoice->generated_at ?? $invoice->created_at;
 
+        $branchLogoBase64 = null;
+        if ($invoice->branch?->logo_path) {
+            $logoPath = storage_path('app/public/' . ltrim($invoice->branch->logo_path, '/'));
+            if (file_exists($logoPath)) {
+                $branchLogoBase64 = 'data:image/jpeg;base64,' . base64_encode($this->resizeImage($logoPath, 96, 96));
+            }
+        }
+
+        $signatureBase64 = null;
+        if ($invoice->creator?->signature_path) {
+            $sigPath = storage_path('app/public/' . ltrim($invoice->creator->signature_path, '/'));
+            if (file_exists($sigPath)) {
+                $signatureBase64 = 'data:image/jpeg;base64,' . base64_encode($this->resizeImage($sigPath, 300, 120));
+            }
+        }
+
         $data = [
             'invoice' => $invoice,
             'branchName' => $branchName,
+            'branchLogoBase64' => $branchLogoBase64,
+            'branchAddress' => $invoice->branch?->address,
+            'branchPhone' => $invoice->branch?->phone,
+            'branchEmail' => $invoice->branch?->email,
             'customerName' => $customer?->nama ?: 'Pelanggan',
             'customerAddressLines' => $customerAddressLines,
             'customerContactLines' => $customerContactLines,
             'invoiceDate' => $this->formatDate($invoiceDateRaw),
+            'generatedDate' => $this->formatDateTime($invoiceDateRaw),
             'dueDate' => $this->formatDate($invoice->due_date),
             'items' => $items,
-            'payments' => $payments,
             'paymentAccounts' => $paymentAccounts,
             'paidAmount' => $paidAmount,
             'remainingAmount' => $remainingAmount,
             'statusSeverity' => $this->statusSeverity($invoice->status),
+            'authorizedSignName' => $invoice->creator?->name ?: 'Authorised Sign',
+            'signatureBase64' => $signatureBase64,
+            'termsAndConditions' => $invoice->terms_and_conditions,
             'formatCurrency' => fn($value) => $this->formatCurrency($value),
             'formatDate' => fn($value) => $this->formatDate($value),
         ];
@@ -86,12 +106,78 @@ class InvoicePdfService
         $pdf = Pdf::loadView('pdf.invoice', $data)
             ->setPaper('a4', 'portrait')
             ->setOptions([
-                'isRemoteEnabled' => false,
-                'isHtml5ParserEnabled' => true,
-                'defaultFont' => 'DejaVu Sans',
+                'isRemoteEnabled'        => false,
+                'isHtml5ParserEnabled'   => false,
+                'defaultFont'            => 'DejaVu Sans',
+                'isFontSubsettingEnabled' => true,
+                'isPhpEnabled'           => false,
+                'dpi'                    => 96,
             ]);
 
         return $pdf->output();
+    }
+
+    private function resizeImage(string $path, int $maxWidth, int $maxHeight): string
+    {
+        if (! extension_loaded('gd')) {
+            return file_get_contents($path);
+        }
+
+        $info = @getimagesize($path);
+        if (! $info) {
+            return file_get_contents($path);
+        }
+
+        [$origWidth, $origHeight, $type] = $info;
+
+        $src = match ($type) {
+            IMAGETYPE_JPEG => @imagecreatefromjpeg($path),
+            IMAGETYPE_PNG  => @imagecreatefrompng($path),
+            IMAGETYPE_GIF  => @imagecreatefromgif($path),
+            IMAGETYPE_WEBP => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($path) : false,
+            default        => false,
+        };
+
+        if (! $src) {
+            return file_get_contents($path);
+        }
+
+        $ratio = min($maxWidth / $origWidth, $maxHeight / $origHeight, 1.0);
+        $newWidth = (int) round($origWidth * $ratio);
+        $newHeight = (int) round($origHeight * $ratio);
+
+        $dst = imagecreatetruecolor($newWidth, $newHeight);
+
+        // Preserve transparency for PNG
+        if ($type === IMAGETYPE_PNG) {
+            imagealphablending($dst, false);
+            imagesavealpha($dst, true);
+            $bg = imagecolorallocatealpha($dst, 255, 255, 255, 127);
+            imagefill($dst, 0, 0, $bg);
+        } else {
+            $white = imagecolorallocate($dst, 255, 255, 255);
+            imagefill($dst, 0, 0, $white);
+        }
+
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $newWidth, $newHeight, $origWidth, $origHeight);
+        imagedestroy($src);
+
+        ob_start();
+        imagejpeg($dst, null, 85);
+        $data = ob_get_clean();
+        imagedestroy($dst);
+
+        return $data;
+    }
+
+    private function mimeFromExtension(string $path): string
+    {
+        return match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            default => 'image/png',
+        };
     }
 
     private function formatCurrency($value): string
@@ -101,6 +187,19 @@ class InvoicePdfService
         $formatted = 'Rp ' . number_format(abs($amount), 0, ',', '.');
 
         return $negative ? '-' . $formatted : $formatted;
+    }
+
+    private function formatDateTime($value): string
+    {
+        if (! $value) {
+            return '-';
+        }
+
+        try {
+            return Carbon::parse($value)->translatedFormat('d M Y H:i');
+        } catch (\Throwable $e) {
+            return '-';
+        }
     }
 
     private function formatDate($value): string

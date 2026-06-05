@@ -613,6 +613,10 @@ const isRentalUnit = computed(() => {
   return booking.value && booking.value.status === 'rental_unit';
 });
 
+const canAddAdditionalCost = computed(() =>
+  ['waiting_list', 'rental_unit'].includes(booking.value?.status)
+);
+
 const billableDetails = computed(() => {
   return validDetails.value.filter(detail => detail.status !== 'batal');
 });
@@ -797,13 +801,18 @@ const detailTransactionSeverity = (detail) => {
   return 'success';
 };
 
+const lastExtendDetail = computed(() => {
+  const exts = validDetails.value.filter(d => d.detail_type === 'extend');
+  return exts[exts.length - 1] || null;
+});
+
 const canEditDetailTransaction = (detail) => {
   const finalDetailStatuses = ['selesai', 'batal', 'cancelled', 'completed'];
   const finalBookingStatuses = ['selesai', 'batal', 'cancelled', 'completed'];
-  const hasAdditionalCost = detail.costs?.some(c => c.is_additional);
-  return (['extend', 'rolling'].includes(detail.detail_type) || (detail.detail_type === 'initial' && hasAdditionalCost))
-    && !finalDetailStatuses.includes(detail.status)
-    && !finalBookingStatuses.includes(booking.value?.status);
+  if (finalDetailStatuses.includes(detail.status) || finalBookingStatuses.includes(booking.value?.status)) return false;
+  if (detail.detail_type === 'extend') return detail.id === lastExtendDetail.value?.id;
+  if (detail.detail_type === 'rolling') return true;
+  return false;
 };
 
 const formatSignedCostAmount = (cost) => {
@@ -2616,8 +2625,8 @@ const auditUserName = (user) => user?.name || '-';
           </div>
         </div>
 
-        <!-- Section: Modification (Only for Rental Unit) -->
-        <div v-if="isRentalUnit" class="app-card overflow-hidden">
+        <!-- Section: Modification -->
+        <div v-if="canAddAdditionalCost" class="app-card overflow-hidden">
           <div class="app-section-header px-6 py-4 flex items-center gap-3">
             <div class="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600">
               <i class="pi pi-cog"></i>
@@ -2626,11 +2635,11 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div class="p-6">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Button label="Perpanjang (Extend)" icon="pi pi-calendar-plus" severity="warning" outlined
+              <Button v-if="isRentalUnit" label="Perpanjang (Extend)" icon="pi pi-calendar-plus" severity="warning" outlined
                 class="rounded-xl font-semibold text-sm py-3" @click="openExtendDialog" />
-              <Button label="Ganti Unit (Rolling)" icon="pi pi-sync" severity="warning" outlined
+              <Button v-if="isRentalUnit" label="Ganti Unit (Rolling)" icon="pi pi-sync" severity="warning" outlined
                 class="rounded-xl font-semibold text-sm py-3" @click="openRollingDialog" />
-              <Button label="Stop Early" icon="pi pi-stop-circle" severity="danger" outlined
+              <Button v-if="isRentalUnit" label="Stop Early" icon="pi pi-stop-circle" severity="danger" outlined
                 class="rounded-xl font-semibold text-sm py-3" @click="openStopEarlyDialog" />
               <Button label="Biaya/Diskon +" icon="pi pi-plus-circle" severity="info" outlined
                 class="rounded-xl font-semibold text-sm py-3" @click="openAdditionalCostDialog" />

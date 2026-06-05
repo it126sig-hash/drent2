@@ -25,8 +25,7 @@
         .page {
             position: relative;
             width: 100%;
-            min-height: 297mm;
-            padding-bottom: 40px;
+            padding-bottom: 48px;
         }
 
         /* TOP BAR */
@@ -49,6 +48,27 @@
             text-align: left;
         }
 
+        .brand-header-table {
+            width: auto;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+
+        .brand-header-table td {
+            vertical-align: middle;
+            padding: 0;
+        }
+
+        .brand-logo {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            background: #ffffff;
+            border-radius: 4px;
+            padding: 6px;
+            display: block;
+        }
+
         .brand-name {
             font-size: 22px;
             font-weight: 700;
@@ -63,8 +83,16 @@
             margin-top: 4px;
         }
 
+        .branch-contact {
+            font-size: 10px;
+            color: #cbd5e1;
+            margin-top: 6px;
+            line-height: 1.6;
+        }
+
         .invoice-title-cell {
             text-align: right;
+            vertical-align: top;
         }
 
         .invoice-title {
@@ -72,6 +100,12 @@
             font-weight: 700;
             color: #E5534B;
             letter-spacing: 2px;
+        }
+
+        .invoice-title-meta {
+            font-size: 10px;
+            color: #cbd5e1;
+            margin-top: 4px;
         }
 
         /* RED LINE */
@@ -234,32 +268,6 @@
             text-transform: uppercase;
         }
 
-        .payment-history-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 16px;
-        }
-
-        .payment-history-table td {
-            padding: 6px 0;
-            border-bottom: 1px solid #e5e7eb;
-            font-size: 11px;
-            vertical-align: top;
-        }
-
-        .payment-history-table td.amount {
-            text-align: right;
-            font-family: DejaVu Sans Mono, monospace;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-
-        .payment-history-table .meta {
-            color: #6b7280;
-            font-size: 10px;
-            margin-top: 1px;
-        }
-
         .payment-title {
             font-size: 13px;
             font-weight: 700;
@@ -311,6 +319,27 @@
             color: #6b7280;
             line-height: 1.5;
             margin: 0;
+        }
+
+        .terms-text p {
+            margin: 0 0 4px;
+            font-size: 10px;
+            color: #6b7280;
+            line-height: 1.5;
+        }
+
+        .terms-text p:last-child {
+            margin-bottom: 0;
+        }
+
+        .terms-text ul,
+        .terms-text ol {
+            margin: 0 0 4px;
+            padding-left: 18px;
+        }
+
+        .terms-text li {
+            margin-bottom: 2px;
         }
 
         /* TOTALS */
@@ -371,8 +400,16 @@
         .signature-section {
             margin-top: 50px;
             text-align: center;
-            width: 60%;
+            width: 150px;
             margin-left: auto;
+        }
+
+        .signature-img {
+            width: 150px;
+            height: 60px;
+            object-fit: contain;
+            margin-bottom: 4px;
+            display: block;
         }
 
         .signature-line {
@@ -382,8 +419,18 @@
         }
 
         .signature-text {
-            font-size: 11px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 700;
+            word-break: break-word;
+        }
+
+        .signature-caption {
+            font-size: 9px;
+            font-weight: 500;
+            color: #6b7280;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            margin-top: 2px;
         }
 
         .empty-text {
@@ -394,7 +441,7 @@
 
         /* FOOTER BAND */
         .footer-band {
-            position: fixed;
+            position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
@@ -410,11 +457,30 @@
             <table class="top-bar-table">
                 <tr>
                     <td class="brand-cell">
-                        <div class="brand-name">{{ $branchName }}</div>
-                        <div class="brand-tagline">CAR RENTAL SYSTEM</div>
+                        <table class="brand-header-table">
+                            <tr>
+                                @if($branchLogoBase64)
+                                <td style="padding-right: 12px; vertical-align: middle;">
+                                    <img src="{{ $branchLogoBase64 }}" class="brand-logo" alt="Logo" />
+                                </td>
+                                @endif
+                                <td style="vertical-align: middle;">
+                                    <div class="brand-name">{{ $branchName }}</div>
+                                    <div class="brand-tagline">CAR RENTAL SYSTEM</div>
+                                </td>
+                            </tr>
+                        </table>
+                        @if($branchAddress || $branchPhone || $branchEmail)
+                        <div class="branch-contact">
+                            @if($branchAddress)<span>{{ $branchAddress }}</span>@endif
+                            @if($branchPhone) &nbsp;&bull;&nbsp; <span>{{ $branchPhone }}</span>@endif
+                            @if($branchEmail) &nbsp;&bull;&nbsp; <span>{{ $branchEmail }}</span>@endif
+                        </div>
+                        @endif
                     </td>
                     <td class="invoice-title-cell">
                         <div class="invoice-title">INVOICE</div>
+                        <div class="invoice-title-meta">Generated: {{ $generatedDate }}</div>
                     </td>
                 </tr>
             </table>
@@ -517,24 +583,6 @@
                     <td class="bottom-left-cell">
                         <div class="thank-you">Thank you for your business</div>
 
-                        {{-- Payment History --}}
-                        <div class="section-label">History Payment</div>
-                        @if (count($payments))
-                            <table class="payment-history-table">
-                                @foreach ($payments as $payment)
-                                    <tr>
-                                        <td>
-                                            <strong>{{ $formatDate($payment['paid_at'] ?? null) }}</strong>
-                                            <div class="meta">{{ $payment['payment_account_name'] ?? '-' }}</div>
-                                        </td>
-                                        <td class="amount mono">{{ $formatCurrency($payment['amount'] ?? 0) }}</td>
-                                    </tr>
-                                @endforeach
-                            </table>
-                        @else
-                            <div class="empty-text" style="margin-bottom: 16px;">Belum ada pembayaran.</div>
-                        @endif
-
                         <div class="payment-title">Payment Info:</div>
                         <div class="section-label">Nomor Rekening</div>
                         @if (count($paymentAccounts))
@@ -559,7 +607,15 @@
                         @endif
 
                         <div class="terms-title">Terms &amp; Conditions</div>
-                        <p class="terms-text">Harap lakukan pembayaran sebelum tanggal jatuh tempo. Keterlambatan dapat dikenakan denda sesuai dengan ketentuan penyewaan. Terima kasih telah mempercayai DRENT.</p>
+                        @php
+                            $plainTerms = trim(strip_tags($termsAndConditions ?? ''));
+                            $plainTerms = str_replace('&nbsp;', ' ', $plainTerms);
+                        @endphp
+                        @if (!empty($plainTerms))
+                            <div class="terms-text">{!! $termsAndConditions !!}</div>
+                        @else
+                            <p class="terms-text">Harap lakukan pembayaran sebelum tanggal jatuh tempo. Keterlambatan dapat dikenakan denda sesuai dengan ketentuan penyewaan. Terima kasih telah mempercayai DRENT.</p>
+                        @endif
                     </td>
 
                     {{-- RIGHT --}}
@@ -586,15 +642,20 @@
                         </table>
 
                         <div class="signature-section">
-                            <div class="signature-line">&nbsp;</div>
-                            <div class="signature-text">Authorised Sign</div>
+                            @if($signatureBase64)
+                                <img src="{{ $signatureBase64 }}" class="signature-img" alt="Signature" />
+                            @else
+                                <div class="signature-line">&nbsp;</div>
+                            @endif
+                            <div class="signature-text">{{ $authorizedSignName }}</div>
+                            <div class="signature-caption">Authorised Sign</div>
                         </div>
                     </td>
                 </tr>
             </table>
         </div>
-    </div>
 
-    <div class="footer-band">&nbsp;</div>
+        <div class="footer-band"></div>
+    </div>
 </body>
 </html>

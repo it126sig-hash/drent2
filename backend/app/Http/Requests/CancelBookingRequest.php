@@ -14,9 +14,12 @@ class CancelBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'refund_amount'         => ['nullable', 'integer', 'min:0'],
-            'refund_keterangan'     => ['nullable', 'string', 'max:500'],
-            'payment_account_id'    => ['nullable', 'exists:payment_accounts,id'],
+            'ada_refund'      => ['boolean'],
+            'nominal_refund'  => ['nullable', 'integer', 'min:0', 'required_if:ada_refund,true'],
+            'bank_refund'     => ['nullable', 'string', 'max:100'],
+            'no_rek_refund'   => ['nullable', 'string', 'max:50'],
+            'nama_rek_refund' => ['nullable', 'string', 'max:100'],
+            'catatan_refund'  => ['nullable', 'string', 'max:500'],
         ];
     }
 }

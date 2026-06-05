@@ -713,26 +713,63 @@ onMounted(async () => {
 
           </DataTable>
           <div class="mobile-card-list rent-mobile-list">
-            <article v-for="debt in group.rows" :key="debt.id" class="mobile-list-card">
-              <div class="mobile-card-head">
-                <div>
-                  <button class="link-button" @click="router.push(`/bookings/${debt.booking_id}`)">{{ debt.kode_booking }}</button>
-                  <p>{{ debt.booking?.customer_name || '-' }}</p>
+            <article v-for="debt in group.rows" :key="debt.id" class="mobile-card">
+
+              <!-- Head: booking code + status -->
+              <div class="card-head">
+                <div class="card-head-left">
+                  <button class="card-code-btn" @click="router.push(`/bookings/${debt.booking_id}`)">
+                    {{ debt.kode_booking }}
+                    <i class="pi pi-arrow-up-right"></i>
+                  </button>
                 </div>
                 <Tag :value="statusLabel(debt.status)" :severity="statusSeverity(debt.status)" />
               </div>
-              <div class="mobile-card-meta">
-                <div><span>Unit</span><strong>{{ debt.unit?.name || '-' }}</strong><small>{{ debt.unit?.no_polisi || '-' }}</small></div>
-                <div><span>Tujuan</span><strong>{{ debt.booking?.tujuan || '-' }}</strong><small>{{ debt.unit?.lama_sewa || 0 }} {{ debt.unit?.paket_sewa || 'harian' }}</small></div>
-              </div>
-              <div class="mobile-card-amount">
-                <div><span>Total</span><strong>{{ formatCurrency(debt.total_amount) }}</strong></div>
-                <div v-if="debt.pending_amount_request" style="grid-column: span 2; margin-top: 4px;">
-                  <span style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; display: inline-block;">Pending ACC: {{ debt.pending_amount_request.requested_amount_override !== null ? formatCurrency(debt.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
+
+              <!-- Customer name -->
+              <div class="card-title">{{ debt.booking?.customer_name || '-' }}</div>
+
+              <!-- Meta: unit + tujuan -->
+              <div class="card-meta">
+                <div class="card-meta-row">
+                  <i class="pi pi-car card-meta-icon"></i>
+                  <span>{{ debt.unit?.name || '-' }}</span>
+                  <span class="card-plate">{{ debt.unit?.no_polisi || '-' }}</span>
                 </div>
-                <div><span>Sisa</span><strong>{{ formatCurrency(debt.remaining_amount) }}</strong></div>
+                <div class="card-meta-row">
+                  <i class="pi pi-map-marker card-meta-icon"></i>
+                  <span>{{ debt.booking?.tujuan || '-' }}</span>
+                  <span class="card-meta-sep">·</span>
+                  <span>{{ debt.unit?.lama_sewa || 0 }} {{ debt.unit?.paket_sewa || 'harian' }}</span>
+                </div>
               </div>
-              <div class="mobile-card-actions">
+
+              <!-- Pending amount warning -->
+              <div v-if="debt.pending_amount_request" class="card-warnings">
+                <span class="card-pending-badge">
+                  <i class="pi pi-clock"></i>
+                  Pending ACC: {{ debt.pending_amount_request.requested_amount_override !== null ? formatCurrency(debt.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}
+                </span>
+              </div>
+
+              <!-- Amounts: Total / Dibayar / Sisa -->
+              <div class="card-amounts">
+                <div class="card-amount-item">
+                  <span>Total</span>
+                  <strong>{{ formatCurrency(debt.total_amount) }}</strong>
+                </div>
+                <div class="card-amount-item">
+                  <span>Dibayar</span>
+                  <strong class="text-positive">{{ formatCurrency(debt.paid_amount) }}</strong>
+                </div>
+                <div class="card-amount-item card-amount-highlight">
+                  <span>Sisa</span>
+                  <strong class="text-info">{{ formatCurrency(debt.remaining_amount) }}</strong>
+                </div>
+              </div>
+
+              <!-- Footer: actions -->
+              <div class="card-footer">
                 <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || debt.remaining_amount <= 0 || ['cancelled', 'paid'].includes(debt.status)" @click="openDirectPayment(debt)">
                   <i class="pi pi-wallet"></i>
                   Bayar
@@ -746,6 +783,7 @@ onMounted(async () => {
                   {{ debt.pending_amount_request ? 'Pending ACC' : 'Ubah Nominal' }}
                 </button>
               </div>
+
             </article>
           </div>
         </div>
@@ -826,26 +864,61 @@ onMounted(async () => {
 
         </DataTable>
         <div class="mobile-card-list rent-mobile-list">
-          <article v-for="bill in bills" :key="bill.id" class="mobile-list-card">
-            <div class="mobile-card-head">
-              <div>
-                <strong>{{ bill.bill_number }}</strong>
-                <p>{{ bill.rental_owner?.nama || '-' }}</p>
+          <article v-for="bill in bills" :key="bill.id" class="mobile-card">
+
+            <!-- Head: bill number + status -->
+            <div class="card-head">
+              <div class="card-head-left">
+                <span class="card-invoice-num">{{ bill.bill_number }}</span>
               </div>
               <Tag :value="statusLabel(bill.status)" :severity="statusSeverity(bill.status)" />
             </div>
-            <div class="booking-list">
-              <span v-for="item in bill.items" :key="item.id">{{ item.kode_booking }} - {{ item.unit_plate || '-' }}</span>
+
+            <!-- Owner name -->
+            <div class="card-title">{{ bill.rental_owner?.nama || '-' }}</div>
+
+            <!-- Meta: bank + date -->
+            <div class="card-meta">
+              <div v-if="bill.rental_owner?.bank" class="card-meta-row">
+                <i class="pi pi-credit-card card-meta-icon"></i>
+                <span>{{ bill.rental_owner.bank }}</span>
+                <span v-if="bill.rental_owner?.no_rek" class="card-plate">{{ bill.rental_owner.no_rek }}</span>
+              </div>
+              <div class="card-meta-row">
+                <i class="pi pi-calendar card-meta-icon"></i>
+                <span class="font-mono-numeric">{{ formatDate(bill.generated_at) }}</span>
+                <span v-if="bill.sent_at" class="card-meta-sep">·</span>
+                <span v-if="bill.sent_at" class="font-mono-numeric">Kirim {{ formatDate(bill.sent_at) }}</span>
+              </div>
             </div>
-            <div class="mobile-card-amount">
-              <div><span>Total</span><strong>{{ formatCurrency(bill.total_amount) }}</strong></div>
-              <div><span>Sudah Bayar</span><strong>{{ formatCurrency(bill.paid_amount) }}</strong></div>
+
+            <!-- Booking items -->
+            <div class="card-bookings">
+              <div v-for="item in bill.items" :key="item.id" class="card-booking-link">
+                <i class="pi pi-hashtag card-meta-icon"></i>
+                <span class="card-booking-code">{{ item.kode_booking }}</span>
+                <span v-if="item.unit_plate" class="card-booking-customer">{{ item.unit_plate }}</span>
+              </div>
             </div>
-            <div class="mobile-card-meta">
-              <div><span>Tanggal</span><strong>{{ formatDate(bill.generated_at) }}</strong><small>Kirim {{ formatDateTime(bill.sent_at) }}</small></div>
-              <div><span>Bank</span><strong>{{ bill.rental_owner?.bank || '-' }}</strong><small>{{ bill.rental_owner?.no_rek || '' }}</small></div>
+
+            <!-- Amounts: Total / Dibayar / Sisa -->
+            <div class="card-amounts">
+              <div class="card-amount-item">
+                <span>Total</span>
+                <strong>{{ formatCurrency(bill.total_amount) }}</strong>
+              </div>
+              <div class="card-amount-item">
+                <span>Dibayar</span>
+                <strong class="text-positive">{{ formatCurrency(bill.paid_amount) }}</strong>
+              </div>
+              <div class="card-amount-item card-amount-highlight">
+                <span>Sisa</span>
+                <strong class="text-info">{{ formatCurrency(bill.remaining_amount) }}</strong>
+              </div>
             </div>
-            <div class="mobile-card-actions">
+
+            <!-- Footer: actions -->
+            <div class="card-footer">
               <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="sendBill(bill.id)">
                 <i class="pi pi-send"></i>
                 Kirim
@@ -871,6 +944,7 @@ onMounted(async () => {
                 Void
               </button>
             </div>
+
           </article>
         </div>
       </div>
@@ -925,28 +999,51 @@ onMounted(async () => {
           </DataTable>
           <Paginator :rows="paymentHistoryPagination.latest.per_page" :totalRecords="paymentHistoryPagination.latest.total" :first="(paymentHistoryPagination.latest.current_page - 1) * paymentHistoryPagination.latest.per_page" template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink" currentPageReportTemplate="{first} - {last} dari {totalRecords}" class="history-paginator" @page="onLatestPaymentHistoryPage" />
           <div class="mobile-card-list rent-mobile-list">
-            <article v-for="payment in paymentHistory.latest" :key="payment.id" class="mobile-list-card">
-              <div class="mobile-card-head">
-                <div>
-                  <strong>{{ payment.bill_number || '-' }}</strong>
-                  <p>{{ payment.owner_name || '-' }}</p>
+            <article v-for="payment in paymentHistory.latest" :key="payment.id" class="mobile-card">
+
+              <!-- Head: bill number + status -->
+              <div class="card-head">
+                <div class="card-head-left">
+                  <span class="card-invoice-num">{{ payment.bill_number || '-' }}</span>
                 </div>
                 <Tag :value="paymentStatusLabel(payment.status)" :severity="paymentStatusSeverity(payment.status)" />
               </div>
-              <div class="mobile-card-meta">
-                <div><span>Booking</span><strong>{{ (payment.booking_codes || []).join(', ') || '-' }}</strong></div>
-                <div><span>Akun</span><strong>{{ payment.payment_account_name || '-' }}</strong></div>
+
+              <!-- Owner name -->
+              <div class="card-title">{{ payment.owner_name || '-' }}</div>
+
+              <!-- Meta: booking codes + account -->
+              <div class="card-meta">
+                <div class="card-meta-row">
+                  <i class="pi pi-tag card-meta-icon"></i>
+                  <span>{{ (payment.booking_codes || []).join(', ') || '-' }}</span>
+                </div>
+                <div class="card-meta-row">
+                  <i class="pi pi-credit-card card-meta-icon"></i>
+                  <span>{{ payment.payment_account_name || '-' }}</span>
+                </div>
               </div>
-              <div class="mobile-card-amount">
-                <div><span>Tanggal</span><strong>{{ formatDateTime(payment.paid_at) }}</strong></div>
-                <div><span>Nominal</span><strong>{{ formatCurrency(payment.amount) }}</strong></div>
+
+              <!-- Amounts: Tanggal / Nominal (2 kolom) -->
+              <div class="card-amounts card-amounts-2col">
+                <div class="card-amount-item">
+                  <span>Tanggal</span>
+                  <strong>{{ formatDate(payment.paid_at) }}</strong>
+                </div>
+                <div class="card-amount-item card-amount-highlight">
+                  <span>Nominal</span>
+                  <strong>{{ formatCurrency(payment.amount) }}</strong>
+                </div>
               </div>
-              <div class="mobile-card-actions">
+
+              <!-- Footer: void action -->
+              <div class="card-footer">
                 <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(payment.status)" @click="submitVoidPayment(payment)">
                   <i class="pi pi-ban"></i>
                   Void
                 </button>
               </div>
+
             </article>
           </div>
         </template>
@@ -986,24 +1083,51 @@ onMounted(async () => {
           </DataTable>
           <Paginator :rows="paymentHistoryPagination.groups.per_page" :totalRecords="paymentHistoryPagination.groups.total" :first="(paymentHistoryPagination.groups.current_page - 1) * paymentHistoryPagination.groups.per_page" template="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink" currentPageReportTemplate="{first} - {last} dari {totalRecords}" class="history-paginator" @page="onGroupPaymentHistoryPage" />
           <div class="mobile-card-list rent-mobile-list">
-            <article v-for="group in paymentHistory.groups" :key="group.booking_id" class="mobile-list-card">
-              <div class="mobile-card-head">
-                <div>
-                  <button v-if="group.booking_id" class="link-button" @click="router.push(`/bookings/${group.booking_id}`)">{{ group.kode_booking || '-' }}</button>
-                  <strong v-else>{{ group.kode_booking || '-' }}</strong>
-                  <p>{{ group.customer_name || '-' }}</p>
+            <article v-for="group in paymentHistory.groups" :key="group.booking_id" class="mobile-card">
+
+              <!-- Head: booking code + payment count badge -->
+              <div class="card-head">
+                <div class="card-head-left">
+                  <button v-if="group.booking_id" class="card-code-btn" @click="router.push(`/bookings/${group.booking_id}`)">
+                    {{ group.kode_booking || '-' }}
+                    <i class="pi pi-arrow-up-right"></i>
+                  </button>
+                  <span v-else class="card-invoice-num">{{ group.kode_booking || '-' }}</span>
                 </div>
-                <span class="mobile-card-count">{{ group.payment_count }} bayar</span>
+                <span class="card-count-badge">{{ group.payment_count }}x bayar</span>
               </div>
-              <div class="mobile-card-meta">
-                <div><span>Pemilik</span><strong>{{ (group.owner_names && group.owner_names.length ? group.owner_names.join(', ') : group.owner_name) || '-' }}</strong></div>
-                <div><span>Unit</span><strong>{{ (group.unit_names || []).join(', ') || '-' }}</strong></div>
-                <div><span>Dokumen</span><strong>{{ (group.bill_numbers || []).join(', ') || '-' }}</strong></div>
-                <div><span>Terakhir</span><strong>{{ formatDateTime(group.latest_paid_at) }}</strong></div>
+
+              <!-- Customer name -->
+              <div class="card-title">{{ group.customer_name || '-' }}</div>
+
+              <!-- Meta: owner, unit, document, last payment -->
+              <div class="card-meta">
+                <div class="card-meta-row">
+                  <i class="pi pi-building card-meta-icon"></i>
+                  <span>{{ (group.owner_names?.length ? group.owner_names.join(', ') : group.owner_name) || '-' }}</span>
+                </div>
+                <div class="card-meta-row">
+                  <i class="pi pi-car card-meta-icon"></i>
+                  <span>{{ (group.unit_names || []).join(', ') || '-' }}</span>
+                </div>
+                <div v-if="group.bill_numbers?.length" class="card-meta-row">
+                  <i class="pi pi-file card-meta-icon"></i>
+                  <span>{{ group.bill_numbers.join(', ') }}</span>
+                </div>
+                <div class="card-meta-row">
+                  <i class="pi pi-clock card-meta-icon"></i>
+                  <span>{{ formatDateTime(group.latest_paid_at) }}</span>
+                </div>
               </div>
-              <div class="mobile-card-amount">
-                <div><span>Total Terbayar</span><strong>{{ formatCurrency(group.total_amount) }}</strong></div>
+
+              <!-- Amount: total paid (full width) -->
+              <div class="card-amounts" style="grid-template-columns: 1fr;">
+                <div class="card-amount-item card-amount-highlight">
+                  <span>Total Terbayar</span>
+                  <strong>{{ formatCurrency(group.total_amount) }}</strong>
+                </div>
               </div>
+
             </article>
           </div>
         </template>
@@ -1441,78 +1565,220 @@ onMounted(async () => {
   display: none;
 }
 
-.mobile-list-card {
+/* === Mobile Card System === */
+.mobile-card {
+  background: var(--surface-default);
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-default);
-  background: var(--surface-default);
   box-shadow: var(--shadow-tile);
-  padding: var(--space-md);
+  overflow: hidden;
 }
 
-.mobile-card-head,
-.mobile-card-meta,
-.mobile-card-amount,
-.mobile-card-actions {
+.card-head {
   display: flex;
-  gap: var(--space-md);
-}
-
-.mobile-card-head {
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 8px;
 }
 
-.mobile-card-head p {
-  margin: 4px 0 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.mobile-card-meta,
-.mobile-card-amount {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: var(--space-md);
-}
-
-.mobile-card-meta div,
-.mobile-card-amount div {
+.card-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   min-width: 0;
 }
 
-.mobile-card-meta span,
-.mobile-card-amount span,
-.mobile-card-meta small {
-  display: block;
+.card-code-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  touch-action: manipulation;
+}
+
+.card-code-btn i {
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+.card-invoice-num {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.card-count-badge {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-border);
   color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+.card-title {
+  padding: 0 14px 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--card-bg);
+  border-top: 1px solid var(--surface-border);
+}
+
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.card-meta-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  width: 14px;
+}
+
+.card-plate {
+  display: inline-flex;
+  padding: 1px 6px;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  background: var(--surface-default);
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  letter-spacing: 0.03em;
+}
+
+.card-meta-sep {
+  color: var(--text-tertiary);
+}
+
+.card-bookings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.card-booking-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.card-booking-code {
+  font-size: 12px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.card-booking-customer {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.card-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--surface-border);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.card-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #FDF4D9;
+  color: #8C660A;
+  border: 1px solid #D4A017;
   font-size: 11px;
   font-weight: 700;
 }
 
-.mobile-card-meta strong,
-.mobile-card-amount strong {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 900;
-  word-break: break-word;
+.card-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--surface-border);
+  border-top: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--surface-border);
 }
 
-.mobile-card-amount strong {
-  font-variant-numeric: tabular-nums;
+.card-amounts-2col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.mobile-card-actions {
-  flex-wrap: wrap;
-  margin-top: var(--space-md);
+.card-amount-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  background: var(--card-bg);
 }
 
-.mobile-card-count {
-  flex: 0 0 auto;
-  color: var(--text-secondary);
-  font-size: 11px;
+.card-amount-item span {
+  font-size: 10px;
   font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.card-amount-item strong {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-amount-highlight {
+  background: var(--surface-default);
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
 }
 
 .btn-danger {
@@ -1664,20 +1930,15 @@ onMounted(async () => {
   .mobile-card-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: 10px;
   }
 
   .owner-section .mobile-card-list {
     padding: var(--space-md);
   }
 
-  .mobile-card-meta,
-  .mobile-card-amount {
-    grid-template-columns: 1fr;
-  }
-
-  .mobile-card-actions .btn-pill {
-    flex: 1 1 calc(50% - var(--space-sm));
+  .card-footer .btn-pill {
+    flex: 1 1 calc(50% - 4px);
     justify-content: center;
   }
 

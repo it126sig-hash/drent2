@@ -1,0 +1,31 @@
+C:\Users\Salivs\Data\laragon\www\drent-vibe\aturan_pilih_unit_guidelines.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\DRENT_dev_plan.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\fix-rent-to-rent-implementation_plan.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\fix-rent-to-rent-task.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\fix-rent-to-rent-walkthrough.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\modul setting - implementation_plan.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\revamp-alur-drent.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\.agents\.kiro\skills\drent\SKILL.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\.agents\.kiro\skills\drent-ui\SKILL.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\.agents\rules\design.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\.agents\rules\drent.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\.agents\rules\mobile.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\backend\README.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\backend\public\robots.txt
+C:\Users\Salivs\Data\laragon\www\drent-vibe\docs\invoice-system-rental.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\docs\mobile-friendly-rollout.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\docs\plan-invoice-action.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\frontend\index.html
+C:\Users\Salivs\Data\laragon\www\drent-vibe\frontend\pnpm-workspace.yaml
+C:\Users\Salivs\Data\laragon\www\drent-vibe\frontend\android\app\src\main\assets\public\index.html
+C:\Users\Salivs\Data\laragon\www\drent-vibe\frontend\ios\App\App\public\index.html
+C:\Users\Salivs\Data\laragon\www\drent-vibe\modal desgin\code.html
+C:\Users\Salivs\Data\laragon\www\drent-vibe\modal desgin\DESIGN.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_ACUAN_HITUNG_BIAYA_OPERASIONAL.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_PRD_01_overview.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_PRD_02_user_akses.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_PRD_03_data_master.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_PRD_04_booking_transaksi.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_PRD_05_keuangan_cek_fisik.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_PRD_06_modul_pendukung.md
+C:\Users\Salivs\Data\laragon\www\drent-vibe\prd\DRENT_PRD_07_nonfungsional.md

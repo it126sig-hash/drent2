@@ -235,7 +235,9 @@ class BookingModificationService
 
     public function addAdditionalCost(Booking $booking, array $data): BookingCost
     {
-        $this->validateStatus($booking);
+        if (!in_array($booking->status, ['rental_unit', 'waiting_list'])) {
+            throw new UnprocessableEntityHttpException('Biaya tambahan hanya bisa ditambahkan saat status Waiting List atau Rental Unit.');
+        }
 
         $detail = $booking->bookingDetails()
             ->where('status', 'aktif')
