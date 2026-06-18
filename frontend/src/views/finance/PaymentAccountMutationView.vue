@@ -397,9 +397,6 @@ const showError = (err) => {
             <span class="amount" :class="{ negative: data.signed_amount < 0, positive: data.signed_amount > 0 }">{{ formatCurrency(data.signed_amount) }}</span>
           </template>
         </Column>
-        <Column field="balance_after" header="Saldo Akhir" style="min-width: 10rem">
-          <template #body="{ data }">{{ formatCurrency(data.balance_after) }}</template>
-        </Column>
         <Column field="description" header="Catatan" style="min-width: 16rem">
           <template #body="{ data }">{{ data.description || '-' }}</template>
         </Column>
@@ -432,10 +429,6 @@ const showError = (err) => {
           <div>
             <span>Nominal</span>
             <strong class="amount" :class="{ negative: transaction.signed_amount < 0, positive: transaction.signed_amount > 0 }">{{ formatCurrency(transaction.signed_amount) }}</strong>
-          </div>
-          <div>
-            <span>Saldo Akhir</span>
-            <strong>{{ formatCurrency(transaction.balance_after) }}</strong>
           </div>
           <div>
             <span>Relasi/Kategori</span>

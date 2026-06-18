@@ -62,8 +62,20 @@ class TransactionListResource extends JsonResource
             }
         }
 
-        $totalPengeluaran   = $totalRentToRent + $totalOperasional + $totalModal;
-        $margin             = $totalBiaya - $totalPengeluaran;
+        if ($this->status === 'batal') {
+            // Booking dibatalkan: kolom "Total Biaya" menampilkan total uang yang
+            // sudah masuk dari konsumen, dan "Total Pengeluaran" menampilkan nominal
+            // refund yang dikembalikan ke konsumen.
+            $totalBiaya         = (int) ($this->total_payments_in ?? 0);
+            $totalRentToRent    = 0;
+            $totalOperasional   = 0;
+            $totalModal         = 0;
+            $totalPengeluaran   = (int) ($this->cancellation?->nominal_refund ?? 0);
+        } else {
+            $totalPengeluaran   = $totalRentToRent + $totalOperasional + $totalModal;
+        }
+
+        $margin = $totalBiaya - $totalPengeluaran;
 
         return [
             'id' => $this->id,

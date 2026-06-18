@@ -15,6 +15,8 @@ class PayRefundRequest extends FormRequest
     {
         return [
             'payment_account_id' => ['required', 'integer', 'exists:payment_accounts,id'],
+            'nominal_dibayar'    => ['nullable', 'integer', 'min:1'],
+            'catatan'            => ['nullable', 'string', 'max:500'],
         ];
     }
 }

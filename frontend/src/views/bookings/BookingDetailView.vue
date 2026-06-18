@@ -32,6 +32,7 @@ import Calendar from 'primevue/calendar';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
+import Checkbox from 'primevue/checkbox';
 import SelectButton from 'primevue/selectbutton';
 
 const route = useRoute();
@@ -188,6 +189,18 @@ const normalizeSearch = (value) => {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+};
+
+const isMemberStatusInactive = (memberStatus) => Boolean(memberStatus) && memberStatus !== 'Aktif';
+
+const getMemberStatusSeverity = (memberStatus) => {
+  switch (memberStatus) {
+    case 'Aktif': return 'success';
+    case 'Pending': return 'warning';
+    case 'Ditolak': return 'danger';
+    case 'Tidak Aktif': return 'secondary';
+    default: return 'secondary';
+  }
 };
 
 const unitStatusMeta = (status) => {
@@ -508,9 +521,12 @@ const rollingForm = ref({
 
 // Batal form
 const batalForm = ref({
-  refund_amount: null,
-  refund_keterangan: '',
-  payment_account_id: null,
+  ada_refund: false,
+  nominal_refund: null,
+  bank_refund: '',
+  no_rek_refund: '',
+  nama_rek_refund: '',
+  catatan_refund: '',
 });
 
 const stopEarlyForm = ref({
@@ -523,7 +539,7 @@ const additionalCostForm = ref({
   cost_type_id: null,
   type: 'biaya',
   label: '',
-  amount: 0,
+  amount: null,
   keterangan: '',
 });
 
@@ -1515,7 +1531,7 @@ const openRollingDialog = () => {
 };
 
 const openBatalDialog = () => {
-  batalForm.value = { refund_amount: null, refund_keterangan: '', payment_account_id: null };
+  batalForm.value = { ada_refund: false, nominal_refund: null, bank_refund: '', no_rek_refund: '', nama_rek_refund: '', catatan_refund: '' };
   showBatalDialog.value = true;
 };
 
@@ -1538,7 +1554,7 @@ const openAdditionalCostDialog = () => {
     cost_type_id: null,
     type: 'biaya',
     label: '',
-    amount: 0,
+    amount: null,
     keterangan: '',
   };
   showAdditionalCostDialog.value = true;
@@ -2406,6 +2422,16 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
 };
 
+const digitize = (value) => {
+  const str = formatCurrency(value);
+  const chars = str.split('');
+  return chars.map((ch, i) => {
+    if (i === chars.length - 2) return `<span class="t-digit" data-stagger="1">${ch}</span>`;
+    if (i === chars.length - 1) return `<span class="t-digit" data-stagger="2">${ch}</span>`;
+    return `<span class="t-digit">${ch}</span>`;
+  }).join('');
+};
+
 const auditUserName = (user) => user?.name || '-';
 </script>
 
@@ -2416,22 +2442,22 @@ const auditUserName = (user) => user?.name || '-';
     <div class="detail-page-header">
       <div class="header-left detail-header-left">
         <Button icon="pi pi-arrow-left" text rounded @click="router.back()" class="back-button" />
-        <div class="header-copy">
-          <div class="flex flex-wrap items-center gap-3 mb-1">
+        <div class="header-copy t-stagger" :class="{ 'is-shown': !!booking }">
+          <div class="flex flex-wrap items-center gap-3 mb-1 t-stagger-line t-stagger-line--1">
             <h1 class="detail-title">Booking #{{ booking?.kode_booking || '...' }}</h1>
             <BookingStatusBadge v-if="booking" :status="booking.status" />
             <span v-if="booking?.is_overdue" class="overdue-chip">
               <i class="pi pi-exclamation-triangle text-[10px]"></i> Terlambat Kembali
             </span>
           </div>
-          <p class="detail-subtitle">
+          <p class="detail-subtitle t-stagger-line t-stagger-line--2">
             <i class="pi pi-clock"></i>
             {{ booking?.created_at ? new Date(booking.created_at).toLocaleString('id-ID', {
               dateStyle: 'long',
               timeStyle: 'short'
             }) : '-' }}
           </p>
-          <p v-if="bookingInvoice?.sent_at" class="detail-subtitle">
+          <p v-if="bookingInvoice?.sent_at" class="detail-subtitle t-stagger-line t-stagger-line--3">
             <i class="pi pi-send"></i>
             Terakhir dikirim pada {{ formatDateTime(bookingInvoice.sent_at) }}<template v-if="bookingInvoice.sent_by_name"> oleh {{ bookingInvoice.sent_by_name }}</template>
           </p>
@@ -2463,7 +2489,8 @@ const auditUserName = (user) => user?.name || '-';
     </div>
 
     <!-- Main Content Grid -->
-    <div v-else-if="booking" class="detail-grid">
+    <Transition name="booking-reveal">
+    <div v-if="booking" class="detail-grid">
       <!-- LEFT COLUMN -->
       <div class="detail-main-column">
 
@@ -2485,8 +2512,9 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div class="flex flex-col gap-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Status Member</span>
-              <div>
+              <div class="flex items-center gap-1.5">
                 <Tag :value="booking.customer?.status" :severity="booking.customer?.status === 'Blacklist' ? 'danger' : 'info'" class="px-2.5 py-0.5 text-xs font-semibold rounded-md" />
+                <Tag v-if="isMemberStatusInactive(booking.customer?.member_status)" :value="booking.customer?.member_status" :severity="getMemberStatusSeverity(booking.customer?.member_status)" class="px-2.5 py-0.5 text-xs font-semibold rounded-md" />
               </div>
             </div>
             <div class="flex flex-col gap-1">
@@ -2717,7 +2745,7 @@ const auditUserName = (user) => user?.name || '-';
                             <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase" :class="data.type === 'diskon' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'">
                               {{ data.type || 'biaya' }}
                             </span>
-                            <Tag v-if="data.is_additional" value="Di luar deal" severity="warning" class="text-[10px]" />
+                            <Tag v-if="data.is_additional" value="Additional" severity="warning" class="text-[10px]" />
                           </div>
                         </template>
                       </Column>
@@ -2742,7 +2770,7 @@ const auditUserName = (user) => user?.name || '-';
                         <div class="cost-mobile-info">
                           <div class="flex items-center gap-1.5">
                             <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase" :class="c.type === 'diskon' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'">{{ c.type || 'biaya' }}</span>
-                            <Tag v-if="c.is_additional" value="Di luar deal" severity="warning" class="text-[10px]" />
+                            <Tag v-if="c.is_additional" value="Additional" severity="warning" class="text-[10px]" />
                           </div>
                           <span class="text-sm text-slate-600">{{ c.cost_type?.nama || c.label }}</span>
                           <span v-if="c.keterangan" class="text-xs text-slate-400">{{ c.keterangan }}</span>
@@ -2790,17 +2818,18 @@ const auditUserName = (user) => user?.name || '-';
           <div class="flex flex-col gap-3 relative z-10">
             <div class="summary-row">
               <span>Total Tagihan</span>
-              <strong>{{ formatCurrency(bookingTotalTagihan) }}</strong>
+              <strong><span class="t-digit-group is-animating" v-html="digitize(bookingTotalTagihan)"></span></strong>
             </div>
             <div class="summary-row">
               <span>Total Dibayar</span>
-              <strong class="summary-positive">{{ formatCurrency(bookingTotalPayments) }}</strong>
+              <strong class="summary-positive"><span class="t-digit-group is-animating" v-html="digitize(bookingTotalPayments)"></span></strong>
             </div>
             <div class="summary-divider"></div>
             <div class="summary-balance">
               <span :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'">Sisa Tagihan</span>
-              <strong :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'">{{ formatCurrency(bookingSisaTagihan)
-              }}</strong>
+              <strong :class="bookingSisaTagihan > 0 ? 'is-due' : 'is-paid'">
+                <span class="t-digit-group is-animating" v-html="digitize(bookingSisaTagihan)"></span>
+              </strong>
             </div>
             <div class="summary-status">
               <span>Status Pembayaran</span>
@@ -2826,7 +2855,7 @@ const auditUserName = (user) => user?.name || '-';
             <Button v-else-if="isUnitHandled && hasBookingInvoice && !['cancelled', 'batal'].includes(booking.status)" label="Bayar Invoice" icon="pi pi-wallet" size="small" :disabled="['paid', 'void'].includes(bookingInvoice?.status) || invoiceActionLoading" :loading="invoiceActionLoading" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran invoice" @click="openInvoicePaymentDialog" />
           </div>
 
-          <div v-if="!booking.payments?.length" class="p-6 text-center text-slate-400">
+          <div v-if="!booking.payments?.length && !booking.cancellation?.ada_refund" class="p-6 text-center text-slate-400">
             <i class="pi pi-inbox text-3xl mb-2 opacity-30 block"></i>
             <p class="text-sm">Belum ada pembayaran.</p>
           </div>
@@ -2879,6 +2908,29 @@ const auditUserName = (user) => user?.name || '-';
                 </div>
               </div>
             </div>
+
+            <div v-if="booking.cancellation?.ada_refund" class="px-5 py-3.5 flex items-start justify-between gap-3 bg-rose-50/40">
+              <div class="flex flex-col gap-0.5 min-w-0">
+                <div class="flex flex-wrap gap-1.5">
+                  <span class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit bg-rose-100 text-rose-700">Refund Pembatalan</span>
+                  <span class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md w-fit" :class="booking.cancellation.sudah_bayar_refund ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
+                    {{ booking.cancellation.sudah_bayar_refund ? 'Sudah Dibayar' : 'Belum Dibayar' }}
+                  </span>
+                </div>
+                <span class="text-xs text-slate-500 truncate">
+                  {{ booking.cancellation.sudah_bayar_refund && booking.cancellation.dibayar_at
+                    ? new Date(booking.cancellation.dibayar_at).toLocaleDateString('id-ID', { dateStyle: 'medium' })
+                    : `Tujuan: ${booking.cancellation.bank_refund || '-'} • ${booking.cancellation.no_rek_refund || '-'} a.n ${booking.cancellation.nama_rek_refund || '-'}` }}
+                </span>
+                <span v-if="booking.cancellation.sudah_bayar_refund && booking.cancellation.payment_account" class="text-xs text-slate-400 truncate">
+                  via {{ booking.cancellation.payment_account.nama_bank }} — {{ booking.cancellation.payment_account.nomor_rekening }}
+                </span>
+                <span v-if="booking.cancellation.catatan_refund" class="text-xs text-slate-400 italic truncate">{{ booking.cancellation.catatan_refund }}</span>
+              </div>
+              <div class="flex flex-col items-end gap-2">
+                <span class="text-sm font-bold whitespace-nowrap text-rose-600">- {{ formatCurrency(booking.cancellation.nominal_refund) }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2913,6 +2965,7 @@ const auditUserName = (user) => user?.name || '-';
         </div>
       </div>
     </div>
+    </Transition>
 
     <Dialog :visible="showEditBookingDialog" @update:visible="onDialogVisibleChange('showEditBookingDialog', $event)" header="Edit Data Booking" :style="{ width: '620px' }" modal :breakpoints="{ '680px': '95vw' }" class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
@@ -2957,7 +3010,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showEditBookingDialog')" />
-          <Button label="Simpan" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" @click="submitBookingEdit" :loading="loading" />
+          <Button label="Simpan" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" @click="submitBookingEdit" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3011,7 +3064,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCheckoutDialog')" />
-          <Button :label="!checkoutSkip && !departureCheckDone ? 'Buat Request Cek Fisik' : 'Proses Checkout'" icon="pi pi-sign-out" class="app-dialog-button app-dialog-button-primary" @click="submitCheckout" :loading="loading || physicalCheckLoading" />
+          <Button :label="!checkoutSkip && !departureCheckDone ? 'Buat Request Cek Fisik' : 'Proses Checkout'" icon="pi pi-sign-out" class="app-dialog-button app-dialog-button-primary" @click="submitCheckout" :loading="loading || physicalCheckLoading" :disabled="loading || physicalCheckLoading" />
         </div>
       </template>
     </Dialog>
@@ -3068,7 +3121,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCompleteDialog')" />
-          <Button :label="!completeSkip && !returnCheckDone ? 'Buat Request Cek Fisik' : 'Selesaikan Sewa'" icon="pi pi-flag-fill" class="app-dialog-button app-dialog-button-primary" @click="submitComplete" :loading="loading || physicalCheckLoading" :disabled="!completeReturnedAt" />
+          <Button :label="!completeSkip && !returnCheckDone ? 'Buat Request Cek Fisik' : 'Selesaikan Sewa'" icon="pi pi-flag-fill" class="app-dialog-button app-dialog-button-primary" @click="submitComplete" :loading="loading || physicalCheckLoading" :disabled="!completeReturnedAt || loading || physicalCheckLoading" />
         </div>
       </template>
     </Dialog>
@@ -3090,7 +3143,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showHandleConfirmDialog')" />
-          <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="app-dialog-button app-dialog-button-primary" @click="submitHandle" :loading="loading" />
+          <Button label="Ya, Waiting List" icon="pi pi-check-circle" class="app-dialog-button app-dialog-button-primary" @click="submitHandle" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3396,7 +3449,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showUnitPriceDialog = false" />
-          <Button label="Simpan Harga" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" :loading="unitPriceSaving" @click="saveUnitPrice(unitPriceForm)" />
+          <Button label="Simpan Harga" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" :loading="unitPriceSaving" :disabled="unitPriceSaving" @click="saveUnitPrice(unitPriceForm)" />
         </div>
       </template>
     </Dialog>
@@ -3427,7 +3480,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCostDialog')" />
-          <Button :label="editingCostId ? 'Simpan Perubahan' : 'Tambahkan'" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitCost" :loading="loading" />
+          <Button :label="editingCostId ? 'Simpan Perubahan' : 'Tambahkan'" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitCost" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3744,7 +3797,7 @@ const auditUserName = (user) => user?.name || '-';
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showRollingDialog')" />
           <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="app-dialog-button app-dialog-button-info" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
           <Button v-if="rollingStep === 2" label="Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
-          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-info" @click="submitRolling" :loading="loading" />
+          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-info" @click="submitRolling" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3768,7 +3821,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showStopEarlyDialog')" />
-          <Button label="Proses Stop" icon="pi pi-check" class="app-dialog-button app-dialog-button-danger" @click="submitStopEarly" :loading="loading" />
+          <Button label="Proses Stop" icon="pi pi-check" class="app-dialog-button app-dialog-button-danger" @click="submitStopEarly" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3782,27 +3835,41 @@ const auditUserName = (user) => user?.name || '-';
           </div>
           <div>
             <p class="font-bold text-slate-800 mb-0.5">Booking akan dibatalkan</p>
-            <p class="text-sm text-slate-500">Status berubah ke <strong>Batal</strong>. Jika ada pembayaran yang sudah
-              masuk, isi nominal refund di bawah.</p>
+            <p class="text-sm text-slate-500">Status berubah ke <strong>Batal</strong>. Jika konsumen berhak atas refund,
+              isi datanya di bawah — pembayaran refund diproses kemudian lewat menu Pembatalan Booking.</p>
           </div>
         </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Nominal Refund <span class="text-slate-400 font-normal">(opsional)</span></label>
-          <InputNumber v-model="batalForm.refund_amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+        <div class="flex items-center gap-3">
+          <Checkbox v-model="batalForm.ada_refund" :binary="true" inputId="batal-ada-refund" />
+          <label for="batal-ada-refund" class="text-sm font-semibold text-slate-600 cursor-pointer">Ada Refund untuk Konsumen</label>
         </div>
-        <div v-if="batalForm.refund_amount > 0" class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-600">Akun Pembayaran Refund *</label>
-          <Dropdown v-model="batalForm.payment_account_id" :options="accountOptions" optionLabel="name" optionValue="id" placeholder="Pilih akun..." class="w-full" />
-        </div>
+        <template v-if="batalForm.ada_refund">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">Nominal Refund <span class="text-rose-500">*</span></label>
+            <InputNumber v-model="batalForm.nominal_refund" :min="0" mode="currency" currency="IDR" locale="id-ID" :minFractionDigits="0" :maxFractionDigits="0" class="w-full" placeholder="0" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">Bank Tujuan</label>
+            <InputText v-model="batalForm.bank_refund" class="w-full" placeholder="Contoh: BCA, Mandiri, BRI..." />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">Nomor Rekening Tujuan</label>
+            <InputText v-model="batalForm.no_rek_refund" class="w-full" placeholder="Nomor rekening tujuan" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-600">Nama Pemilik Rekening</label>
+            <InputText v-model="batalForm.nama_rek_refund" class="w-full" placeholder="Nama pemilik rekening" />
+          </div>
+        </template>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold text-slate-600">Keterangan Pembatalan <span class="text-slate-400 font-normal">(opsional)</span></label>
-          <Textarea v-model="batalForm.refund_keterangan" rows="2" placeholder="Alasan pembatalan..." class="w-full" />
+          <Textarea v-model="batalForm.catatan_refund" rows="2" placeholder="Alasan pembatalan..." class="w-full" />
         </div>
       </div>
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showBatalDialog')" />
-          <Button label="Ya, Batalkan Booking" icon="pi pi-ban" class="app-dialog-button app-dialog-button-danger" @click="submitBatal" :loading="loading" />
+          <Button label="Ya, Batalkan Booking" icon="pi pi-ban" class="app-dialog-button app-dialog-button-danger" @click="submitBatal" :loading="loading" :disabled="loading || (batalForm.ada_refund && !batalForm.nominal_refund)" />
         </div>
       </template>
     </Dialog>
@@ -3881,7 +3948,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showVoidPaymentDialog')" />
-          <Button label="Kirim Request" icon="pi pi-send" class="app-dialog-button app-dialog-button-danger" @click="submitVoidPaymentRequest" :loading="loading" />
+          <Button label="Kirim Request" icon="pi pi-send" class="app-dialog-button app-dialog-button-danger" @click="submitVoidPaymentRequest" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3897,7 +3964,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRejectVoidDialog')" />
-          <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger" @click="submitRejectVoid" :loading="loading" />
+          <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger" @click="submitRejectVoid" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3929,7 +3996,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showAdditionalCostDialog')" />
-          <Button label="Simpan" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitAdditionalCost" :loading="loading" :disabled="!additionalCostForm.cost_type_id || !additionalCostForm.amount" />
+          <Button label="Simpan" icon="pi pi-check" class="app-dialog-button app-dialog-button-primary" @click="submitAdditionalCost" :loading="loading" :disabled="loading || !additionalCostForm.cost_type_id || !additionalCostForm.amount" />
         </div>
       </template>
     </Dialog>
@@ -4000,22 +4067,6 @@ const auditUserName = (user) => user?.name || '-';
   border-radius: 50% !important;
   color: #085A66 !important;
   font-size: 9px;
-}
-
-.booking-detail-container {
-  animation: fadeIn 0.35s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .detail-page-header {
@@ -4538,7 +4589,6 @@ fieldset legend {
 }
 
 @media (min-width: 1024px) {
-
   .loading-grid,
   .detail-grid {
     grid-template-columns: minmax(0, 2fr) minmax(320px, 0.95fr);
@@ -4553,6 +4603,83 @@ fieldset legend {
     top: 20px;
     grid-column: 2;
   }
+}
+
+/* ── Transitions-dev: Texts reveal (18) ─────────────────── */
+.t-stagger-line {
+  opacity: 0;
+  transform: translateY(var(--stagger-distance));
+  filter: blur(var(--stagger-blur));
+  transition:
+    opacity   var(--stagger-dur) var(--stagger-ease),
+    transform var(--stagger-dur) var(--stagger-ease),
+    filter    var(--stagger-dur) var(--stagger-ease);
+  will-change: transform, opacity, filter;
+}
+.t-stagger-line--2 { transition-delay: var(--stagger-stagger); }
+.t-stagger-line--3 { transition-delay: calc(var(--stagger-stagger) * 2); }
+
+.t-stagger.is-shown .t-stagger-line {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+.t-stagger.is-hiding .t-stagger-line {
+  opacity: 0;
+  transform: translateY(0);
+  filter: blur(0);
+  transition: opacity 200ms ease, transform 0s linear, filter 0s linear;
+  transition-delay: 0s;
+}
+
+/* ── Transitions-dev: Number pop-in (02) ────────────────── */
+@keyframes t-digit-pop-in {
+  0% {
+    transform: translate(
+      calc(var(--digit-distance) * var(--digit-dir-x)),
+      calc(var(--digit-distance) * var(--digit-dir-y))
+    );
+    opacity: 0;
+    filter: blur(var(--digit-blur));
+  }
+  100% { transform: translate(0, 0); opacity: 1; filter: blur(0); }
+}
+
+.t-digit-group {
+  display: inline-flex;
+  align-items: baseline;
+}
+.t-digit {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+.t-digit-group.is-animating .t-digit {
+  animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both;
+}
+.t-digit-group.is-animating .t-digit[data-stagger="1"] {
+  animation-delay: var(--digit-stagger);
+}
+.t-digit-group.is-animating .t-digit[data-stagger="2"] {
+  animation-delay: calc(var(--digit-stagger) * 2);
+}
+
+/* ── Transitions-dev: Content reveal (booking-reveal) ───── */
+.booking-reveal-enter-from {
+  opacity: 0;
+  filter: blur(4px);
+}
+.booking-reveal-enter-active {
+  transition: opacity 400ms ease-in-out, filter 400ms ease-in-out;
+}
+.booking-reveal-enter-to {
+  opacity: 1;
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stagger-line { transition: none !important; }
+  .t-digit-group .t-digit { animation: none !important; }
+  .booking-reveal-enter-active { transition: none !important; }
 }
 
 @media (max-width: 768px) {
@@ -4602,5 +4729,26 @@ fieldset legend {
   .app-card>div.p-6 {
     padding: var(--space-lg) !important;
   }
+}
+</style>
+
+<style>
+/* Transitions-dev root variables — global so :root is not scoped */
+:root {
+  /* Texts reveal (18) */
+  --stagger-dur: 600ms;
+  --stagger-distance: 12px;
+  --stagger-stagger: 40ms;
+  --stagger-blur: 3px;
+  --stagger-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Number pop-in (02) */
+  --digit-dur: 500ms;
+  --digit-distance: 8px;
+  --digit-stagger: 70ms;
+  --digit-blur: 2px;
+  --digit-ease: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --digit-dir-x: 0;
+  --digit-dir-y: 1;
 }
 </style>

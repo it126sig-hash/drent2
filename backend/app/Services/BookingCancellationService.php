@@ -46,7 +46,27 @@ class BookingCancellationService
         ]);
     }
 
-    public function payRefund(BookingCancellation $cancellation, int $paymentAccountId): BookingCancellation
+    public function update(BookingCancellation $cancellation, array $data): BookingCancellation
+    {
+        if ($cancellation->sudah_bayar_refund) {
+            throw new UnprocessableEntityHttpException('Refund sudah dibayar dan tidak dapat diubah.');
+        }
+
+        $adaRefund = (bool) ($data['ada_refund'] ?? $cancellation->ada_refund);
+
+        $cancellation->update([
+            'ada_refund'      => $adaRefund,
+            'nominal_refund'  => $adaRefund ? ($data['nominal_refund'] ?? $cancellation->nominal_refund) : null,
+            'bank_refund'     => $adaRefund ? ($data['bank_refund'] ?? $cancellation->bank_refund) : null,
+            'no_rek_refund'   => $adaRefund ? ($data['no_rek_refund'] ?? $cancellation->no_rek_refund) : null,
+            'nama_rek_refund' => $adaRefund ? ($data['nama_rek_refund'] ?? $cancellation->nama_rek_refund) : null,
+            'catatan_refund'  => $data['catatan_refund'] ?? $cancellation->catatan_refund,
+        ]);
+
+        return $cancellation->fresh(['booking.customer', 'paymentAccount', 'creator', 'dibayarOleh']);
+    }
+
+    public function payRefund(BookingCancellation $cancellation, array $data): BookingCancellation
     {
         if (!$cancellation->ada_refund) {
             throw new UnprocessableEntityHttpException('Pembatalan ini tidak memiliki refund.');
@@ -56,23 +76,36 @@ class BookingCancellationService
             throw new UnprocessableEntityHttpException('Refund sudah pernah dibayar.');
         }
 
-        if (!$cancellation->nominal_refund || $cancellation->nominal_refund <= 0) {
+        $nominalAktual = isset($data['nominal_dibayar']) && $data['nominal_dibayar'] > 0
+            ? (int) $data['nominal_dibayar']
+            : (int) $cancellation->nominal_refund;
+
+        if (!$nominalAktual || $nominalAktual <= 0) {
             throw new UnprocessableEntityHttpException('Nominal refund tidak valid.');
         }
 
-        return DB::transaction(function () use ($cancellation, $paymentAccountId) {
+        $paymentAccountId = (int) $data['payment_account_id'];
+        $catatan = $data['catatan'] ?? null;
+
+        return DB::transaction(function () use ($cancellation, $paymentAccountId, $nominalAktual, $catatan) {
             $account = PaymentAccount::lockForUpdate()->findOrFail($paymentAccountId);
 
-            $this->transactionService->applyDelta($account, -(int) $cancellation->nominal_refund, [
+            $description = 'Refund pembatalan booking #' . $cancellation->booking->kode_booking;
+            if ($catatan) {
+                $description .= ' | ' . $catatan;
+            }
+
+            $this->transactionService->applyDelta($account, -$nominalAktual, [
                 'type'           => 'refund_out',
-                'amount'         => (int) $cancellation->nominal_refund,
-                'description'    => 'Refund pembatalan booking #' . $cancellation->booking->kode_booking,
+                'amount'         => $nominalAktual,
+                'description'    => $description,
                 'created_by'     => Auth::id(),
                 'transaction_at' => now(),
             ]);
 
             $cancellation->update([
                 'sudah_bayar_refund' => true,
+                'nominal_refund'     => $nominalAktual,
                 'payment_account_id' => $paymentAccountId,
                 'dibayar_at'         => now(),
                 'dibayar_oleh'       => Auth::id(),

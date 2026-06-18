@@ -5,11 +5,15 @@ import { format } from 'date-fns'
 import ProgressBar from 'primevue/progressbar'
 import Tag from 'primevue/tag'
 import receivableApi from '../../api/receivable'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 const route = useRoute()
 const invoice = ref(null)
 const loading = ref(false)
+const pdfLoading = ref(false)
 const error = ref(null)
+const invoiceContainerRef = ref(null)
 let refreshTimer = null
 
 const remainingAmount = computed(() => invoice.value?.remaining_amount || 0)
@@ -110,13 +114,43 @@ const statusSeverity = (status) => {
   return 'warn'
 }
 
-const downloadInvoice = () => {
-  const previousTitle = document.title
-  document.title = invoice.value?.invoice_number || 'invoice'
-  window.print()
-  window.setTimeout(() => {
-    document.title = previousTitle
-  }, 500)
+const downloadInvoice = async () => {
+  const el = invoiceContainerRef.value
+  if (!el || !invoice.value) return
+
+  pdfLoading.value = true
+  try {
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+    })
+
+    const imgData = canvas.toDataURL('image/png')
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = pdf.internal.pageSize.getHeight()
+    const imgHeightMm = (canvas.height / canvas.width) * pdfWidth
+
+    let heightLeft = imgHeightMm
+    let y = 0
+
+    pdf.addImage(imgData, 'PNG', 0, y, pdfWidth, imgHeightMm)
+    heightLeft -= pdfHeight
+
+    while (heightLeft > 0) {
+      y -= pdfHeight
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', 0, y, pdfWidth, imgHeightMm)
+      heightLeft -= pdfHeight
+    }
+
+    pdf.save(`${invoice.value.invoice_number || 'invoice'}.pdf`)
+  } finally {
+    pdfLoading.value = false
+  }
 }
 
 const fetchInvoice = async (silent = false) => {
@@ -147,7 +181,14 @@ onBeforeUnmount(() => {
   <main class="public-invoice-page">
 
 
-    <div class="invoice-container">
+    <div v-if="invoice && !loading" class="invoice-action-bar">
+      <button class="download-button" :disabled="pdfLoading" @click="downloadInvoice">
+        <i :class="pdfLoading ? 'pi pi-spin pi-spinner' : 'pi pi-download'"></i>
+        {{ pdfLoading ? 'Membuat PDF...' : 'Download PDF' }}
+      </button>
+    </div>
+
+    <div ref="invoiceContainerRef" class="invoice-container">
       <div v-if="loading" class="loading-strip">
         <ProgressBar mode="indeterminate" style="height: 4px" />
       </div>

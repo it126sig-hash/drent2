@@ -59,12 +59,8 @@ class DriverOperationalFundService
                 'operationalFunds.creator',
                 'operationalFunds.bookingDetail.unit',
                 'operationalFunds.items.costType',
-                'operationalFunds.expenses.costType',
-                'operationalFunds.expenses.submitter',
-                'operationalFunds.expenses.reviewer',
-                'operationalExpenses.costType',
-                'operationalExpenses.submitter',
-                'operationalExpenses.reviewer',
+                'operationalFunds.expenses',
+                'operationalExpenses',
             ])
             ->where('tenant_id', $user->tenant_id)
             ->when($user->role !== 'superadmin', fn ($q) => $q->where('branch_id', $user->branch_id))

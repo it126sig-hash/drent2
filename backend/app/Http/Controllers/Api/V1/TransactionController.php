@@ -49,11 +49,14 @@ class TransactionController extends Controller
             ->withSum(['operationalExpenses as total_expense_approved' => fn($q) => $q->whereIn('status', ['approved', 'void_requested'])->where('type', 'expense')], 'amount')
             // Total realisasi langsung (approved expense where driver_operational_fund_id IS NULL)
             ->withSum(['operationalExpenses as total_direct_expense' => fn($q) => $q->whereIn('status', ['approved', 'void_requested'])->where('type', 'expense')->whereNull('driver_operational_fund_id')], 'amount')
+            // Total uang masuk dari konsumen (untuk transaksi yang dibatalkan)
+            ->withSum(['payments as total_payments_in' => fn($q) => $q->where('status', '!=', 'voided')], 'amount')
             ->with([
                 'customer:id,nama,status',
                 'bookingDetails.unit.rentalOwner:id,nama,is_owner',
                 'bookingDetails.costs.costType',
                 'handledBy:id,name',
+                'cancellation',
             ])
             ->whereIn('status', $statuses);
 

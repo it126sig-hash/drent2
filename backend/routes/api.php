@@ -139,6 +139,7 @@ Route::prefix('v1')->group(function () {
         // Booking Cancellations
         Route::get('booking-cancellations', [BookingCancellationController::class, 'index']);
         Route::get('booking-cancellations/{bookingCancellation}', [BookingCancellationController::class, 'show']);
+        Route::put('booking-cancellations/{bookingCancellation}', [BookingCancellationController::class, 'update']);
         Route::post('booking-cancellations/{bookingCancellation}/pay-refund', [BookingCancellationController::class, 'payRefund']);
 
         // Receivables & Invoices

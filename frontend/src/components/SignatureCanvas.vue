@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   width: { type: Number, default: 400 },
@@ -24,6 +24,12 @@ onMounted(() => {
 
   if (props.modelValue) {
     loadImage(props.modelValue)
+  }
+})
+
+watch(() => props.modelValue, (newVal, oldVal) => {
+  if (newVal && newVal !== oldVal && !drawing) {
+    loadImage(newVal)
   }
 })
 

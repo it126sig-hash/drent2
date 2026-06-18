@@ -180,6 +180,7 @@ const transactionHistoryRows = computed(() => {
     amount: fund.amount,
     status: fund.status,
     description: fund.recipient_destination,
+    notes: fund.notes || '',
     actor: fund.creator?.name || fund.driver?.nama || '-',
     fund,
     expense: null,
@@ -306,6 +307,11 @@ const abbreviateLabel = (label) => {
   return label.split(' ').map(word => word.charAt(0).toUpperCase()).join('')
 }
 
+const budgetItemText = (item) => {
+  if (!item?.keterangan) return item?.label || '-'
+  return `${item.label || '-'}: ${item.keterangan}`
+}
+
 const formatDateTime = (value) => {
   if (!value) return '-'
   return format(new Date(value), 'dd MMM yyyy HH:mm')
@@ -419,19 +425,34 @@ const isModifiedDetail = (detail) => ['extend', 'rolling'].includes(detail?.deta
 
 const detailBudgetTotal = (detail) => {
   const operationalCosts = (detail?.costs || [])
-    .filter(cost => cost.type === 'biaya' && cost.cost_type?.kode !== 'driver')
+    .filter(cost => cost.type === 'biaya')
     .reduce((sum, cost) => sum + Number(cost.amount || 0), 0)
 
   return operationalCosts
 }
 
 const detailBudgetBreakdown = (detail) => {
-  const operationalCosts = (detail?.costs || []).filter(cost => cost.type === 'biaya' && cost.cost_type?.kode !== 'driver')
+  const operationalCosts = (detail?.costs || []).filter(cost => cost.type === 'biaya')
   if (operationalCosts.length > 0) {
-    return operationalCosts.map(c => ({ label: c.label || c.cost_type?.nama || 'Biaya', amount: c.amount }))
+    return operationalCosts.map(c => ({
+      label: c.cost_type?.kode === 'driver' ? 'Gaji Driver' : (c.label || c.cost_type?.nama || 'Biaya'),
+      keterangan: c.keterangan || '',
+      amount: c.amount,
+    }))
   }
   return []
 }
+
+const expenseDialogDetail = computed(() => {
+  if (selectedFund.value?.booking_detail) return selectedFund.value.booking_detail
+  const detailId = expenseForm.value.booking_detail_id
+  if (!detailId) return null
+  return (selectedBooking.value?.booking_details || []).find(detail => detail.id === detailId) || null
+})
+
+const expenseDialogBudgetBreakdown = computed(() => detailBudgetBreakdown(expenseDialogDetail.value))
+
+const expenseDialogBudgetTotal = computed(() => detailBudgetTotal(expenseDialogDetail.value))
 
 const detailFunds = (booking, detail) =>
   (booking.operational_funds || []).filter(fund =>
@@ -466,15 +487,27 @@ const detailSalaryTotal = (booking, detail) =>
     .reduce((sum, fund) => sum + Number(fund.amount || 0), 0)
 
 const detailRealizationTotal = (booking, detail) => {
-  const fundExpenses = detailFunds(booking, detail).flatMap(fund => fund.expenses || [])
-  const directExpenses = (booking.operational_expenses || []).filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
-  return [...fundExpenses, ...directExpenses]
-    .filter(expense => expense.type === 'expense' && expense.status === 'approved')
-    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
+  const funds = detailFunds(booking, detail)
+  const fundTotal = funds.reduce((sum, fund) => {
+    if (Array.isArray(fund.expenses)) {
+      return sum + fund.expenses
+        .filter(e => e.type === 'expense' && e.status === 'approved')
+        .reduce((s, e) => s + Number(e.amount || 0), 0)
+    }
+    return sum + Number(fund.summary?.approved_expense_total || 0)
+  }, 0)
+  const directExpenses = (booking.operational_expenses || [])
+    .filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
+  const directTotal = directExpenses
+    .filter(e => e.type === 'expense' && e.status === 'approved')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0)
+  return fundTotal + directTotal
 }
 
 const detailRealizationBreakdown = (booking, detail) => {
-  const fundExpenses = detailFunds(booking, detail).flatMap(fund => fund.expenses || [])
+  const fundExpenses = detailFunds(booking, detail)
+    .filter(fund => Array.isArray(fund.expenses))
+    .flatMap(fund => fund.expenses)
   const directExpenses = (booking.operational_expenses || []).filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
   return [...fundExpenses, ...directExpenses]
     .filter(expense => expense.type === 'expense' && expense.status === 'approved')
@@ -482,20 +515,35 @@ const detailRealizationBreakdown = (booking, detail) => {
 }
 
 const detailReturnTotal = (booking, detail) => {
-  const fundExpenses = detailFunds(booking, detail).flatMap(fund => fund.expenses || [])
-  const directExpenses = (booking.operational_expenses || []).filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
-  return [...fundExpenses, ...directExpenses]
-    .filter(expense => expense.type === 'return' && expense.status === 'approved')
-    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
+  const funds = detailFunds(booking, detail)
+  const fundTotal = funds.reduce((sum, fund) => {
+    if (Array.isArray(fund.expenses)) {
+      return sum + fund.expenses
+        .filter(e => e.type === 'return' && e.status === 'approved')
+        .reduce((s, e) => s + Number(e.amount || 0), 0)
+    }
+    return sum + Number(fund.summary?.approved_return_total || 0)
+  }, 0)
+  const directExpenses = (booking.operational_expenses || [])
+    .filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
+  const directTotal = directExpenses
+    .filter(e => e.type === 'return' && e.status === 'approved')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0)
+  return fundTotal + directTotal
 }
 
 const detailHasPendingDriverAcceptance = (booking, detail) =>
   detailFunds(booking, detail).some(fund => fund.status === 'pending_driver_acceptance')
 
-const detailHasPendingDriverReceipts = (booking, detail) =>
-  detailFunds(booking, detail)
-    .flatMap(fund => fund.expenses || [])
-    .some(expense => expense.status === 'submitted' && expense.source === 'driver')
+const detailHasPendingDriverReceipts = (booking, detail) => {
+  const funds = detailFunds(booking, detail)
+  return funds.some(fund => {
+    if (Array.isArray(fund.expenses)) {
+      return fund.expenses.some(e => e.status === 'submitted' && e.source === 'driver')
+    }
+    return Number(fund.summary?.pending_driver_review_count || 0) > 0
+  })
+}
 
 const selectedBudgetTotal = computed(() => {
   const detailSources = [
@@ -1012,7 +1060,7 @@ onUnmounted(() => {
                 <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.budget_total) }}</span>
                 <div v-else class="breakdown-list">
                   <div v-for="(item, idx) in data.budget_breakdown" :key="idx" class="breakdown-item">
-                    <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
+                    <span class="breakdown-label breakdown-label-wide" :title="budgetItemText(item)">{{ budgetItemText(item) }}</span>
                     <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
                   </div>
                   <div v-if="!data.budget_breakdown?.length" class="breakdown-empty">-</div>
@@ -1146,7 +1194,7 @@ onUnmounted(() => {
           </Column>
           <Column header="Keterangan" style="min-width: 18rem">
             <template #body="{ data }">
-              <span class="table-text-clamp">{{ data.description || '-' }}</span>
+              <span v-if="data.description" class="table-text-clamp" :title="data.description">{{ data.description }}</span>
               <div class="text-xs text-secondary mt-1">{{ data.created_by_name || data.reviewed_by_name || '-' }}</div>
             </template>
           </Column>
@@ -1495,7 +1543,8 @@ onUnmounted(() => {
               </Column>
               <Column header="Keterangan" style="min-width: 18rem">
                 <template #body="{ data }">
-                  <div>{{ data.description }}</div>
+                  <span v-if="data.description" class="table-text-clamp" :title="data.description">{{ data.description }}</span>
+                  <span v-if="data.notes && data.notes !== data.description" class="table-text-clamp text-xs text-secondary" :title="data.notes">{{ data.notes }}</span>
                   <div v-if="data.expense?.rejection_reason" class="reject-note">{{ data.expense.rejection_reason }}
                   </div>
                 </template>
@@ -1586,6 +1635,18 @@ onUnmounted(() => {
 
     <Dialog v-model:visible="showExpenseDialog" :header="expenseForm.type === 'return' ? 'Input Pengembalian' : 'Input Bon Finance'" modal :style="{ width: '480px' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog']">
       <div class="dialog-stack">
+        <div v-if="expenseDialogBudgetBreakdown.length" class="app-muted-panel expense-budget-reference">
+          <div class="summary-row">
+            <span>Anggaran Biaya Operasional</span>
+            <strong>{{ formatCurrency(expenseDialogBudgetTotal) }}</strong>
+          </div>
+          <div class="breakdown-list">
+            <div v-for="(item, idx) in expenseDialogBudgetBreakdown" :key="idx" class="breakdown-item">
+              <span class="breakdown-label breakdown-label-wide" :title="budgetItemText(item)">{{ budgetItemText(item) }}</span>
+              <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
+            </div>
+          </div>
+        </div>
         <fieldset v-if="expenseForm.type === 'expense'" class="form-fieldset">
           <label>Cost Type</label>
           <Dropdown v-model="expenseForm.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" showClear class="w-full" />
@@ -2397,10 +2458,10 @@ onUnmounted(() => {
 }
 
 .table-text-clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  display: block;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.35;
 }
 
@@ -2730,6 +2791,24 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.breakdown-label-wide {
+  max-width: none;
+  flex: 1;
+  min-width: 0;
+  cursor: help;
+}
+
+.expense-budget-reference {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.expense-budget-reference .breakdown-list {
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .breakdown-amount {

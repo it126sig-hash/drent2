@@ -11,6 +11,7 @@ class CustomerService
     {
         $query = Customer::query()
             ->with('member')
+            ->orderBy('created_at', 'desc')
             ->where('tenant_id', Auth::user()->tenant_id);
 
         if (isset($filters['status'])) {

@@ -2,11 +2,17 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import DatePicker from 'primevue/datepicker'
-import ProgressBar from 'primevue/progressbar'
-import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
 import { useAuthStore } from '../stores/auth'
 import { useDashboard } from '../composables/useDashboard'
+import "@aejkatappaja/phantom-ui";
+
+const props = defineProps({
+  loading: {
+    type: Boolean,
+    default: false
+  }
+})
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -39,7 +45,7 @@ const filteredBookings = computed(() => {
     } else {
       return booking.unit_id === null || booking.unit_id === undefined
     }
-  })
+  }).slice(0, 5)
 })
 
 const bookingsWithUnitCount = computed(() => {
@@ -231,14 +237,19 @@ onMounted(fetchData)
       </div>
     </header>
 
-    <ProgressBar v-if="loading" mode="indeterminate" class="dashboard-loader" />
-
     <section class="kpi-grid">
       <template v-if="loading && !dashboard">
-        <div v-for="index in 6" :key="`skeleton-${index}`" class="kpi-tile">
-          <Skeleton width="36px" height="36px" />
-          <Skeleton width="70%" height="14px" class="mt-4" />
-          <Skeleton width="45%" height="24px" class="mt-2" />
+        <div v-for="i in 6" :key="`kpi-ph-${i}`" class="kpi-tile">
+          <phantom-ui :loading="true" animation="shimmer" stagger="0.03" reveal="0.2" fallback-radius="6">
+            <div class="kpi-header">
+              <div class="kpi-icon"><i class="pi pi-circle"></i></div>
+              <span class="kpi-delta">Periode ini</span>
+            </div>
+            <div class="kpi-body">
+              <p>Memuat KPI</p>
+              <strong>Rp 0.000.000</strong>
+            </div>
+          </phantom-ui>
         </div>
       </template>
 
@@ -271,104 +282,133 @@ onMounted(fetchData)
 
         <div class="booking-tabs-container">
           <div class="booking-tabs">
-            <button 
-              type="button" 
-              class="booking-tab" 
-              :class="{ active: activeBookingTab === 'with_unit' }" 
-              @click="activeBookingTab = 'with_unit'"
-            >
+            <button type="button" class="booking-tab" :class="{ active: activeBookingTab === 'with_unit' }" @click="activeBookingTab = 'with_unit'">
               <span>Sudah Ada Unit</span>
               <span class="tab-badge">{{ bookingsWithUnitCount }}</span>
             </button>
-            <button 
-              type="button" 
-              class="booking-tab" 
-              :class="{ active: activeBookingTab === 'placeholder' }" 
-              @click="activeBookingTab = 'placeholder'"
-            >
+            <button type="button" class="booking-tab" :class="{ active: activeBookingTab === 'placeholder' }" @click="activeBookingTab = 'placeholder'">
               <span>Masih Placeholder</span>
               <span class="tab-badge">{{ bookingsPlaceholderCount }}</span>
             </button>
           </div>
         </div>
 
-        <div v-if="filteredBookings.length" class="booking-list">
-          <article v-for="booking in filteredBookings" :key="booking.id" class="booking-row" @click="router.push({ name: 'BookingDetail', params: { id: booking.id } })">
-            <div class="booking-icon">
-              <i class="pi pi-car"></i>
-            </div>
-            <div class="booking-main">
-              <div class="booking-title">
-                <strong>{{ booking.customer_name || '-' }}</strong>
-                <Tag :value="statusLabel(booking.status)" :severity="statusSeverity(booking.status)" />
-                <Tag v-if="booking.is_late" value="Terlambat" severity="danger" />
+        <div class="booking-body">
+          <phantom-ui :loading="loading && !dashboard" animation="shimmer" stagger="0.05" count="4" count-gap="10" reveal="0.25" fallback-radius="8" style="display:block;padding:14px">
+            <template v-if="loading && !dashboard">
+              <article class="booking-row">
+                <div class="booking-icon"><i class="pi pi-car"></i></div>
+                <div class="booking-main">
+                  <div class="booking-title"><strong>Nama Pelanggan</strong></div>
+                  <p>BKG-XXXX - Nama Kendaraan</p>
+                  <span>01 Jan 00:00 sampai 03 Jan 00:00</span>
+                </div>
+                <strong class="booking-amount">Rp 0.000.000</strong>
+              </article>
+            </template>
+            <template v-else>
+              <div v-if="filteredBookings.length" class="booking-list" style="padding:0">
+                <article v-for="booking in filteredBookings" :key="booking.id" class="booking-row" @click="router.push({ name: 'BookingDetail', params: { id: booking.id } })">
+                  <div class="booking-icon">
+                    <i class="pi pi-car"></i>
+                  </div>
+                  <div class="booking-main">
+                    <div class="booking-title">
+                      <strong>{{ booking.customer_name || '-' }}</strong>
+                      <Tag :value="statusLabel(booking.status)" :severity="statusSeverity(booking.status)" />
+                      <Tag v-if="booking.is_late" value="Terlambat" severity="danger" />
+                    </div>
+                    <p>{{ booking.kode_booking }} - {{ booking.unit_label || '-' }}</p>
+                    <span>{{ formatDateTime(booking.tgl_sewa) }} sampai {{ formatDateTime(booking.tgl_kembali) }}</span>
+                  </div>
+                  <strong class="booking-amount">
+                    {{ formatCurrency(
+                      booking.unit_id !== null && booking.unit_id !== undefined
+                        ? (booking.total_biaya?.total || booking.amount)
+                        : booking.amount
+                    ) }}
+                  </strong>
+                </article>
               </div>
-              <p>{{ booking.kode_booking }} - {{ booking.unit_label || '-' }}</p>
-              <span>{{ formatDateTime(booking.tgl_sewa) }} sampai {{ formatDateTime(booking.tgl_kembali) }}</span>
-            </div>
-            <strong class="booking-amount">
-              {{ formatCurrency(
-                booking.unit_id !== null && booking.unit_id !== undefined
-                  ? (booking.total_biaya?.total || booking.amount)
-                  : booking.amount
-              ) }}
-            </strong>
-          </article>
-        </div>
-
-        <div v-else class="empty-state">
-          <i class="pi pi-calendar"></i>
-          <span v-if="!bookingToday.length">Tidak ada booking pada periode ini.</span>
-          <span v-else-if="activeBookingTab === 'with_unit'">Tidak ada booking dengan unit pada periode ini.</span>
-          <span v-else>Tidak ada booking placeholder pada periode ini.</span>
+              <div v-else class="empty-state">
+                <i class="pi pi-calendar"></i>
+                <span v-if="!bookingToday.length">Tidak ada booking pada periode ini.</span>
+                <span v-else-if="activeBookingTab === 'with_unit'">Tidak ada booking dengan unit pada periode ini.</span>
+                <span v-else>Tidak ada booking placeholder pada periode ini.</span>
+              </div>
+            </template>
+          </phantom-ui>
         </div>
       </section>
 
       <aside class="side-stack">
-        <section class="app-card dashboard-panel">
-          <div class="panel-header compact">
-            <h2>Status Armada</h2>
-          </div>
-          <div class="armada-list">
-            <div v-for="item in armadaStatus" :key="item.key" class="armada-row">
-              <div>
-                <span class="tone-dot" :class="toneClass(item.tone)"></span>
-                <strong>{{ item.label }}</strong>
-              </div>
-              <span>{{ item.value }} unit</span>
-              <div class="armada-track">
-                <div :class="['armada-fill', toneClass(item.tone)]" :style="{ width: `${item.percentage}%` }"></div>
-              </div>
+        <phantom-ui :loading="loading && !dashboard" animation="shimmer" stagger="0.05" reveal="0.25" fallback-radius="6">
+          <section class="app-card dashboard-panel">
+            <div class="panel-header compact">
+              <h2>Status Armada</h2>
             </div>
-          </div>
-        </section>
-
+            <div class="armada-list">
+              <template v-if="loading && !dashboard">
+                <div v-for="i in 4" :key="`arm-ph-${i}`" class="armada-row">
+                  <div><span class="tone-dot tone-neutral"></span><strong>Memuat status</strong></div>
+                  <span>— unit</span>
+                  <div class="armada-track"><div class="armada-fill tone-neutral" style="width:55%"></div></div>
+                </div>
+              </template>
+              <template v-else>
+                <div v-for="item in armadaStatus" :key="item.key" class="armada-row">
+                  <div>
+                    <span class="tone-dot" :class="toneClass(item.tone)"></span>
+                    <strong>{{ item.label }}</strong>
+                  </div>
+                  <span>{{ item.value }} unit</span>
+                  <div class="armada-track">
+                    <div :class="['armada-fill', toneClass(item.tone)]" :style="{ width: `${item.percentage}%` }"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </section>
+        </phantom-ui>
         <section class="app-card dashboard-panel">
           <div class="panel-header compact">
             <h2>Finance Snapshot</h2>
           </div>
-          <div class="finance-grid">
-            <div>
-              <span>Tagihan belum lunas</span>
-              <strong>{{ formatCurrency(finance.outstanding_amount) }}</strong>
-              <small>{{ finance.outstanding_count || 0 }} transaksi</small>
-            </div>
-            <div>
-              <span>Rent to Rent terbuka</span>
-              <strong>{{ formatCurrency(finance.open_rent_to_rent_bill_amount) }}</strong>
-              <small>{{ finance.open_rent_to_rent_bill_count || 0 }} tagihan</small>
-            </div>
-          </div>
-          <div class="payment-list">
-            <article v-for="payment in finance.latest_payments || []" :key="payment.id">
+          <phantom-ui :loading="loading && !dashboard" animation="shimmer" stagger="0.04" reveal="0.25" fallback-radius="6">
+            <div class="finance-grid">
               <div>
-                <strong>{{ payment.customer_name || '-' }}</strong>
-                <span>{{ payment.booking_code || '-' }} - {{ payment.payment_account || '-' }}</span>
+                <span>Tagihan belum lunas</span>
+                <strong>{{ formatCurrency(finance.outstanding_amount) }}</strong>
+                <small>{{ finance.outstanding_count || 0 }} transaksi</small>
               </div>
-              <b>{{ formatCurrency(payment.amount) }}</b>
-            </article>
-            <div v-if="!(finance.latest_payments || []).length" class="mini-empty">Belum ada pembayaran periode ini.</div>
-          </div>
+              <div>
+                <span>Rent to Rent terbuka</span>
+                <strong>{{ formatCurrency(finance.open_rent_to_rent_bill_amount) }}</strong>
+                <small>{{ finance.open_rent_to_rent_bill_count || 0 }} tagihan</small>
+              </div>
+            </div>
+            <div class="payment-list">
+              <template v-if="loading && !dashboard">
+                <article v-for="i in 3" :key="`pay-ph-${i}`">
+                  <div>
+                    <strong>Nama Pelanggan</strong>
+                    <span>BKG-XXXX - Transfer Bank</span>
+                  </div>
+                  <b>Rp 0.000.000</b>
+                </article>
+              </template>
+              <template v-else>
+                <article v-for="payment in finance.latest_payments || []" :key="payment.id">
+                  <div>
+                    <strong>{{ payment.customer_name || '-' }}</strong>
+                    <span>{{ payment.booking_code || '-' }} - {{ payment.payment_account || '-' }}</span>
+                  </div>
+                  <b>{{ formatCurrency(payment.amount) }}</b>
+                </article>
+                <div v-if="!(finance.latest_payments || []).length" class="mini-empty">Belum ada pembayaran periode ini.</div>
+              </template>
+            </div>
+          </phantom-ui>
         </section>
       </aside>
     </div>
@@ -393,14 +433,7 @@ onMounted(fetchData)
         </div>
 
         <div class="cashflow-tabs">
-          <button
-            v-for="tab in cashflowTabs"
-            :key="tab.key"
-            type="button"
-            class="cashflow-tab"
-            :class="{ active: activeCashflowTab === tab.key }"
-            @click="activeCashflowTab = tab.key"
-          >
+          <button v-for="tab in cashflowTabs" :key="tab.key" type="button" class="cashflow-tab" :class="{ active: activeCashflowTab === tab.key }" @click="activeCashflowTab = tab.key">
             {{ tab.label }}
           </button>
         </div>
@@ -451,22 +484,42 @@ onMounted(fetchData)
           <span>Top 5</span>
         </div>
 
-        <div v-if="activeLeaderboard.items.length" class="leaderboard-list">
-          <article v-for="(item, index) in activeLeaderboard.items" :key="`${activeLeaderboard.status}-${item.source}-${item.id}`" class="leaderboard-row">
-            <div class="rank">{{ index + 1 }}</div>
-            <div class="leaderboard-main">
-              <strong>{{ item.name }}</strong>
-              <span>{{ item.contact || '-' }}</span>
-              <small>{{ item.latest_booking_code || '-' }} - {{ formatDateTime(item.latest_booking_at) }}</small>
+        <phantom-ui :loading="loading && !dashboard" animation="shimmer" stagger="0.06" count="5" count-gap="14" reveal="0.25" fallback-radius="6">
+          <template v-if="loading && !dashboard">
+            <div class="leaderboard-bar-row">
+              <div class="leaderboard-bar-rank">1</div>
+              <div class="leaderboard-bar-info">
+                <div class="leaderboard-bar-label">
+                  <strong>Nama Konsumen</strong>
+                  <span class="leaderboard-bar-count">0x</span>
+                </div>
+                <div class="leaderboard-bar-track"><div class="leaderboard-bar-fill" style="width:80%"></div></div>
+                <small class="leaderboard-bar-meta">—</small>
+              </div>
             </div>
-            <div class="leaderboard-metric">
-              <strong>{{ item.total_bookings }}x</strong>
-              <span>order selesai</span>
+          </template>
+          <template v-else>
+            <div v-if="activeLeaderboard.items.length" class="leaderboard-chart">
+              <div v-for="(item, index) in activeLeaderboard.items" :key="`${activeLeaderboard.status}-${item.source}-${item.id}`" class="leaderboard-bar-row">
+                <div class="leaderboard-bar-rank">{{ index + 1 }}</div>
+                <div class="leaderboard-bar-info">
+                  <div class="leaderboard-bar-label">
+                    <strong>{{ item.name }}</strong>
+                    <span class="leaderboard-bar-count">{{ item.total_bookings }}x</span>
+                  </div>
+                  <div class="leaderboard-bar-track">
+                    <div class="leaderboard-bar-fill" :style="{
+                      width: `${(item.total_bookings / activeLeaderboard.items[0].total_bookings) * 100}%`,
+                      opacity: 1 - index * 0.15,
+                    }"></div>
+                  </div>
+                  <small class="leaderboard-bar-meta">{{ item.contact || '-' }} &middot; {{ item.latest_booking_code || '-' }} &middot; {{ formatDateTime(item.latest_booking_at) }}</small>
+                </div>
+              </div>
             </div>
-          </article>
-        </div>
-
-        <div v-else class="mini-empty">Belum ada repeat order selesai.</div>
+            <div v-else class="mini-empty">Belum ada repeat order selesai.</div>
+          </template>
+        </phantom-ui>
       </section>
     </section>
   </div>
@@ -502,11 +555,6 @@ onMounted(fetchData)
 
 .dashboard-date {
   width: 150px;
-}
-
-.dashboard-loader {
-  height: 3px;
-  margin-bottom: 14px;
 }
 
 .kpi-grid {
@@ -551,8 +599,7 @@ onMounted(fetchData)
 .booking-title,
 .armada-row>div,
 .payment-list article,
-.leaderboard-header,
-.leaderboard-row {
+.leaderboard-header {
   display: flex;
   align-items: center;
 }
@@ -560,8 +607,7 @@ onMounted(fetchData)
 .kpi-header,
 .panel-header,
 .payment-list article,
-.leaderboard-header,
-.leaderboard-row {
+.leaderboard-header {
   justify-content: space-between;
 }
 
@@ -591,9 +637,6 @@ onMounted(fetchData)
 .leaderboard-header span,
 .finance-grid span,
 .payment-list span,
-.leaderboard-main span,
-.leaderboard-main small,
-.leaderboard-metric span,
 .booking-main p,
 .booking-main span {
   color: var(--text-secondary);
@@ -616,16 +659,29 @@ onMounted(fetchData)
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .side-stack {
   display: grid;
   gap: 18px;
+  grid-template-rows: auto 1fr;
 }
 
 .dashboard-panel {
   overflow: hidden;
+}
+
+.main-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.booking-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
 }
 
 .panel-header {
@@ -732,8 +788,7 @@ onMounted(fetchData)
   display: grid;
 }
 
-.booking-list,
-.leaderboard-list {
+.booking-list {
   gap: 10px;
   padding: 14px;
 }
@@ -774,7 +829,6 @@ onMounted(fetchData)
 }
 
 .booking-title strong,
-.leaderboard-main strong,
 .payment-list strong,
 .finance-grid strong {
   color: var(--text-primary);
@@ -1129,50 +1183,91 @@ onMounted(fetchData)
   box-shadow: inset 0 0 0 1px var(--primary);
 }
 
-.leaderboard-row {
-  gap: 12px;
-  padding: 10px;
-  border: 1px solid var(--surface-border);
-  border-radius: 8px;
-  background: var(--card-bg);
+.leaderboard-chart {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
 }
 
-.rank {
-  width: 30px;
-  height: 30px;
+.leaderboard-bar-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.leaderboard-bar-rank {
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
   border-radius: 8px;
-  background: var(--surface-default);
-  color: var(--text-primary);
+  background: var(--card-bg);
+  border: 1px solid var(--surface-border);
+  color: var(--text-secondary);
+  font-size: 12px;
   font-weight: 800;
+  margin-top: 2px;
 }
 
-.leaderboard-main {
+.leaderboard-bar-row:first-child .leaderboard-bar-rank {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.leaderboard-bar-info {
   display: grid;
-  gap: 2px;
+  gap: 5px;
   min-width: 0;
-  flex: 1;
 }
 
-.leaderboard-main strong,
-.leaderboard-main span,
-.leaderboard-main small {
+.leaderboard-bar-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.leaderboard-bar-label strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.leaderboard-metric {
-  display: grid;
-  gap: 2px;
-  text-align: right;
-}
-
-.leaderboard-metric strong {
+  font-size: 13px;
   color: var(--text-primary);
-  font-size: 16px;
+}
+
+.leaderboard-bar-count {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--primary);
+}
+
+.leaderboard-bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  border: 1px solid var(--surface-border);
+  overflow: hidden;
+}
+
+.leaderboard-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.leaderboard-bar-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tone-dot {
@@ -1301,10 +1396,6 @@ onMounted(fetchData)
     justify-self: start;
   }
 
-  .leaderboard-row {
-    align-items: flex-start;
-  }
-
   .leaderboard-header {
     align-items: stretch;
     flex-direction: column;
@@ -1312,10 +1403,6 @@ onMounted(fetchData)
 
   .cashflow-chart {
     grid-template-columns: 1fr;
-  }
-
-  .leaderboard-metric {
-    min-width: 86px;
   }
 }
 </style>

@@ -399,6 +399,14 @@ const handleLogin = async () => {
     background: transparent !important;
   }
 
+  .login-form {
+    gap: var(--space-2xl);
+  }
+
+  .login-btn {
+    margin-top: var(--space-md);
+  }
+
   .form-logo {
     display: none;
   }
@@ -406,7 +414,15 @@ const handleLogin = async () => {
 
 @media (max-width: 560px) {
   .login-form-panel {
-    padding: var(--space-xl);
+    padding: clamp(20px, 7vw, 28px);
+  }
+
+  .login-form {
+    gap: 18px;
+  }
+
+  .field-group {
+    gap: var(--space-md);
   }
 
   .form-header {

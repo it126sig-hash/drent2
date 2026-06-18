@@ -36,6 +36,21 @@ export function useCancellation() {
     }
   }
 
+  const updateCancellation = async (id, data) => {
+    loading.value = true
+    try {
+      const response = await cancellationApi.updateCancellation(id, data)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Data refund berhasil diperbarui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal memperbarui data refund'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   const payRefund = async (id, data) => {
     loading.value = true
     try {
@@ -51,5 +66,5 @@ export function useCancellation() {
     }
   }
 
-  return { cancellations, loading, error, pagination, fetchCancellations, payRefund }
+  return { cancellations, loading, error, pagination, fetchCancellations, updateCancellation, payRefund }
 }

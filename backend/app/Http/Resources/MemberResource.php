@@ -47,8 +47,8 @@ class MemberResource extends JsonResource
             'rumah_status' => $this->rumah_status,
             'rumah_lokasi' => $this->rumah_lokasi,
 
-            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
-            'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
+            'created_at' => $this->created_at?->format('Y-m-d H:i:s'),
+            'updated_at' => $this->updated_at?->format('Y-m-d H:i:s'),
         ];
     }
 }

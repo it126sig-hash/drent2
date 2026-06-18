@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PayRefundRequest;
+use App\Http\Requests\UpdateCancellationRefundRequest;
 use App\Http\Resources\BookingCancellationResource;
 use App\Models\BookingCancellation;
 use App\Services\BookingCancellationService;
@@ -34,12 +35,16 @@ class BookingCancellationController extends Controller
         return new BookingCancellationResource($bookingCancellation);
     }
 
+    public function update(UpdateCancellationRefundRequest $request, BookingCancellation $bookingCancellation)
+    {
+        $cancellation = $this->service->update($bookingCancellation, $request->validated());
+
+        return new BookingCancellationResource($cancellation);
+    }
+
     public function payRefund(PayRefundRequest $request, BookingCancellation $bookingCancellation)
     {
-        $cancellation = $this->service->payRefund(
-            $bookingCancellation,
-            (int) $request->validated('payment_account_id')
-        );
+        $cancellation = $this->service->payRefund($bookingCancellation, $request->validated());
 
         return new BookingCancellationResource($cancellation);
     }

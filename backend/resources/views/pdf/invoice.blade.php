@@ -60,12 +60,8 @@
         }
 
         .brand-logo {
-            width: 48px;
-            height: 48px;
-            object-fit: contain;
             background: #ffffff;
             border-radius: 4px;
-            padding: 6px;
             display: block;
         }
 
@@ -405,9 +401,6 @@
         }
 
         .signature-img {
-            width: 150px;
-            height: 60px;
-            object-fit: contain;
             margin-bottom: 4px;
             display: block;
         }
@@ -461,7 +454,7 @@
                             <tr>
                                 @if($branchLogoBase64)
                                 <td style="padding-right: 12px; vertical-align: middle;">
-                                    <img src="{{ $branchLogoBase64 }}" class="brand-logo" alt="Logo" />
+                                    <img src="{{ $branchLogoBase64 }}" class="brand-logo" style="width:{{ $branchLogoWidth }}px; height:{{ $branchLogoHeight }}px;" alt="Logo" />
                                 </td>
                                 @endif
                                 <td style="vertical-align: middle;">
@@ -643,7 +636,7 @@
 
                         <div class="signature-section">
                             @if($signatureBase64)
-                                <img src="{{ $signatureBase64 }}" class="signature-img" alt="Signature" />
+                                <img src="{{ $signatureBase64 }}" class="signature-img" style="width:{{ $signatureWidth }}px; height:{{ $signatureHeight }}px;" alt="Signature" />
                             @else
                                 <div class="signature-line">&nbsp;</div>
                             @endif

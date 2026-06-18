@@ -92,11 +92,12 @@ class BookingResource extends JsonResource
                 ),
 
             'customer'            => [
-                'id'     => $this->customer?->id,
-                'nama'   => $this->customer?->nama,
-                'email'  => $this->customer?->email,
-                'kota'   => $this->customer?->kota,
-                'status' => $this->customer?->status,
+                'id'            => $this->customer?->id,
+                'nama'          => $this->customer?->nama,
+                'email'         => $this->customer?->email,
+                'kota'          => $this->customer?->kota,
+                'status'        => $this->customer?->status,
+                'member_status' => $this->customer?->member?->status_member,
             ],
             'booking_details'     => $this->whenLoaded('bookingDetails', function () {
                 return $this->bookingDetails->map(fn($d) => [
@@ -196,6 +197,23 @@ class BookingResource extends JsonResource
                     ] : null,
                 ]);
             }),
+            'cancellation'        => $this->whenLoaded('cancellation', fn() => $this->cancellation ? [
+                'id'                 => $this->cancellation->id,
+                'ada_refund'         => (bool) $this->cancellation->ada_refund,
+                'nominal_refund'     => $this->cancellation->nominal_refund ? (int) $this->cancellation->nominal_refund : null,
+                'bank_refund'        => $this->cancellation->bank_refund,
+                'no_rek_refund'      => $this->cancellation->no_rek_refund,
+                'nama_rek_refund'    => $this->cancellation->nama_rek_refund,
+                'catatan_refund'     => $this->cancellation->catatan_refund,
+                'sudah_bayar_refund' => (bool) $this->cancellation->sudah_bayar_refund,
+                'dibayar_at'         => $this->cancellation->dibayar_at?->toISOString(),
+                'payment_account'    => $this->cancellation->relationLoaded('paymentAccount') && $this->cancellation->paymentAccount ? [
+                    'id'             => $this->cancellation->paymentAccount->id,
+                    'nama_bank'      => $this->cancellation->paymentAccount->nama_bank,
+                    'nomor_rekening' => $this->cancellation->paymentAccount->nomor_rekening,
+                    'atas_nama'      => $this->cancellation->paymentAccount->atas_nama,
+                ] : null,
+            ] : null),
             'refunds'             => $this->whenLoaded('refunds', function () {
                 return $this->refunds->map(fn($r) => [
                     'id'                 => $r->id,

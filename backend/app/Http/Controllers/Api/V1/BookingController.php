@@ -25,7 +25,7 @@ class BookingController extends Controller
 
     protected $bookingService;
     private array $bookingRelations = [
-        'customer',
+        'customer.member',
         'createdBy',
         'confirmedBy',
         'handledBy',
@@ -45,7 +45,7 @@ class BookingController extends Controller
         'physicalChecks',
         'invoices',
         'invoices.sentBy',
-        'cancellation',
+        'cancellation.paymentAccount',
     ];
 
     public function __construct(BookingService $bookingService)
@@ -66,7 +66,7 @@ class BookingController extends Controller
         $usePeriodOverlap = $request->boolean('period_overlap') && ($request->date_from || $request->date_to);
 
         $bookings = Booking::query()
-            ->with(collect($this->bookingRelations)->reject(fn($relation) => in_array($relation, ['refunds', 'cancellation']))->all())
+            ->with(collect($this->bookingRelations)->reject(fn($relation) => in_array($relation, ['refunds', 'cancellation']) || str_starts_with($relation, 'cancellation.'))->all())
             ->withMin('bookingDetails as first_rental_date', 'tgl_sewa')
             ->when($statuses, fn($q, $v) => $q->whereIn('status', $v))
             ->when($request->date_from && ! $usePeriodOverlap, fn($q) => $q->whereHas('bookingDetails', fn($detail) => $detail->whereDate('tgl_sewa', '>=', $request->date_from)))

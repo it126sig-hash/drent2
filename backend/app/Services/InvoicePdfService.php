@@ -63,18 +63,24 @@ class InvoicePdfService
         $invoiceDateRaw = $invoice->generated_at ?? $invoice->created_at;
 
         $branchLogoBase64 = null;
+        $branchLogoWidth = 48;
+        $branchLogoHeight = 48;
         if ($invoice->branch?->logo_path) {
             $logoPath = storage_path('app/public/' . ltrim($invoice->branch->logo_path, '/'));
             if (file_exists($logoPath)) {
-                $branchLogoBase64 = 'data:image/jpeg;base64,' . base64_encode($this->resizeImage($logoPath, 96, 96));
+                [$imgData, $imgMime, $branchLogoWidth, $branchLogoHeight] = $this->resizeImage($logoPath, 48, 48);
+                $branchLogoBase64 = "data:{$imgMime};base64," . base64_encode($imgData);
             }
         }
 
         $signatureBase64 = null;
+        $signatureWidth = 150;
+        $signatureHeight = 60;
         if ($invoice->creator?->signature_path) {
             $sigPath = storage_path('app/public/' . ltrim($invoice->creator->signature_path, '/'));
             if (file_exists($sigPath)) {
-                $signatureBase64 = 'data:image/jpeg;base64,' . base64_encode($this->resizeImage($sigPath, 300, 120));
+                [$imgData, $imgMime, $signatureWidth, $signatureHeight] = $this->resizeImage($sigPath, 150, 60);
+                $signatureBase64 = "data:{$imgMime};base64," . base64_encode($imgData);
             }
         }
 
@@ -82,6 +88,8 @@ class InvoicePdfService
             'invoice' => $invoice,
             'branchName' => $branchName,
             'branchLogoBase64' => $branchLogoBase64,
+            'branchLogoWidth' => $branchLogoWidth,
+            'branchLogoHeight' => $branchLogoHeight,
             'branchAddress' => $invoice->branch?->address,
             'branchPhone' => $invoice->branch?->phone,
             'branchEmail' => $invoice->branch?->email,
@@ -98,6 +106,8 @@ class InvoicePdfService
             'statusSeverity' => $this->statusSeverity($invoice->status),
             'authorizedSignName' => $invoice->creator?->name ?: 'Authorised Sign',
             'signatureBase64' => $signatureBase64,
+            'signatureWidth' => $signatureWidth,
+            'signatureHeight' => $signatureHeight,
             'termsAndConditions' => $invoice->terms_and_conditions,
             'formatCurrency' => fn($value) => $this->formatCurrency($value),
             'formatDate' => fn($value) => $this->formatDate($value),
@@ -117,15 +127,17 @@ class InvoicePdfService
         return $pdf->output();
     }
 
-    private function resizeImage(string $path, int $maxWidth, int $maxHeight): string
+    private function resizeImage(string $path, int $maxWidth, int $maxHeight): array
     {
+        $fallbackMime = $this->mimeFromExtension($path);
+
         if (! extension_loaded('gd')) {
-            return file_get_contents($path);
+            return [file_get_contents($path), $fallbackMime, $maxWidth, $maxHeight];
         }
 
         $info = @getimagesize($path);
         if (! $info) {
-            return file_get_contents($path);
+            return [file_get_contents($path), $fallbackMime, $maxWidth, $maxHeight];
         }
 
         [$origWidth, $origHeight, $type] = $info;
@@ -139,7 +151,13 @@ class InvoicePdfService
         };
 
         if (! $src) {
-            return file_get_contents($path);
+            $ratio = min($maxWidth / $origWidth, $maxHeight / $origHeight, 1.0);
+            return [
+                file_get_contents($path),
+                $fallbackMime,
+                (int) round($origWidth * $ratio),
+                (int) round($origHeight * $ratio),
+            ];
         }
 
         $ratio = min($maxWidth / $origWidth, $maxHeight / $origHeight, 1.0);
@@ -148,12 +166,11 @@ class InvoicePdfService
 
         $dst = imagecreatetruecolor($newWidth, $newHeight);
 
-        // Preserve transparency for PNG
         if ($type === IMAGETYPE_PNG) {
             imagealphablending($dst, false);
             imagesavealpha($dst, true);
-            $bg = imagecolorallocatealpha($dst, 255, 255, 255, 127);
-            imagefill($dst, 0, 0, $bg);
+            $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+            imagefill($dst, 0, 0, $transparent);
         } else {
             $white = imagecolorallocate($dst, 255, 255, 255);
             imagefill($dst, 0, 0, $white);
@@ -163,11 +180,17 @@ class InvoicePdfService
         imagedestroy($src);
 
         ob_start();
-        imagejpeg($dst, null, 85);
+        if ($type === IMAGETYPE_PNG) {
+            imagepng($dst, null, 6);
+            $outputMime = 'image/png';
+        } else {
+            imagejpeg($dst, null, 85);
+            $outputMime = 'image/jpeg';
+        }
         $data = ob_get_clean();
         imagedestroy($dst);
 
-        return $data;
+        return [$data, $outputMime, $newWidth, $newHeight];
     }
 
     private function mimeFromExtension(string $path): string

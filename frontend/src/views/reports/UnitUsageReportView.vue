@@ -257,15 +257,11 @@ onMounted(() => loadReport(1))
       </div>
     </div>
 
-    <Dialog
-      v-model:visible="showTx"
-      modal
-      :header="`Transaksi Unit - ${txEntity?.tipe || ''} (${txEntity?.no_polisi || ''})`"
-      :style="{ width: 'min(900px, 96vw)' }"
-      class="custom-dialog"
-    >
+    <Dialog v-model:visible="showTx" modal :header="`Transaksi Unit - ${txEntity?.tipe || ''} (${txEntity?.no_polisi || ''})`" :style="{ width: 'min(900px, 96vw)' }" class="custom-dialog">
       <DataTable :value="txRows" :loading="txLoading" lazy paginator :rows="txMeta.per_page" :totalRecords="txMeta.total" :first="(txMeta.current_page - 1) * txMeta.per_page" class="drent-datatable" stripedRows dataKey="id" @page="onTxPage">
-        <template #empty><div class="empty-state">Tidak ada transaksi.</div></template>
+        <template #empty>
+          <div class="empty-state">Tidak ada transaksi.</div>
+        </template>
         <Column field="kode_booking" header="Kode Booking" style="min-width: 9rem" />
         <Column field="customer" header="Pelanggan" style="min-width: 10rem" />
         <Column header="Tgl Sewa" style="min-width: 8rem"><template #body="{ data }">{{ formatDate(data.tgl_sewa) }}</template></Column>

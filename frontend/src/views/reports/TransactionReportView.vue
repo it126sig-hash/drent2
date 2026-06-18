@@ -232,18 +232,15 @@ const paginatedEntries = computed(() => {
 })
 
 const kpis = computed(() => {
-  const bookingRevenue = Number(summary.value.booking_revenue || 0)
   const rentalIncome = Number(summary.value.rental_income || 0)
-  const piutang = bookingRevenue - rentalIncome
+  const otherIncome = Number(summary.value.other_income || 0)
+  const pemasukan = rentalIncome + otherIncome
 
   return [
-    { label: 'Omzet/Tagihan', value: bookingRevenue, tone: 'neutral', icon: 'pi pi-chart-line' },
-    { label: 'Kas Masuk Rental', value: rentalIncome, tone: 'positive', icon: 'pi pi-wallet' },
-    { label: 'Piutang (Estimasi)', value: piutang, tone: piutang > 0 ? 'warning' : 'neutral', icon: 'pi pi-exclamation-circle', route: 'ReceivableList' },
-    { label: 'Pemasukan Lain-lain', value: summary.value.other_income, tone: 'info', icon: 'pi pi-plus-circle' },
+    { label: 'Pemasukan', value: pemasukan, tone: 'positive', icon: 'pi pi-wallet' },
     { label: 'Pengeluaran', value: summary.value.business_expense, tone: 'negative', icon: 'pi pi-minus-circle' },
     { label: 'Net Kas', value: summary.value.net_cash, tone: Number(summary.value.net_cash || 0) >= 0 ? 'positive' : 'negative', icon: 'pi pi-calculator' },
-    { label: 'Total Saldo Saat Ini', value: summary.value.total_current_balance, tone: 'neutral', icon: 'pi pi-credit-card' },
+    { label: 'Total Saldo', value: summary.value.total_current_balance, tone: 'neutral', icon: 'pi pi-credit-card' },
   ]
 })
 

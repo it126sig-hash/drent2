@@ -6,15 +6,16 @@ use App\Models\Booking;
 use App\Models\BookingDetail;
 use App\Models\BookingCost;
 use App\Models\CostType;
-use App\Models\Refund;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class BookingModificationService
 {
-    public function __construct(private BookingBillingService $billingService)
-    {
+    public function __construct(
+        private BookingBillingService $billingService,
+        private BookingCancellationService $cancellationService
+    ) {
     }
     /**
      * Extend: buat booking_detail baru type=extend dengan form lengkap (C7).
@@ -159,7 +160,8 @@ class BookingModificationService
     }
 
     /**
-     * Batal: buat Refund (opsional), ubah status → batal, kembalikan unit → Aktif (C7).
+     * Batal: catat data pembatalan & rencana refund, ubah status → batal, kembalikan unit → Aktif (C7).
+     * Pembayaran refund diproses terpisah lewat BookingCancellationService::payRefund (menu Pembatalan Booking).
      */
     public function cancel(Booking $booking, array $data): Booking
     {
@@ -168,18 +170,7 @@ class BookingModificationService
         }
 
         return DB::transaction(function () use ($booking, $data) {
-            // Buat Refund jika ada nominal
-            $refundAmount = $data['refund_amount'] ?? 0;
-            if ($refundAmount > 0) {
-                Refund::create([
-                    'booking_id'         => $booking->id,
-                    'payment_account_id' => $data['payment_account_id'] ?? null,
-                    'amount'             => $refundAmount,
-                    'keterangan'         => $data['refund_keterangan'] ?? null,
-                    'refunded_at'        => now(),
-                    'created_by'         => auth()->id(),
-                ]);
-            }
+            $this->cancellationService->create($booking, $data);
 
             // Kembalikan unit ke Aktif jika ada detail aktif
             $activeDetail = $booking->bookingDetails()

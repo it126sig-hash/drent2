@@ -153,6 +153,15 @@ const onSearch = () => {
   fetchData()
 }
 
+let searchTimer = null
+
+const onSearchInput = () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    onSearch()
+  }, 400)
+}
+
 const onPageChange = (event) => {
   pagination.value.current_page = event.page + 1
   fetchData()
@@ -311,7 +320,7 @@ const formatCurrency = (value) => {
               <InputText
                 v-model="searchQuery"
                 placeholder="Cari tipe, merk, atau plat..."
-                @input="onSearch"
+                @input="onSearchInput"
                 class="w-full"
               />
             </span>

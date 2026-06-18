@@ -12,6 +12,7 @@ const authStore = useAuthStore()
 const sidebarCollapsed = ref(false)
 const sidebarHovered = ref(false)
 const mobileSidebarVisible = ref(false)
+const menuSearchQuery = ref('')
 
 const isSidebarCompact = computed(() => sidebarCollapsed.value && !sidebarHovered.value)
 const userInitials = computed(() => authStore.user?.name?.substring(0, 2).toUpperCase() || 'US')
@@ -127,10 +128,11 @@ const canShowMenuItem = (item) => {
 }
 
 const filteredMenuSections = computed(() => {
+  const query = menuSearchQuery.value.trim().toLowerCase()
   return menuSections
     .map(section => ({
       ...section,
-      items: section.items.filter(canShowMenuItem),
+      items: section.items.filter(item => canShowMenuItem(item) && (!query || item.label.toLowerCase().includes(query))),
     }))
     .filter(section => section.items.length > 0)
 })
@@ -167,6 +169,24 @@ const filteredMenuSections = computed(() => {
           </button>
         </div>
 
+        <div v-if="!isSidebarCompact" class="sidebar-search">
+          <i class="pi pi-search"></i>
+          <input
+            v-model="menuSearchQuery"
+            type="text"
+            class="sidebar-search-input"
+            placeholder="Cari menu..."
+          />
+          <button
+            v-if="menuSearchQuery"
+            type="button"
+            class="sidebar-search-clear"
+            @click="menuSearchQuery = ''"
+          >
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+
         <nav class="sidebar-nav">
           <div
             v-for="section in filteredMenuSections"
@@ -175,10 +195,10 @@ const filteredMenuSections = computed(() => {
             :class="{ 'nav-section-main': !section.label }"
           >
             <div v-if="section.label && !isSidebarCompact" class="nav-section-title">{{ section.label }}</div>
-            <RouterLink 
-              v-for="item in section.items" 
-              :key="item.route" 
-              :to="item.route" 
+            <RouterLink
+              v-for="item in section.items"
+              :key="item.route"
+              :to="item.route"
               class="nav-item"
               :class="{ active: isMenuItemActive(item) }"
               v-tooltip.right="isSidebarCompact ? item.label : null"
@@ -186,6 +206,9 @@ const filteredMenuSections = computed(() => {
               <i :class="item.icon"></i>
               <span v-if="!isSidebarCompact" class="nav-label">{{ item.label }}</span>
             </RouterLink>
+          </div>
+          <div v-if="!isSidebarCompact && menuSearchQuery && filteredMenuSections.length === 0" class="nav-empty">
+            Menu "{{ menuSearchQuery }}" tidak ditemukan
           </div>
         </nav>
 
@@ -233,6 +256,23 @@ const filteredMenuSections = computed(() => {
           <img class="app-logo app-logo-drawer" src="/logo.svg" alt="DRENT Vibe" />
           <button class="close-btn" @click="toggleMobileSidebar"><i class="pi pi-times"></i></button>
        </div>
+       <div class="sidebar-search drawer-search">
+          <i class="pi pi-search"></i>
+          <input
+            v-model="menuSearchQuery"
+            type="text"
+            class="sidebar-search-input"
+            placeholder="Cari menu..."
+          />
+          <button
+            v-if="menuSearchQuery"
+            type="button"
+            class="sidebar-search-clear"
+            @click="menuSearchQuery = ''"
+          >
+            <i class="pi pi-times"></i>
+          </button>
+       </div>
        <nav class="drawer-nav">
         <div
           v-for="section in filteredMenuSections"
@@ -241,10 +281,10 @@ const filteredMenuSections = computed(() => {
           :class="{ 'nav-section-main': !section.label }"
         >
           <div v-if="section.label" class="nav-section-title">{{ section.label }}</div>
-          <RouterLink 
-            v-for="item in section.items" 
-            :key="item.route" 
-            :to="item.route" 
+          <RouterLink
+            v-for="item in section.items"
+            :key="item.route"
+            :to="item.route"
             class="nav-item"
             :class="{ active: isMenuItemActive(item.route) }"
             @click="mobileSidebarVisible = false"
@@ -252,6 +292,9 @@ const filteredMenuSections = computed(() => {
             <i :class="item.icon"></i>
             <span>{{ item.label }}</span>
           </RouterLink>
+        </div>
+        <div v-if="menuSearchQuery && filteredMenuSections.length === 0" class="nav-empty">
+          Menu "{{ menuSearchQuery }}" tidak ditemukan
         </div>
        </nav>
        <div class="drawer-footer">
@@ -412,6 +455,70 @@ const filteredMenuSections = computed(() => {
   background: rgba(255, 255, 255, 0.14);
   border-color: rgba(255, 255, 255, 0.2);
   color: #FFFFFF;
+}
+
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-md) var(--space-md) 0;
+  padding: 0 var(--space-md);
+  height: 36px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-default);
+  color: rgba(255, 255, 255, 0.5);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.sidebar-search:focus-within {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.sidebar-search i {
+  font-size: 0.85rem;
+}
+
+.sidebar-search-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: #FFFFFF;
+  font-family: var(--font-body);
+  font-size: 12px;
+}
+
+.sidebar-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.sidebar-search-clear {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 2px;
+  font-size: 0.75rem;
+  display: inline-flex;
+}
+
+.sidebar-search-clear:hover {
+  color: #FFFFFF;
+}
+
+.drawer-search {
+  margin: 0 var(--space-lg) var(--space-md);
+}
+
+.nav-empty {
+  padding: var(--space-lg);
+  text-align: center;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 12px;
 }
 
 .sidebar-nav {

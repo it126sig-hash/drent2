@@ -411,7 +411,10 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
             <div class="flex flex-col items-end gap-1">
               <span class="font-mono-numeric font-semibold text-primary text-sm">{{ formatCurrency(data.total_biaya)
                 }}</span>
-              <span v-if="data.sisa_tagihan <= 0" class="status-badge success">
+              <span v-if="data.status === 'batal'" class="status-badge neutral" title="Total uang yang sudah masuk dari konsumen sebelum booking dibatalkan">
+                Uang Masuk
+              </span>
+              <span v-else-if="data.sisa_tagihan <= 0" class="status-badge success">
                 Lunas
               </span>
               <span v-else class="status-badge error">
@@ -427,17 +430,23 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
               <span class="font-mono-numeric font-semibold text-primary text-sm">{{
                 formatCurrency(data.total_pengeluaran) }}</span>
               <div class="text-xs text-secondary flex items-center gap-2 mt-0.5 flex-wrap justify-end">
-                <span v-if="data.total_rent_to_rent > 0"
-                  class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">R2R: {{
-                  formatCurrency(data.total_rent_to_rent) }}</span>
-                <span v-if="data.total_operasional > 0"
-                  class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">Ops: {{
-                  formatCurrency(data.total_operasional) }}</span>
-                <span v-if="data.total_modal > 0"
-                  class="font-mono-numeric px-1.5 py-0.5 rounded text-[11px] modal-badge-unrealized"
-                  title="Harga modal unit internal — diperhitungkan sebagai HPP, belum keluar kas">
-                  Modal*: {{ formatCurrency(data.total_modal) }}
+                <span v-if="data.status === 'batal'" class="status-badge info"
+                  title="Nominal refund yang dikembalikan ke konsumen atas pembatalan booking ini">
+                  Refund ke Konsumen
                 </span>
+                <template v-else>
+                  <span v-if="data.total_rent_to_rent > 0"
+                    class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">R2R: {{
+                    formatCurrency(data.total_rent_to_rent) }}</span>
+                  <span v-if="data.total_operasional > 0"
+                    class="font-mono-numeric bg-[var(--card-bg)] px-1.5 py-0.5 rounded text-[11px]">Ops: {{
+                    formatCurrency(data.total_operasional) }}</span>
+                  <span v-if="data.total_modal > 0"
+                    class="font-mono-numeric px-1.5 py-0.5 rounded text-[11px] modal-badge-unrealized"
+                    title="Harga modal unit internal — diperhitungkan sebagai HPP, belum keluar kas">
+                    Modal*: {{ formatCurrency(data.total_modal) }}
+                  </span>
+                </template>
               </div>
             </div>
           </template>
@@ -479,11 +488,14 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
           <div><span class="field-hint">Konsumen</span> {{ trx.customer?.nama || '-' }}</div>
           <div v-if="trx.unit"><span class="field-hint">Unit</span> {{ trx.unit.tipe }} · {{ trx.unit.no_polisi }}</div>
           <div>
-            <span class="field-hint">Total Biaya</span>
+            <span class="field-hint">{{ trx.status === 'batal' ? 'Uang Masuk' : 'Total Biaya' }}</span>
             <span class="font-mono-numeric font-semibold">{{ formatCurrency(trx.total_biaya) }}</span>
-            <span class="status-badge" :class="trx.sisa_tagihan <= 0 ? 'success' : 'error'">{{ trx.sisa_tagihan <= 0 ? 'Lunas' : 'Belum Lunas' }}</span>
+            <span v-if="trx.status !== 'batal'" class="status-badge" :class="trx.sisa_tagihan <= 0 ? 'success' : 'error'">{{ trx.sisa_tagihan <= 0 ? 'Lunas' : 'Belum Lunas' }}</span>
           </div>
-          <div><span class="field-hint">Pengeluaran</span> <span class="font-mono-numeric">{{ formatCurrency(trx.total_pengeluaran) }}</span></div>
+          <div>
+            <span class="field-hint">{{ trx.status === 'batal' ? 'Refund' : 'Pengeluaran' }}</span>
+            <span class="font-mono-numeric">{{ formatCurrency(trx.total_pengeluaran) }}</span>
+          </div>
           <div>
             <span class="field-hint">Margin</span>
             <span class="font-mono-numeric font-semibold" :class="trx.margin >= 0 ? 'text-positive' : 'text-negative'">{{ trx.margin >= 0 ? '+' : '' }}{{ formatCurrency(trx.margin) }}</span>

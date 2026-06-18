@@ -1177,6 +1177,18 @@ const getStatusSeverity = (status) => {
   }
 };
 
+const isMemberStatusInactive = (memberStatus) => Boolean(memberStatus) && memberStatus !== 'Aktif';
+
+const getMemberStatusSeverity = (memberStatus) => {
+  switch (memberStatus) {
+    case 'Aktif': return 'success';
+    case 'Pending': return 'warning';
+    case 'Ditolak': return 'danger';
+    case 'Tidak Aktif': return 'secondary';
+    default: return 'secondary';
+  }
+};
+
 const normalizeSearch = (value) => {
   return String(value || '')
     .toLowerCase()
@@ -1253,6 +1265,7 @@ const mapCustomerOption = (c) => ({
   email: c.email || '-',
   status: c.status || 'Normal',
   catatan: c.catatan || '',
+  member_status: c.member_status || null,
   member_expired_at: c.member_expired_at || null,
   searchableLabel: [
     c.nama,
@@ -1391,6 +1404,7 @@ const formatDate = (value) => {
                     <div v-if="slotProps.value" class="selected-inline">
                       <span class="option-title">{{customerOptions.find(c => c.value === slotProps.value)?.nama}}</span>
                       <Tag v-if="customerOptions.find(c => c.value === slotProps.value)" :value="customerOptions.find(c => c.value === slotProps.value)?.status" :severity="getStatusSeverity(customerOptions.find(c => c.value === slotProps.value)?.status)" class="premium-tag" />
+                      <Tag v-if="isMemberStatusInactive(customerOptions.find(c => c.value === slotProps.value)?.member_status)" :value="customerOptions.find(c => c.value === slotProps.value)?.member_status" :severity="getMemberStatusSeverity(customerOptions.find(c => c.value === slotProps.value)?.member_status)" class="premium-tag" />
                     </div>
                     <span v-else>{{ slotProps.placeholder }}</span>
                   </template>
@@ -1407,7 +1421,10 @@ const formatDate = (value) => {
                         </span>
                       </div>
                       <div class="flex shrink-0 flex-col items-end gap-1">
-                        <Tag :value="slotProps.option.status" :severity="getStatusSeverity(slotProps.option.status)" class="premium-tag" />
+                        <div class="flex items-center gap-1">
+                          <Tag :value="slotProps.option.status" :severity="getStatusSeverity(slotProps.option.status)" class="premium-tag" />
+                          <Tag v-if="isMemberStatusInactive(slotProps.option.member_status)" :value="slotProps.option.member_status" :severity="getMemberStatusSeverity(slotProps.option.member_status)" class="premium-tag" />
+                        </div>
                         <span class="option-source">{{ slotProps.option.sourceLabel }}</span>
                       </div>
                     </div>
@@ -1419,6 +1436,7 @@ const formatDate = (value) => {
                     <div class="preview-heading">
                       <span>{{ selectedCustomer.nama }}</span>
                       <Tag :value="selectedCustomer.status" :severity="getStatusSeverity(selectedCustomer.status)" class="premium-tag" />
+                      <Tag v-if="isMemberStatusInactive(selectedCustomer.member_status)" :value="selectedCustomer.member_status" :severity="getMemberStatusSeverity(selectedCustomer.member_status)" class="premium-tag" />
                     </div>
                     <div class="info-grid">
                       <span>Kontak</span>

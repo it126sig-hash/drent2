@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "agentation": {
+      "source": "benjitaylor/agentation",
+      "sourceType": "github",
+      "skillPath": "skills/agentation/SKILL.md",
+      "computedHash": "1f71b231b7da40234affdbe6bbb939d43b8adc719a7beba011790d62a06b3537"
+    },
+    "agentation-self-driving": {
+      "source": "benjitaylor/agentation",
+      "sourceType": "github",
+      "skillPath": "skills/agentation-self-driving/SKILL.md",
+      "computedHash": "1f642b851633a7c796c8a42670a10ef8f3d81cab438bc9e5cfc986082ad8ccf2"
+    },
+    "transitions-dev": {
+      "source": "Jakubantalik/transitions.dev",
+      "sourceType": "github",
+      "skillPath": "skills/transitions-dev/SKILL.md",
+      "computedHash": "3e054fc65e5cfced994aea3b120edd5abb1059c32af56a297d60910f266a53d1"
+    }
+  }
+}
