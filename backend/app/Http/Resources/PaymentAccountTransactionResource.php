@@ -27,6 +27,12 @@ class PaymentAccountTransactionResource extends JsonResource
             'created_by' => $this->created_by,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
+            'status' => $this->status,
+            'void_reason' => $this->void_reason,
+            'void_requested_at' => $this->void_requested_at?->toISOString(),
+            'void_approved_at' => $this->void_approved_at?->toISOString(),
+            'void_rejected_at' => $this->void_rejected_at?->toISOString(),
+            'void_rejection_note' => $this->void_rejection_note,
             'payment_account' => $this->whenLoaded('paymentAccount', fn () => $this->accountPayload($this->paymentAccount)),
             'related_payment_account' => $this->whenLoaded('relatedPaymentAccount', fn () => $this->relatedPaymentAccount ? $this->accountPayload($this->relatedPaymentAccount) : null),
             'finance_category' => $this->whenLoaded('financeCategory', fn () => $this->financeCategory ? [
@@ -37,6 +43,14 @@ class PaymentAccountTransactionResource extends JsonResource
             'creator' => $this->whenLoaded('creator', fn () => $this->creator ? [
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
+            ] : null),
+            'void_requester' => $this->whenLoaded('voidRequester', fn () => $this->voidRequester ? [
+                'id' => $this->voidRequester->id,
+                'name' => $this->voidRequester->name,
+            ] : null),
+            'void_approver' => $this->whenLoaded('voidApprover', fn () => $this->voidApprover ? [
+                'id' => $this->voidApprover->id,
+                'name' => $this->voidApprover->name,
             ] : null),
         ];
     }

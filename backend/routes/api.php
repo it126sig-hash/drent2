@@ -151,6 +151,9 @@ Route::prefix('v1')->group(function () {
         Route::post('payment-account-transactions/transfer', [PaymentAccountTransactionController::class, 'transfer']);
         Route::post('payment-account-transactions/other', [PaymentAccountTransactionController::class, 'other']);
         Route::post('payment-account-transactions/adjust', [PaymentAccountTransactionController::class, 'adjust']);
+        Route::post('payment-account-transactions/{transaction}/void', [PaymentAccountTransactionController::class, 'requestVoid']);
+        Route::post('payment-account-transactions/{transaction}/approve-void', [PaymentAccountTransactionController::class, 'approveVoid']);
+        Route::post('payment-account-transactions/{transaction}/reject-void', [PaymentAccountTransactionController::class, 'rejectVoid']);
         Route::get('receivables', [ReceivableController::class, 'index']);
         Route::get('receivables/payment-history', [ReceivableController::class, 'paymentHistory']);
         Route::post('receivables/invoices', [ReceivableController::class, 'generateInvoice']);
@@ -208,6 +211,8 @@ Route::prefix('v1')->group(function () {
         Route::post('operational-funds/{fund}/accept', [DriverOperationalFundController::class, 'accept']);
         Route::post('operational-funds/{fund}/expenses', [DriverOperationalFundController::class, 'storeExpense']);
         Route::post('operational-funds/{fund}/void', [DriverOperationalFundController::class, 'voidFund']);
+        Route::post('operational-funds/{fund}/approve-void', [DriverOperationalFundController::class, 'approveVoidFund']);
+        Route::post('operational-funds/{fund}/reject-void', [DriverOperationalFundController::class, 'rejectVoidFund']);
         Route::get('operational-expenses/{expense}/photo', [DriverOperationalFundController::class, 'showExpensePhoto']);
         Route::post('operational-expenses/{expense}/approve', [DriverOperationalFundController::class, 'approveExpense']);
         Route::post('operational-expenses/{expense}/reject', [DriverOperationalFundController::class, 'rejectExpense']);

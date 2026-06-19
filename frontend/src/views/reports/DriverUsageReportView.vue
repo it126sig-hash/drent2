@@ -15,8 +15,8 @@ import Dialog from 'primevue/dialog'
 const toast = useToast()
 
 const tabs = [
-  { label: 'All In', value: 'all_in' },
-  { label: 'Non All In', value: 'non_all_in' },
+  { label: 'Tanpa Biaya OP', value: 'all_in' },
+  { label: 'Dengan Biaya OP', value: 'non_all_in' },
 ]
 const activeTab = ref(0)
 

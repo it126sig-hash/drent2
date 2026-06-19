@@ -344,14 +344,16 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
       <DataTable :value="transactions" dataKey="id" :loading="loading" scrollable scrollHeight="flex"
         class="w-full drent-datatable">
         <!-- Columns -->
-        <Column header="Kode Booking" style="min-width: 11rem">
+        <Column header="Kode Booking" style="min-width: 11rem" bodyClass="kode-booking-col">
           <template #body="{ data }">
-            <button class="booking-code-link font-headline font-semibold text-primary text-sm"
-              @click="openDetail(data.id)">
-              {{ data.kode_booking }}
-            </button>
-            <div class="mt-1">
-              <BookingStatusBadge :status="data.status" />
+            <div :class="{ 'void-border': data.status === 'batal' }">
+              <button class="booking-code-link font-headline font-semibold text-primary text-sm"
+                @click="openDetail(data.id)">
+                {{ data.kode_booking }}
+              </button>
+              <div class="mt-1">
+                <BookingStatusBadge :status="data.status" />
+              </div>
             </div>
           </template>
         </Column>
@@ -599,6 +601,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
                   <span v-else-if="data.category === 'rent_to_rent'" class="status-badge info">Rent to Rent</span>
                   <span v-else-if="data.category === 'dana_operasional'" class="status-badge warning">Dana →
                     Driver</span>
+                  <span v-else-if="data.category === 'gaji_driver'" class="status-badge info">Gaji Driver</span>
                   <span v-else-if="data.category === 'sisa_dana'" class="status-badge success">Sisa Dana Kembali</span>
                   <span v-else-if="data.category === 'bon_operasional'"
                     class="status-badge neutral">Bon/Reimburse</span>
@@ -842,6 +845,11 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 .status-badge.neutral {
   background-color: #E4E8F3 !important;
   color: #4A5060 !important;
+}
+
+.void-border {
+  border-left: 3px solid #DC2626;
+  padding-left: 8px;
 }
 
 /* === Links === */

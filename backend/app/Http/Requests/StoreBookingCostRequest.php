@@ -17,6 +17,7 @@ class StoreBookingCostRequest extends FormRequest
             'type' => 'required|string|in:driver,bbm,tol,parkir,lainnya',
             'label' => 'required|string',
             'amount' => 'required|integer|min:0',
+            'is_additional' => 'nullable|boolean',
         ];
     }
 }

@@ -331,6 +331,34 @@ export function useOperationalFund() {
     }
   }
 
+  const approveVoidFund = async (fundId) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.approveVoidOperationalFund(fundId)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request void deposit/gaji driver disetujui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      showError(err, 'Gagal menyetujui void deposit/gaji driver')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const rejectVoidFund = async (fundId, rejectionNote) => {
+    actionLoading.value = true
+    try {
+      const response = await operationalFundApi.rejectVoidOperationalFund(fundId, { rejection_note: rejectionNote })
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request void deposit/gaji driver ditolak', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      showError(err, 'Gagal menolak void deposit/gaji driver')
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   const voidExpense = async (expenseId, voidReason) => {
     actionLoading.value = true
     try {
@@ -401,6 +429,8 @@ export function useOperationalFund() {
     markOperationalComplete,
     revertOperational,
     voidFund,
+    approveVoidFund,
+    rejectVoidFund,
     voidExpense,
     approveVoidExpense,
     rejectVoidExpense,

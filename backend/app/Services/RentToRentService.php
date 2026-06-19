@@ -608,6 +608,11 @@ class RentToRentService
                 'description' => "Void pembayaran rent-to-rent kepada {$ownerName}: " . $payment->void_reason,
                 'created_by' => auth()->id(),
                 'transaction_at' => now(),
+                'status' => 'voided',
+                'void_requested_by' => $payment->void_requested_by,
+                'void_requested_at' => $payment->void_requested_at,
+                'void_approved_by' => $payment->void_approved_by,
+                'void_approved_at' => $payment->void_approved_at,
             ]);
 
             return $this->formatPaymentHistory($payment->fresh([

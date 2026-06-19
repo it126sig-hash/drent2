@@ -231,6 +231,7 @@ class BookingService
             'type' => $data['type'],
             'label' => $data['label'],
             'amount' => $data['amount'],
+            'is_additional' => (bool) ($data['is_additional'] ?? false),
         ]);
     }
 

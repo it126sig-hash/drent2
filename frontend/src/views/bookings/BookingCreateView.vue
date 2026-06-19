@@ -23,6 +23,7 @@ import InputNumber from 'primevue/inputnumber';
 import Textarea from 'primevue/textarea';
 import Tag from 'primevue/tag';
 import Message from 'primevue/message';
+import Checkbox from 'primevue/checkbox';
 
 const router = useRouter();
 const route = useRoute();
@@ -237,7 +238,7 @@ const getSignedCostAmount = (cost) => {
 
 const sumCosts = (costs = [], { discountsOnly = false } = {}) => {
   return (costs || []).reduce((sum, cost) => {
-    if (discountsOnly && cost?.type !== 'diskon') return sum;
+    if (discountsOnly && cost?.type !== 'diskon' && !(cost?.is_additional == 1 || cost?.is_additional === true)) return sum;
     return sum + getSignedCostAmount(cost);
   }, 0);
 };
@@ -849,7 +850,7 @@ const applyWaitingPackage = () => {
 };
 
 const addWaitingCostRow = () => {
-  waitingListForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' });
+  waitingListForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: false });
 };
 
 const removeWaitingCostRow = (idx) => {
@@ -1743,6 +1744,10 @@ const formatDate = (value) => {
                   <Dropdown v-model="cost.type" :options="[{ label: 'Biaya', value: 'biaya' }, { label: 'Diskon', value: 'diskon' }]" optionLabel="label" optionValue="value" class="premium-input cost-kind-input" />
                   <InputText v-model="cost.label" placeholder="Keterangan" class="premium-input cost-label-input" />
                   <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="premium-input cost-amount-input" @update:modelValue="onWaitingCostAmountUpdate(cost, $event)" />
+                  <div v-if="waitingListForm.pricing_mode === 'all_in'" class="flex items-center gap-1.5">
+                    <Checkbox v-model="cost.is_additional" :binary="true" :inputId="`waiting-cost-additional-${idx}`" />
+                    <label :for="`waiting-cost-additional-${idx}`" class="text-[11px] font-semibold text-slate-500 whitespace-nowrap">Di luar All In</label>
+                  </div>
                   <Button icon="pi pi-times" text rounded severity="danger" class="remove-cost-button" @click="removeWaitingCostRow(idx)" />
                 </div>
                 <small class="p-error" v-if="waitingListErrors.costs">{{ waitingListErrors.costs }}</small>

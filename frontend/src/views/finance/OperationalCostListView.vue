@@ -54,6 +54,9 @@ const showRejectDialog = ref(false)
 const showCloseDialog = ref(false)
 const showCompleteOperationalDialog = ref(false)
 const showRevertOperationalDialog = ref(false)
+const showVoidDialog = ref(false)
+const voidTargetRow = ref(null)
+const voidReason = ref('')
 const selectedBooking = ref(null)
 const selectedExpense = ref(null)
 const isMobile = ref(window.innerWidth < 768)
@@ -384,6 +387,13 @@ const historyDirectionClass = (item) => {
   return 'text-secondary'
 }
 
+const isVoidRow = (row) =>
+  row.status === 'cancelled'
+  || row.status === 'void_requested'
+  || (row.status === 'rejected' && row.rejection_reason?.startsWith('[VOID]'))
+
+const historyRowClass = (row) => ({ 'transaction-row-void': isVoidRow(row) })
+
 const transactionRowClass = (row) => ({
   'transaction-row-deposit': row.row_kind === 'deposit',
   'transaction-row-reimbursement': row.row_kind === 'reimbursement',
@@ -454,9 +464,10 @@ const expenseDialogBudgetBreakdown = computed(() => detailBudgetBreakdown(expens
 
 const expenseDialogBudgetTotal = computed(() => detailBudgetTotal(expenseDialogDetail.value))
 
+// ponytail: backend on some hosts returns ids as strings, loose-compare via Number() to avoid blank totals
 const detailFunds = (booking, detail) =>
   (booking.operational_funds || []).filter(fund =>
-    fund.booking_detail_id === detail?.id
+    Number(fund.booking_detail_id) === Number(detail?.id)
     && !fund.is_salary
     && fund.fund_type !== 'salary'
     && fund.status !== 'cancelled'
@@ -464,7 +475,7 @@ const detailFunds = (booking, detail) =>
 
 const detailSalaryFunds = (booking, detail) =>
   (booking.operational_funds || []).filter(fund =>
-    fund.booking_detail_id === detail?.id
+    Number(fund.booking_detail_id) === Number(detail?.id)
     && (fund.is_salary || fund.fund_type === 'salary')
     && fund.status !== 'cancelled'
   )
@@ -497,7 +508,7 @@ const detailRealizationTotal = (booking, detail) => {
     return sum + Number(fund.summary?.approved_expense_total || 0)
   }, 0)
   const directExpenses = (booking.operational_expenses || [])
-    .filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
+    .filter(exp => Number(exp.booking_detail_id) === Number(detail?.id) && !exp.driver_operational_fund_id)
   const directTotal = directExpenses
     .filter(e => e.type === 'expense' && e.status === 'approved')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0)
@@ -525,7 +536,7 @@ const detailReturnTotal = (booking, detail) => {
     return sum + Number(fund.summary?.approved_return_total || 0)
   }, 0)
   const directExpenses = (booking.operational_expenses || [])
-    .filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
+    .filter(exp => Number(exp.booking_detail_id) === Number(detail?.id) && !exp.driver_operational_fund_id)
   const directTotal = directExpenses
     .filter(e => e.type === 'return' && e.status === 'approved')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0)
@@ -798,13 +809,17 @@ const submitRevertOperational = async () => {
   await fetchBookings(pagination.value.current_page)
 }
 
-const handleVoidTransaction = async (row) => {
-  const reason = prompt('Masukkan alasan void transaksi ini:')
-  if (reason === null) return
-  if (!reason.trim()) {
-    alert('Alasan void harus diisi!')
-    return
-  }
+const openVoidDialog = (row) => {
+  voidTargetRow.value = row
+  voidReason.value = ''
+  showVoidDialog.value = true
+}
+
+const submitVoidTransaction = async () => {
+  const row = voidTargetRow.value
+  if (!row) return
+  const reason = voidReason.value.trim()
+  if (reason.length < 3) return
 
   try {
     const rawId = row.id || ''
@@ -815,9 +830,11 @@ const handleVoidTransaction = async (row) => {
       const expenseId = rawId.startsWith('expense-') ? rawId.replace('expense-', '') : (row.expense?.id || row.id)
       await voidExpense(expenseId, reason)
     } else {
-      alert('Tipe transaksi tidak dikenal untuk void.')
       return
     }
+
+    showVoidDialog.value = false
+    voidTargetRow.value = null
 
     if (selectedFund.value?.id) {
       await fetchFund(selectedFund.value.id)
@@ -1136,13 +1153,10 @@ onUnmounted(() => {
                   <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openFundDialog(data.booking, 'salary', data.detail?.id)">
                     <i class="pi pi-money-bill"></i> Bayar Gaji Driver
                   </button>
-                  <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openBookingExpenseDialog(data.booking, data.detail)">
-                    <i class="pi pi-credit-card"></i> Input Realisasi
-                  </button>
                 </template>
                 <!-- If no driver exists -->
                 <template v-else>
-                  <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openBookingExpenseDialog(data.booking, data.detail)">
+                  <button v-if="activeTab !== 'completed' && !detailDisbursedTotal(data.booking, data.detail)" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openBookingExpenseDialog(data.booking, data.detail)">
                     <i class="pi pi-plus"></i> Input Realisasi
                   </button>
                 </template>
@@ -1158,7 +1172,7 @@ onUnmounted(() => {
       </div>
 
       <div v-else-if="!isMobile && activeTab === 'history'" class="table-shell operational-table-shell">
-        <DataTable :value="history" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable">
+        <DataTable :value="history" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="historyRowClass">
           <Column header="Tanggal" style="min-width: 11rem">
             <template #body="{ data }">
               <strong>{{ formatDateTime(data.happened_at) }}</strong>
@@ -1200,7 +1214,7 @@ onUnmounted(() => {
           </Column>
           <Column header="Aksi" style="min-width: 6rem">
             <template #body="{ data }">
-              <button v-if="data.status !== 'cancelled' && data.status !== 'rejected' && data.status !== 'void_requested'" class="btn-pill btn-secondary btn-pill-compact text-red-600 border-red-200 hover:bg-red-50" title="Batalkan/Void Transaksi" @click="handleVoidTransaction(data)">
+              <button v-if="data.status !== 'cancelled' && data.status !== 'rejected' && data.status !== 'void_requested'" class="btn-pill btn-secondary btn-pill-compact text-red-600 border-red-200 hover:bg-red-50" title="Batalkan/Void Transaksi" @click="openVoidDialog(data)">
                 <i class="pi pi-trash text-[10px]"></i> Void
               </button>
             </template>
@@ -1271,7 +1285,7 @@ onUnmounted(() => {
               <i class="pi pi-money-bill"></i>
               Gaji
             </button>
-            <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" @click="openBookingExpenseDialog(booking, booking.booking_details?.[0])">
+            <button v-if="activeTab !== 'completed' && !booking.booking_details?.[0]?.driver && !detailDisbursedTotal(booking, booking.booking_details?.[0])" class="btn-pill btn-secondary btn-pill-compact" @click="openBookingExpenseDialog(booking, booking.booking_details?.[0])">
               <i class="pi pi-credit-card"></i>
               Realisasi
             </button>
@@ -1296,7 +1310,7 @@ onUnmounted(() => {
       </div>
 
       <div v-else class="mobile-card-list">
-        <article v-for="item in history" :key="item.id" class="mobile-card">
+        <article v-for="item in history" :key="item.id" class="mobile-card" :class="{ 'mobile-card-void': isVoidRow(item) }">
 
           <!-- Head: booking code + kind tag -->
           <div class="card-head">
@@ -1513,7 +1527,7 @@ onUnmounted(() => {
                       <button class="btn-pill btn-primary btn-pill-compact" @click="reviewApprove(data.expense)">ACC</button>
                       <button class="btn-pill btn-secondary btn-pill-compact" @click="openRejectDialog(data.expense)">Tolak</button>
                     </template>
-                    <button v-if="data.status !== 'cancelled' && data.status !== 'rejected' && data.status !== 'void_requested'" class="btn-pill btn-secondary btn-pill-compact text-red-600 border-red-200 hover:bg-red-50" title="Batalkan/Void Transaksi" @click="handleVoidTransaction(data)">
+                    <button v-if="data.status !== 'cancelled' && data.status !== 'rejected' && data.status !== 'void_requested'" class="btn-pill btn-secondary btn-pill-compact text-red-600 border-red-200 hover:bg-red-50" title="Batalkan/Void Transaksi" @click="openVoidDialog(data)">
                       <i class="pi pi-trash text-[10px]"></i> Void
                     </button>
                   </div>
@@ -1684,6 +1698,34 @@ onUnmounted(() => {
       <template #footer>
         <button class="app-dialog-button app-dialog-button-secondary" @click="showRejectDialog = false">Batal</button>
         <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || rejectReason.length < 5" @click="submitReject">Kirim Alasan</button>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showVoidDialog" header="Void Transaksi" modal :style="{ width: '440px' }" class="custom-dialog">
+      <div v-if="voidTargetRow" class="void-summary">
+        <div class="void-summary-row">
+          <span>Kode Booking</span>
+          <strong>{{ voidTargetRow.booking_code || selectedFund?.booking?.kode_booking || selectedBooking?.kode_booking || '-' }}</strong>
+        </div>
+        <div class="void-summary-row">
+          <span>Jenis</span>
+          <strong>{{ voidTargetRow.label || '-' }}</strong>
+        </div>
+        <div class="void-summary-row">
+          <span>Nominal</span>
+          <strong>{{ formatCurrency(voidTargetRow.amount) }}</strong>
+        </div>
+      </div>
+      <p class="text-sm text-secondary mb-3">
+        Anda mengajukan void transaksi ini pada <strong>{{ formatDateTime(new Date()) }}</strong> dengan alasan berikut. Transaksi akan menunggu approval supervisor sebelum benar-benar dibatalkan.
+      </p>
+      <fieldset class="form-fieldset">
+        <label>Alasan Void</label>
+        <Textarea v-model="voidReason" rows="4" class="w-full" />
+      </fieldset>
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" @click="showVoidDialog = false">Batal</button>
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || voidReason.trim().length < 3" @click="submitVoidTransaction">Kirim Pengajuan Void</button>
       </template>
     </Dialog>
   </div>
@@ -2293,6 +2335,43 @@ onUnmounted(() => {
 
 :deep(.transaction-history-table .transaction-row-return > td) {
   background: rgba(239, 68, 68, 0.06);
+}
+
+:deep(.operational-table-shell .transaction-row-void > td) {
+  background: rgba(107, 114, 128, 0.1);
+  opacity: 0.85;
+}
+
+:deep(.operational-table-shell .transaction-row-void > td:first-child) {
+  border-left: 4px solid var(--negative, #ef4444);
+}
+
+.void-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface-default, #f8fafc);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default, 8px);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.void-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.void-summary-row span {
+  color: var(--text-secondary);
+}
+
+.mobile-card-void {
+  background: rgba(107, 114, 128, 0.1);
+  border-left: 4px solid var(--negative, #ef4444);
+  opacity: 0.85;
 }
 
 .detail-layout {

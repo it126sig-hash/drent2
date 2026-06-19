@@ -57,5 +57,47 @@ export function usePaymentAccountTransaction() {
     }
   }
 
-  return { transactions, loading, actionLoading, pagination, fetchAll, transfer, other, adjust }
+  const voidTransaction = async (id, reason) => {
+    actionLoading.value = true
+    try {
+      const response = await transactionApi.voidTransaction(id, { void_reason: reason })
+      return response.data.data
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const approveVoidTransaction = async (id) => {
+    actionLoading.value = true
+    try {
+      const response = await transactionApi.approveVoidTransaction(id)
+      return response.data.data
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const rejectVoidTransaction = async (id, note) => {
+    actionLoading.value = true
+    try {
+      const response = await transactionApi.rejectVoidTransaction(id, { rejection_note: note })
+      return response.data.data
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  return {
+    transactions,
+    loading,
+    actionLoading,
+    pagination,
+    fetchAll,
+    transfer,
+    other,
+    adjust,
+    voidTransaction,
+    approveVoidTransaction,
+    rejectVoidTransaction,
+  }
 }

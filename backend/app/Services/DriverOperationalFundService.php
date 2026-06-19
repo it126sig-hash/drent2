@@ -490,6 +490,7 @@ class DriverOperationalFundService
 
             if ($isFinanceSource) {
                 $this->applyExpenseDebit($expense, 'Bon operasional diinput finance');
+                $this->applyReturnCredit($expense, $fund);
             } else {
                 $this->notifyFinance($fund, 'operational_expense_submitted', 'Bon driver menunggu review', "{$fund->booking?->kode_booking} memiliki bon baru dari driver.");
             }
@@ -532,7 +533,7 @@ class DriverOperationalFundService
             ]);
 
             // Update saldo rekening (uang keluar karena biaya operasional langsung)
-            if ($expense->payment_account_id) {
+            if ($expense->type === 'expense' && $expense->payment_account_id) {
                 $account = PaymentAccount::lockForUpdate()->findOrFail($expense->payment_account_id);
                 $this->transactionService->applyDelta($account, -(int) $expense->amount, [
                     'type' => 'driver_direct_expense_out',
@@ -542,6 +543,8 @@ class DriverOperationalFundService
                     'transaction_at' => now(),
                 ]);
             }
+
+            $this->applyReturnCredit($expense);
 
             return $expense->fresh(['costType', 'submitter', 'reviewer']);
         });
@@ -569,19 +572,7 @@ class DriverOperationalFundService
             $this->applyExpenseDebit($expense, 'Bon/pengembalian operasional disetujui finance');
 
             // Jika type = return, tambahkan saldo rekening asal deposit/fund
-            if ($expense->type === 'return') {
-                $fund = $expense->fund;
-                if ($fund && $fund->payment_account_id) {
-                    $account = PaymentAccount::lockForUpdate()->findOrFail($fund->payment_account_id);
-                    $this->transactionService->applyDelta($account, (int) $expense->amount, [
-                        'type' => 'driver_return_in',
-                        'amount' => (int) $expense->amount,
-                        'description' => "Pengembalian sisa dana operasional oleh driver " . ($expense->driver?->nama ?? "Driver") . " untuk booking #{$expense->booking?->kode_booking}",
-                        'created_by' => Auth::id(),
-                        'transaction_at' => now(),
-                    ]);
-                }
-            }
+            $this->applyReturnCredit($expense, $expense->fund);
 
             if ($expense->driver?->user_id) {
                 $this->notifyUser($expense->driver->user_id, 'operational_expense_approved', 'Bon disetujui', 'Bon operasional kamu sudah disetujui finance.', [
@@ -619,16 +610,47 @@ class DriverOperationalFundService
         return $expense->fresh(['costType', 'submitter', 'reviewer']);
     }
 
-    public function voidFund(DriverOperationalFund $fund, string $reason): DriverOperationalFund
+    public function requestVoidFund(DriverOperationalFund $fund, string $reason): DriverOperationalFund
     {
         $this->assertCanUseBooking($fund->booking);
+
+        if ($fund->status === 'void_requested') {
+            throw new \InvalidArgumentException('Request void dana operasional ini sedang menunggu approval supervisor.');
+        }
 
         if ($fund->status === 'cancelled') {
             throw new \InvalidArgumentException('Dana operasional ini sudah dibatalkan/void.');
         }
 
-        return DB::transaction(function () use ($fund, $reason) {
-            if ($fund->fund_type !== 'salary' && in_array($fund->status, ['accepted', 'closed'])) {
+        $fund->update([
+            'status_before_void' => $fund->status,
+            'status' => 'void_requested',
+            'void_reason' => $reason,
+            'void_requested_by' => Auth::id(),
+            'void_requested_at' => now(),
+            'void_approved_by' => null,
+            'void_approved_at' => null,
+            'void_rejected_by' => null,
+            'void_rejected_at' => null,
+            'void_rejection_note' => null,
+        ]);
+
+        return $fund->fresh($this->fundRelations);
+    }
+
+    public function approveVoidFund(DriverOperationalFund $fund): DriverOperationalFund
+    {
+        $this->assertCanUseBooking($fund->booking);
+
+        if ($fund->status !== 'void_requested') {
+            throw new \InvalidArgumentException('Hanya request void dana operasional berstatus pending yang bisa disetujui.');
+        }
+
+        $reason = $fund->void_reason;
+        $statusBeforeVoid = $fund->status_before_void;
+
+        return DB::transaction(function () use ($fund, $reason, $statusBeforeVoid) {
+            if ($fund->fund_type !== 'salary' && in_array($statusBeforeVoid, ['accepted', 'closed'])) {
                 if ($fund->driver_id) {
                     $this->applyDriverBalance(
                         driverId: $fund->driver_id,
@@ -646,6 +668,8 @@ class DriverOperationalFundService
                 'status' => 'cancelled',
                 'cancelled_by' => Auth::id(),
                 'close_note' => $fund->close_note ? $fund->close_note . ' | Void: ' . $reason : 'Void: ' . $reason,
+                'void_approved_by' => Auth::id(),
+                'void_approved_at' => now(),
             ]);
 
             if ($fund->booking->is_operational_completed) {
@@ -660,10 +684,34 @@ class DriverOperationalFundService
                 'description' => "Void deposit/gaji driver " . ($fund->driver?->nama ?? "Driver") . ": " . $reason,
                 'created_by' => Auth::id(),
                 'transaction_at' => now(),
+                'status' => 'voided',
+                'void_requested_by' => $fund->void_requested_by,
+                'void_requested_at' => $fund->void_requested_at,
+                'void_approved_by' => $fund->void_approved_by,
+                'void_approved_at' => $fund->void_approved_at,
             ]);
 
             return $fund->fresh($this->fundRelations);
         });
+    }
+
+    public function rejectVoidFund(DriverOperationalFund $fund, ?string $note = null): DriverOperationalFund
+    {
+        $this->assertCanUseBooking($fund->booking);
+
+        if ($fund->status !== 'void_requested') {
+            throw new \InvalidArgumentException('Hanya request void dana operasional berstatus pending yang bisa ditolak.');
+        }
+
+        $fund->update([
+            'status' => $fund->status_before_void ?: 'accepted',
+            'status_before_void' => null,
+            'void_rejected_by' => Auth::id(),
+            'void_rejected_at' => now(),
+            'void_rejection_note' => $note,
+        ]);
+
+        return $fund->fresh($this->fundRelations);
     }
 
     public function requestVoidExpense(DriverOperationalExpense $expense, string $reason): DriverOperationalExpense
@@ -740,6 +788,11 @@ class DriverOperationalFundService
                     'description' => "Void pengeluaran operasional langsung booking #{$expense->booking?->kode_booking}: " . $expense->void_reason,
                     'created_by' => Auth::id(),
                     'transaction_at' => now(),
+                    'status' => 'voided',
+                    'void_requested_by' => $expense->void_requested_by,
+                    'void_requested_at' => $expense->void_requested_at,
+                    'void_approved_by' => $expense->void_approved_by,
+                    'void_approved_at' => $expense->void_approved_at,
                 ]);
             }
 
@@ -836,6 +889,27 @@ class DriverOperationalFundService
             expenseId: $expense->id,
             description: $description
         );
+    }
+
+    private function applyReturnCredit(DriverOperationalExpense $expense, ?DriverOperationalFund $fund = null): void
+    {
+        if ($expense->type !== 'return') {
+            return;
+        }
+
+        $accountId = $fund?->payment_account_id ?? $expense->payment_account_id;
+        if (! $accountId) {
+            return;
+        }
+
+        $account = PaymentAccount::lockForUpdate()->findOrFail($accountId);
+        $this->transactionService->applyDelta($account, (int) $expense->amount, [
+            'type' => 'driver_return_in',
+            'amount' => (int) $expense->amount,
+            'description' => "Pengembalian sisa dana operasional oleh driver " . ($expense->driver?->nama ?? "Driver") . " untuk booking #{$expense->booking?->kode_booking}",
+            'created_by' => Auth::id(),
+            'transaction_at' => now(),
+        ]);
     }
 
     private function applyDriverBalance(

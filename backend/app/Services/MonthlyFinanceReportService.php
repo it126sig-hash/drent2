@@ -39,7 +39,8 @@ class MonthlyFinanceReportService
         $bookingRevenue = $this->bookingRevenue($dateFrom, $dateTo, $user, $branchId);
 
         $byAccount = $accounts->map(function (PaymentAccount $account) use ($transactions) {
-            $accTx = $transactions->where('payment_account_id', $account->id);
+            $accTx = $transactions->where('payment_account_id', $account->id)
+                ->where('status', '!=', 'voided');
 
             // Income (sum signed_amount)
             $rentalIncome = $accTx->whereIn('type', ['booking_payment_in', 'invoice_payment_in', 'booking_payment_void', 'invoice_payment_void'])->sum('signed_amount');
@@ -161,7 +162,7 @@ class MonthlyFinanceReportService
     private function accountTransactions(Carbon $dateFrom, Carbon $dateTo, User $user, ?int $branchId, ?int $accountId): Collection
     {
         return PaymentAccountTransaction::query()
-            ->with(['paymentAccount', 'relatedPaymentAccount', 'financeCategory', 'creator'])
+            ->with(['paymentAccount', 'relatedPaymentAccount', 'financeCategory', 'creator', 'voidRequester', 'voidApprover'])
             ->where('tenant_id', $user->tenant_id)
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->when($accountId, fn ($query) => $query->where('payment_account_id', $accountId))
@@ -197,6 +198,10 @@ class MonthlyFinanceReportService
             'reference' => $row->financeCategory?->name ?? $this->accountName($row->relatedPaymentAccount),
             'description' => $row->description,
             'type' => $row->type,
+            'performed_by' => $row->creator?->name,
+            'status' => $row->status,
+            'void_requested_by_name' => $row->voidRequester?->name,
+            'void_approved_by_name' => $row->voidApprover?->name,
         ]);
     }
 

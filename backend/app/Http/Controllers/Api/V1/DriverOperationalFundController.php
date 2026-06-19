@@ -220,7 +220,27 @@ class DriverOperationalFundController extends Controller
             'void_reason' => 'required|string|min:3',
         ]);
 
-        $fund = $this->service->voidFund($fund, $validated['void_reason']);
+        $fund = $this->service->requestVoidFund($fund, $validated['void_reason']);
+
+        return new DriverOperationalFundResource($fund);
+    }
+
+    public function approveVoidFund(DriverOperationalFund $fund)
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor'], true), 403);
+        $fund = $this->service->approveVoidFund($fund);
+
+        return new DriverOperationalFundResource($fund);
+    }
+
+    public function rejectVoidFund(Request $request, DriverOperationalFund $fund)
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor'], true), 403);
+        $validated = $request->validate([
+            'rejection_note' => 'nullable|string',
+        ]);
+
+        $fund = $this->service->rejectVoidFund($fund, $validated['rejection_note'] ?? null);
 
         return new DriverOperationalFundResource($fund);
     }

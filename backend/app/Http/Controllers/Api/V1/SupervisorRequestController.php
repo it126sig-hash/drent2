@@ -17,9 +17,14 @@ class SupervisorRequestController extends Controller
 
         abort_unless(in_array($user->role, ['superadmin', 'supervisor']), 403);
 
+        $dateFrom = $request->date('date_from');
+        $dateTo = $request->date('date_to');
+
         $voidPayments = BookingPayment::query()
             ->with(['booking.customer', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover'])
             ->whereIn('status', ['void_requested', 'voided'])
+            ->when($dateFrom, fn($q) => $q->whereDate('void_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('void_requested_at', '<=', $dateTo))
             ->when($user->role !== 'superadmin', fn($q) => $q->whereHas(
                 'booking',
                 fn($booking) => $booking->where('branch_id', $user->branch_id)
@@ -63,6 +68,8 @@ class SupervisorRequestController extends Controller
         $returnRequests = Booking::query()
             ->with(['customer', 'rentalUnitReturnRequester', 'rentalUnitReturnApprover'])
             ->whereIn('rental_unit_return_status', ['pending', 'approved'])
+            ->when($dateFrom, fn($q) => $q->whereDate('rental_unit_return_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('rental_unit_return_requested_at', '<=', $dateTo))
             ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
             ->latest('updated_at')
             ->get()
@@ -94,6 +101,8 @@ class SupervisorRequestController extends Controller
         $revertRequests = Booking::query()
             ->with(['customer', 'operationalRevertRequester', 'operationalRevertApprover'])
             ->whereIn('operational_revert_status', ['pending', 'approved'])
+            ->when($dateFrom, fn($q) => $q->whereDate('operational_revert_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('operational_revert_requested_at', '<=', $dateTo))
             ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
             ->latest('updated_at')
             ->get()
@@ -125,6 +134,8 @@ class SupervisorRequestController extends Controller
         $rentToRentVoidBills = RentToRentBill::query()
             ->with(['rentalOwner', 'items.debt.booking.customer', 'voidRequester', 'voidApprover'])
             ->whereIn('status', ['void_requested', 'void'])
+            ->when($dateFrom, fn($q) => $q->whereDate('void_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('void_requested_at', '<=', $dateTo))
             ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
             ->latest('updated_at')
             ->get()
@@ -168,6 +179,8 @@ class SupervisorRequestController extends Controller
         $rentToRentVoidPayments = RentToRentPayment::query()
             ->with(['bill.rentalOwner', 'bill.items.debt.booking.customer', 'allocations.debt.rentalOwner', 'allocations.debt.booking.customer', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover'])
             ->whereIn('status', ['void_requested', 'voided'])
+            ->when($dateFrom, fn($q) => $q->whereDate('void_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('void_requested_at', '<=', $dateTo))
             ->when($user->role !== 'superadmin', function ($query) use ($user) {
                 $query->where(function ($scope) use ($user) {
                     $scope->whereHas('bill', fn($bill) => $bill->where('branch_id', $user->branch_id))
@@ -235,6 +248,8 @@ class SupervisorRequestController extends Controller
                           ->where('rejection_reason', 'like', '[VOID]%');
                     });
             })
+            ->when($dateFrom, fn($q) => $q->whereDate('void_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('void_requested_at', '<=', $dateTo))
             ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
             ->latest('updated_at')
             ->get()
@@ -269,9 +284,95 @@ class SupervisorRequestController extends Controller
                 ] : null,
             ]);
 
+        $voidFunds = \App\Models\DriverOperationalFund::query()
+            ->with(['booking.customer', 'driver', 'creator', 'voidRequester', 'voidApprover'])
+            ->where(function ($query) {
+                $query->where('status', 'void_requested')
+                    ->orWhere(function ($q) {
+                        $q->where('status', 'cancelled')
+                          ->whereNotNull('void_approved_at');
+                    });
+            })
+            ->when($dateFrom, fn($q) => $q->whereDate('void_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('void_requested_at', '<=', $dateTo))
+            ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
+            ->latest('updated_at')
+            ->get()
+            ->map(fn($fund) => [
+                'id' => 'void_fund_'.$fund->id,
+                'type' => 'void_operational_fund',
+                'type_label' => 'Void Deposit/Gaji Driver',
+                'status' => $fund->status === 'void_requested' ? 'pending' : 'approved',
+                'status_label' => $fund->status === 'void_requested' ? 'Menunggu ACC' : 'Disetujui',
+                'requested_at' => $fund->void_requested_at?->toISOString(),
+                'approved_at' => $fund->void_approved_at?->toISOString(),
+                'reason' => $fund->void_reason,
+                'booking' => [
+                    'id' => $fund->booking?->id,
+                    'kode_booking' => $fund->booking?->kode_booking,
+                    'customer_name' => $fund->booking?->customer?->nama,
+                ],
+                'payment' => [
+                    'id' => $fund->id,
+                    'amount' => (int) $fund->amount,
+                    'payment_type' => $fund->fund_type === 'salary' ? 'Gaji Driver' : 'Deposit Operasional',
+                    'paid_at' => $fund->paid_at?->toISOString(),
+                    'payment_account' => null,
+                ],
+                'requester' => $fund->voidRequester ? [
+                    'id' => $fund->voidRequester->id,
+                    'name' => $fund->voidRequester->name,
+                ] : null,
+                'approver' => $fund->voidApprover ? [
+                    'id' => $fund->voidApprover->id,
+                    'name' => $fund->voidApprover->name,
+                ] : null,
+            ]);
+
+        $voidPaymentTransactions = \App\Models\PaymentAccountTransaction::query()
+            ->with(['paymentAccount', 'relatedPaymentAccount', 'creator', 'voidRequester', 'voidApprover'])
+            ->whereIn('status', ['void_requested', 'voided'])
+            ->where('tenant_id', $user->tenant_id)
+            ->when($dateFrom, fn($q) => $q->whereDate('void_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('void_requested_at', '<=', $dateTo))
+            ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
+            ->latest('updated_at')
+            ->get()
+            ->map(fn($transaction) => [
+                'id' => 'void_payment_transaction_'.$transaction->id,
+                'type' => 'void_payment_transaction',
+                'type_label' => 'Void Mutasi Rekening',
+                'status' => $transaction->status === 'void_requested' ? 'pending' : 'approved',
+                'status_label' => $transaction->status === 'void_requested' ? 'Menunggu ACC' : 'Disetujui',
+                'requested_at' => $transaction->void_requested_at?->toISOString(),
+                'approved_at' => $transaction->void_approved_at?->toISOString(),
+                'reason' => $transaction->void_reason,
+                'booking' => null,
+                'payment' => [
+                    'id' => $transaction->id,
+                    'amount' => (int) $transaction->amount,
+                    'payment_type' => $transaction->description ?: $transaction->type,
+                    'paid_at' => $transaction->transaction_at?->toISOString(),
+                    'payment_account' => $transaction->paymentAccount ? [
+                        'nama_bank' => $transaction->paymentAccount->nama_bank,
+                        'nomor_rekening' => $transaction->paymentAccount->nomor_rekening,
+                    ] : null,
+                ],
+                'requester' => $transaction->voidRequester ? [
+                    'id' => $transaction->voidRequester->id,
+                    'name' => $transaction->voidRequester->name,
+                ] : null,
+                'approver' => $transaction->voidApprover ? [
+                    'id' => $transaction->voidApprover->id,
+                    'name' => $transaction->voidApprover->name,
+                ] : null,
+            ]);
+
         $rentToRentAmountChanges = \App\Models\RentToRentAmountChangeRequest::query()
             ->with(['debt.booking.customer', 'debt.rentalOwner', 'debt.bookingDetail.unit', 'requestedBy', 'approvedBy', 'rejectedBy'])
             ->whereIn('status', ['pending', 'approved', 'rejected'])
+            ->when($dateFrom, fn($q) => $q->whereDate('requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('requested_at', '<=', $dateTo))
             ->when($user->role !== 'superadmin', fn($q) => $q->whereHas(
                 'debt',
                 fn($debt) => $debt->where('branch_id', $user->branch_id)
@@ -325,6 +426,8 @@ class SupervisorRequestController extends Controller
             ->concat($rentToRentVoidBills)
             ->concat($rentToRentVoidPayments)
             ->concat($voidExpenses)
+            ->concat($voidFunds)
+            ->concat($voidPaymentTransactions)
             ->concat($rentToRentAmountChanges)
             ->sortByDesc(fn($item) => $item['approved_at'] ?? $item['requested_at'] ?? '')
             ->values();

@@ -56,6 +56,12 @@ export const revertOperationalActive = (bookingId, data) =>
 export const voidOperationalFund = (fundId, data) =>
   api.post(`${prefix}/operational-funds/${fundId}/void`, data)
 
+export const approveVoidOperationalFund = (fundId) =>
+  api.post(`${prefix}/operational-funds/${fundId}/approve-void`)
+
+export const rejectVoidOperationalFund = (fundId, data) =>
+  api.post(`${prefix}/operational-funds/${fundId}/reject-void`, data)
+
 export const voidOperationalExpense = (expenseId, data) =>
   api.post(`${prefix}/operational-expenses/${expenseId}/void`, data)
 
@@ -82,6 +88,8 @@ export default {
   markOperationalComplete,
   revertOperationalActive,
   voidOperationalFund,
+  approveVoidOperationalFund,
+  rejectVoidOperationalFund,
   voidOperationalExpense,
   approveVoidOperationalExpense,
   rejectVoidOperationalExpense,

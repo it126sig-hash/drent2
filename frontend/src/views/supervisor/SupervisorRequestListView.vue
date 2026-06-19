@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { format } from 'date-fns'
+import { endOfMonth, format, startOfMonth } from 'date-fns'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
+import DatePicker from 'primevue/datepicker'
 import Dialog from 'primevue/dialog'
 import Dropdown from 'primevue/dropdown'
 import ProgressBar from 'primevue/progressbar'
@@ -12,6 +13,7 @@ import rentToRentApi from '../../api/rentToRent'
 import { getSupervisorRequests } from '../../api/supervisorRequest'
 import { useBooking } from '../../composables/useBooking'
 import { useOperationalFund } from '../../composables/useOperationalFund'
+import { usePaymentAccountTransaction } from '../../composables/usePaymentAccountTransaction'
 
 const router = useRouter()
 const {
@@ -27,12 +29,21 @@ const {
 const {
   approveVoidExpense,
   rejectVoidExpense,
+  approveVoidFund,
+  rejectVoidFund,
 } = useOperationalFund()
+
+const {
+  approveVoidTransaction,
+  rejectVoidTransaction,
+} = usePaymentAccountTransaction()
 
 const requests = ref([])
 const loading = ref(false)
 const activeTab = ref('all')
 const activeStatus = ref('pending')
+const dateFrom = ref(startOfMonth(new Date()))
+const dateTo = ref(endOfMonth(new Date()))
 const selectedRequest = ref(null)
 const showRejectDialog = ref(false)
 const rejectionNote = ref('')
@@ -44,6 +55,8 @@ const requestTabs = [
   { label: 'Void Rent to Rent', value: 'rent_to_rent_void_bill' },
   { label: 'Void Bayar R2R', value: 'rent_to_rent_void_payment' },
   { label: 'Void Bon / Expense', value: 'void_operational_expense' },
+  { label: 'Void Deposit/Gaji Driver', value: 'void_operational_fund' },
+  { label: 'Void Mutasi Rekening', value: 'void_payment_transaction' },
   { label: 'Kembali Rental Unit', value: 'return_rental_unit' },
   { label: 'Revert Operasional', value: 'operational_revert' },
   { label: 'Ubah Nominal R2R', value: 'rent_to_rent_amount_change' },
@@ -76,12 +89,17 @@ const handleResize = () => {
 const fetchRequests = async () => {
   loading.value = true
   try {
-    const response = await getSupervisorRequests()
+    const response = await getSupervisorRequests({
+      date_from: dateFrom.value ? format(dateFrom.value, 'yyyy-MM-dd') : null,
+      date_to: dateTo.value ? format(dateTo.value, 'yyyy-MM-dd') : null,
+    })
     requests.value = response.data.data || []
   } finally {
     loading.value = false
   }
 }
+
+watch([dateFrom, dateTo], fetchRequests)
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value || 0)
@@ -94,7 +112,7 @@ const formatDateTime = (value) => {
 
 const statusTone = (status) => status === 'approved' ? 'success' : 'warning'
 
-const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment', 'void_operational_expense', 'rent_to_rent_amount_change'].includes(type) ? 'warning' : 'info'
+const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment', 'void_operational_expense', 'void_operational_fund', 'void_payment_transaction', 'rent_to_rent_amount_change'].includes(type) ? 'warning' : 'info'
 
 const bookingCode = (request) => request.bill?.bill_number || request.booking?.kode_booking || '-'
 
@@ -115,6 +133,14 @@ const requestDetailLabel = (request) => {
 
   if (request.type === 'void_operational_expense') {
     return `Void Bon: ${formatCurrency(request.payment?.amount)} - ${request.payment?.payment_type || '-'}`
+  }
+
+  if (request.type === 'void_operational_fund') {
+    return `Void Deposit: ${formatCurrency(request.payment?.amount)} - ${request.payment?.payment_type || '-'}`
+  }
+
+  if (request.type === 'void_payment_transaction') {
+    return `Void Mutasi: ${formatCurrency(request.payment?.amount)} - ${request.payment?.payment_type || '-'}`
   }
 
   if (request.type === 'operational_revert') {
@@ -143,8 +169,13 @@ const requestSecondaryDetail = (request) => {
     return `${account?.nama_bank || '-'} ${account?.nomor_rekening || ''}`.trim()
   }
 
-  if (request.type === 'void_operational_expense') {
+  if (request.type === 'void_operational_expense' || request.type === 'void_operational_fund') {
     return request.booking?.kode_booking || '-'
+  }
+
+  if (request.type === 'void_payment_transaction') {
+    const account = request.payment?.payment_account
+    return `${account?.nama_bank || '-'} ${account?.nomor_rekening || ''}`.trim()
   }
 
   if (request.type === 'rent_to_rent_amount_change') {
@@ -163,6 +194,10 @@ const approveRequest = async (request) => {
     await rentToRentApi.approveVoidRentToRentPayment(request.payment.id)
   } else if (request.type === 'void_operational_expense') {
     await approveVoidExpense(request.payment.id)
+  } else if (request.type === 'void_operational_fund') {
+    await approveVoidFund(request.payment.id)
+  } else if (request.type === 'void_payment_transaction') {
+    await approveVoidTransaction(request.payment.id)
   } else if (request.type === 'operational_revert') {
     await approveRevertOperational(request.booking.id)
   } else if (request.type === 'rent_to_rent_amount_change') {
@@ -197,6 +232,10 @@ const submitReject = async () => {
     })
   } else if (selectedRequest.value.type === 'void_operational_expense') {
     await rejectVoidExpense(selectedRequest.value.payment.id, rejectionNote.value)
+  } else if (selectedRequest.value.type === 'void_operational_fund') {
+    await rejectVoidFund(selectedRequest.value.payment.id, rejectionNote.value)
+  } else if (selectedRequest.value.type === 'void_payment_transaction') {
+    await rejectVoidTransaction(selectedRequest.value.payment.id, rejectionNote.value)
   } else if (selectedRequest.value.type === 'operational_revert') {
     await rejectRevertOperational(selectedRequest.value.booking.id, {
       rejection_note: rejectionNote.value,
@@ -252,9 +291,11 @@ onUnmounted(() => {
     </div>
 
     <div class="filter-bar surface-card flex flex-col md:flex-row md:items-center justify-between gap-4 p-3 border border-[var(--surface-border)] rounded-[10px] shadow-[var(--shadow-tile)]">
-      <div class="w-full md:w-auto">
+      <div class="filter-period flex items-center gap-2 flex-wrap w-full md:w-auto">
         <Dropdown v-model="activeTab" :options="requestTabs" optionLabel="label" optionValue="value"
           placeholder="Tipe Request" class="w-full md:w-56" />
+        <DatePicker v-model="dateFrom" placeholder="Dari tanggal" showIcon dateFormat="dd/mm/yy" class="w-full md:w-40" />
+        <DatePicker v-model="dateTo" placeholder="Sampai tanggal" showIcon dateFormat="dd/mm/yy" class="w-full md:w-40" />
       </div>
 
       <div class="filter-actions summary-actions flex items-center gap-2 flex-wrap w-full md:w-auto justify-between md:justify-end">

@@ -147,12 +147,13 @@ class TransactionController extends Controller
         //    Ini adalah uang kas yang benar-benar keluar dari perusahaan ke driver.
         foreach ($booking->operationalFunds as $fund) {
             if (in_array($fund->status, ['pending_driver_acceptance', 'accepted', 'closed'], true)) {
+                $isSalary = ($fund->fund_type ?? 'operational') === 'salary';
                 $history[] = [
                     'id'          => 'fund-' . $fund->id,
                     'date'        => $fund->accepted_at?->toISOString() ?? $fund->created_at?->toISOString(),
-                    'category'    => 'dana_operasional',
+                    'category'    => $isSalary ? 'gaji_driver' : 'dana_operasional',
                     'type'        => 'pengeluaran',
-                    'description' => 'Dana Operasional → Driver'
+                    'description' => ($isSalary ? 'Pembayaran Gaji Driver' : 'Dana Operasional → Driver')
                         . ($fund->notes ? ': ' . $fund->notes : '')
                         . ($fund->paymentAccount ? ' (' . $fund->paymentAccount->nama_bank . ')' : ''),
                     'amount'      => -(int) $fund->amount,

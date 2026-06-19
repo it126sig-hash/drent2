@@ -187,6 +187,11 @@ class BookingPaymentService
                 'description' => "Void pembayaran booking #{$booking->kode_booking} ({$payment->payment_type}): " . $payment->void_reason,
                 'created_by' => Auth::id(),
                 'transaction_at' => now(),
+                'status' => 'voided',
+                'void_requested_by' => $payment->void_requested_by,
+                'void_requested_at' => $payment->void_requested_at,
+                'void_approved_by' => $payment->void_approved_by,
+                'void_approved_at' => $payment->void_approved_at,
             ]);
 
             return $payment->fresh(['paymentAccount', 'creator', 'reallocatedFrom', 'voidRequester', 'voidApprover', 'voidRejecter']);

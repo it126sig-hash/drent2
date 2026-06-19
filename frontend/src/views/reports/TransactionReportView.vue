@@ -35,7 +35,14 @@ const isMobile = ref(window.innerWidth < 768)
 const searchQuery = ref('')
 const sourceTypeFilter = ref(null)
 const currentPage = ref(1)
-const rowsPerPage = ref(10)
+const pageSizeOption = ref(10)
+const pageSizeOptions = [
+  { label: '10', value: 10 },
+  { label: '25', value: 25 },
+  { label: '50', value: 50 },
+  { label: '100', value: 100 },
+  { label: 'Semua', value: 'all' },
+]
 
 const handleResize = () => {
   isMobile.value = window.innerWidth < 768
@@ -135,7 +142,7 @@ const cleanAccountName = (name) => {
   return cleaned
 }
 
-const isVoidType = (type) => type && type.endsWith('_void')
+const isVoidType = (type, status) => (type && type.endsWith('_void')) || status === 'voided' || status === 'void_requested'
 
 const groupAndDeduplicateEntries = (rawEntries) => {
   if (!rawEntries || !rawEntries.length) return []
@@ -199,7 +206,7 @@ const processedEntries = computed(() => {
     ...entry,
     label: formatSourceLabel(entry.label || entry.source_type),
     payment_account_name: cleanAccountName(entry.payment_account_name),
-    is_void: isVoidType(entry.type),
+    is_void: isVoidType(entry.type, entry.status),
   }))
 
   // Source type filter
@@ -224,6 +231,10 @@ const processedEntries = computed(() => {
 
   return list
 })
+
+const rowsPerPage = computed(() =>
+  pageSizeOption.value === 'all' ? (processedEntries.value.length || 1) : pageSizeOption.value
+)
 
 const paginatedEntries = computed(() => {
   const startIndex = (currentPage.value - 1) * rowsPerPage.value
@@ -356,18 +367,21 @@ const exportExcel = () => {
   XLSX.utils.book_append_sheet(wb, wsAcc, 'Saldo per Rekening')
 
   // Sheet 3: Detail Mutasi
-  const txHeader = ['Tanggal', 'Sumber', 'Rekening', 'Referensi', 'Nominal (IDR)', 'Catatan', 'Void']
+  const txHeader = ['Tanggal', 'Sumber', 'Rekening', 'Dicatat Oleh', 'Referensi', 'Nominal (IDR)', 'Catatan', 'Void', 'Diajukan Void Oleh', 'ACC Void Oleh']
   const txData = processedEntries.value.map(entry => [
     entry.happened_at ? new Date(entry.happened_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-',
     entry.label || '-',
     entry.payment_account_name || '-',
+    entry.performed_by || '-',
     entry.reference || '-',
     Number(entry.signed_amount || 0),
     entry.description || '-',
     entry.is_void ? 'Ya' : 'Tidak',
+    entry.void_requested_by_name || '-',
+    entry.void_approved_by_name || '-',
   ])
   const wsTx = XLSX.utils.aoa_to_sheet([txHeader, ...txData])
-  wsTx['!cols'] = [{ wch: 20 }, { wch: 26 }, { wch: 24 }, { wch: 18 }, { wch: 16 }, { wch: 36 }, { wch: 8 }]
+  wsTx['!cols'] = [{ wch: 20 }, { wch: 26 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 36 }, { wch: 8 }, { wch: 18 }, { wch: 18 }]
   XLSX.utils.book_append_sheet(wb, wsTx, 'Detail Mutasi')
 
   XLSX.writeFile(wb, `Laporan_Bulanan_${monthLabel}_${year}.xlsx`)
@@ -638,6 +652,15 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
             class="source-type-filter"
             @change="currentPage = 1"
           />
+          <!-- Jumlah Baris per Halaman -->
+          <Dropdown
+            v-model="pageSizeOption"
+            :options="pageSizeOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="page-size-filter"
+            @change="currentPage = 1"
+          />
           <!-- Search -->
           <span class="p-input-icon-left w-full md:w-64" style="position: relative; display: inline-block;">
             <i class="pi pi-search text-secondary" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-secondary);"></i>
@@ -652,18 +675,26 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
       </div>
 
       <div v-if="!isMobile" class="table-shell report-table-shell">
-        <DataTable :value="paginatedEntries" :loading="loading" responsiveLayout="scroll" class="drent-datatable" stripedRows>
+        <DataTable :value="paginatedEntries" :loading="loading" responsiveLayout="scroll" class="drent-datatable" stripedRows :rowClass="(data) => ({ 'void-row': data.is_void })">
           <template #empty>
             <div class="empty-state">Belum ada mutasi pada periode ini.</div>
           </template>
           <Column field="happened_at" header="Tanggal" style="min-width: 11rem">
-            <template #body="{ data }">{{ formatDate(data.happened_at) }}</template>
+            <template #body="{ data }">
+              {{ formatDate(data.happened_at) }}
+              <div class="text-secondary text-xs">{{ data.performed_by || '-' }}</div>
+            </template>
           </Column>
           <Column field="label" header="Sumber" style="min-width: 14rem">
             <template #body="{ data }">
               <div class="flex items-center gap-1.5 flex-wrap">
                 <Tag :value="data.label" :severity="sourceSeverity(data.type)" />
                 <span v-if="data.is_void" class="void-badge">VOID</span>
+              </div>
+              <div v-if="data.is_void" class="void-meta">
+                <span>Diajukan: {{ data.void_requested_by_name || '-' }}</span>
+                <span v-if="data.status === 'voided'">ACC: {{ data.void_approved_by_name || '-' }}</span>
+                <span v-else-if="data.status === 'void_requested'">Menunggu ACC</span>
               </div>
             </template>
           </Column>
@@ -686,6 +717,7 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
             Menampilkan {{ (currentPage - 1) * rowsPerPage + 1 }} - {{ Math.min(currentPage * rowsPerPage, processedEntries.length) }} dari {{ processedEntries.length }} baris
           </span>
           <Paginator
+            v-if="pageSizeOption !== 'all'"
             :rows="rowsPerPage"
             :totalRecords="processedEntries.length"
             :first="(currentPage - 1) * rowsPerPage"
@@ -708,7 +740,13 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
                 <span v-if="entry.is_void" class="void-badge">VOID</span>
               </div>
             </div>
+            <div v-if="entry.is_void" class="void-meta">
+              <span>Diajukan: {{ entry.void_requested_by_name || '-' }}</span>
+              <span v-if="entry.status === 'voided'">ACC: {{ entry.void_approved_by_name || '-' }}</span>
+              <span v-else-if="entry.status === 'void_requested'">Menunggu ACC</span>
+            </div>
             <div class="mobile-info-grid">
+              <div><span>Dicatat Oleh</span><strong>{{ entry.performed_by || '-' }}</strong></div>
               <div><span>Nominal</span><strong class="amount" :class="{ negative: entry.signed_amount < 0, positive: entry.signed_amount > 0, 'opacity-50': entry.is_void }">{{ formatCurrency(entry.signed_amount) }}</strong></div>
               <div><span>Referensi</span><strong>{{ entry.reference || '-' }}</strong></div>
               <div class="span-2"><span>Catatan</span><strong>{{ entry.description || '-' }}</strong></div>
@@ -720,6 +758,7 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
               Menampilkan {{ (currentPage - 1) * rowsPerPage + 1 }} - {{ Math.min(currentPage * rowsPerPage, processedEntries.length) }} dari {{ processedEntries.length }} baris
             </span>
             <Paginator
+              v-if="pageSizeOption !== 'all'"
               :rows="rowsPerPage"
               :totalRecords="processedEntries.length"
               :first="(currentPage - 1) * rowsPerPage"
@@ -743,6 +782,8 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
 .account-filter { min-width: 20rem; }
 .branch-filter { min-width: 13rem; }
 .source-type-filter { min-width: 14rem; font-size: 0.8rem; }
+.page-size-filter { min-width: 7rem; font-size: 0.8rem; }
+.void-meta { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; font-size: 10px; color: var(--text-tertiary); }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .kpi-card { padding: 14px; display: flex; align-items: center; gap: 12px; position: relative; }
 .kpi-card-link { cursor: pointer; transition: box-shadow 0.15s; }
@@ -773,6 +814,7 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
 /* Void badge */
 .void-badge { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.08); color: var(--text-tertiary); letter-spacing: 0.05em; text-transform: uppercase; }
 .void-entry { opacity: 0.7; }
+.report-table-shell :deep(tr.void-row td:first-child) { border-left: 3px solid var(--negative, #e5534b); }
 
 .report-section { overflow: hidden; }
 .report-section-header h2 { margin: 0; }

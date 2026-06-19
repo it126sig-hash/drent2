@@ -45,4 +45,33 @@ class PaymentAccountTransactionController extends Controller
 
         return new PaymentAccountTransactionResource($this->service->adjustment($request->validated()));
     }
+
+    public function requestVoid(Request $request, PaymentAccountTransaction $transaction)
+    {
+        $this->authorize('create', PaymentAccountTransaction::class);
+
+        $validated = $request->validate([
+            'void_reason' => 'required|string|min:3',
+        ]);
+
+        return new PaymentAccountTransactionResource($this->service->requestVoid($transaction, $validated['void_reason']));
+    }
+
+    public function approveVoid(PaymentAccountTransaction $transaction)
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor'], true), 403);
+
+        return new PaymentAccountTransactionResource($this->service->approveVoid($transaction));
+    }
+
+    public function rejectVoid(Request $request, PaymentAccountTransaction $transaction)
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor'], true), 403);
+
+        $validated = $request->validate([
+            'rejection_note' => 'nullable|string',
+        ]);
+
+        return new PaymentAccountTransactionResource($this->service->rejectVoid($transaction, $validated['rejection_note'] ?? null));
+    }
 }

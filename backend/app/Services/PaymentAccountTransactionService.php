@@ -15,13 +15,16 @@ use Illuminate\Validation\ValidationException;
 
 class PaymentAccountTransactionService
 {
+    private const VISIBLE_TYPES = ['transfer_out', 'transfer_in', 'other_income', 'other_expense', 'balance_adjustment'];
+
     public function getAll(array $filters = [])
     {
         $user = Auth::user();
 
         $query = PaymentAccountTransaction::query()
-            ->with(['paymentAccount', 'relatedPaymentAccount', 'financeCategory', 'creator'])
+            ->with(['paymentAccount', 'relatedPaymentAccount', 'financeCategory', 'creator', 'voidRequester', 'voidApprover'])
             ->where('tenant_id', $user->tenant_id)
+            ->whereIn('type', self::VISIBLE_TYPES)
             ->when($this->branchId($filters, $user), fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($filters['payment_account_id'] ?? null, fn ($query, $accountId) => $query->where('payment_account_id', $accountId))
             ->when($filters['finance_category_id'] ?? null, fn ($query, $categoryId) => $query->where('finance_category_id', $categoryId))
@@ -128,6 +131,118 @@ class PaymentAccountTransactionService
         });
     }
 
+    public function requestVoid(PaymentAccountTransaction $transaction, string $reason): PaymentAccountTransaction
+    {
+        return DB::transaction(function () use ($transaction, $reason) {
+            $rows = $this->lockTransactionAndSibling($transaction);
+
+            foreach ($rows as $row) {
+                if ($row->status === 'voided') {
+                    throw new \InvalidArgumentException('Mutasi ini sudah void.');
+                }
+
+                if ($row->status === 'void_requested') {
+                    throw new \InvalidArgumentException('Request void mutasi ini masih menunggu ACC supervisor.');
+                }
+            }
+
+            foreach ($rows as $row) {
+                $row->update([
+                    'status' => 'void_requested',
+                    'void_reason' => $reason,
+                    'void_requested_by' => Auth::id(),
+                    'void_requested_at' => now(),
+                    'void_approved_by' => null,
+                    'void_approved_at' => null,
+                    'void_rejected_by' => null,
+                    'void_rejected_at' => null,
+                    'void_rejection_note' => null,
+                ]);
+            }
+
+            return $transaction->fresh($this->relations());
+        });
+    }
+
+    public function approveVoid(PaymentAccountTransaction $transaction): PaymentAccountTransaction
+    {
+        $user = Auth::user();
+        if (! in_array($user?->role, ['superadmin', 'supervisor'], true)) {
+            throw new \InvalidArgumentException('Void mutasi hanya bisa di-ACC oleh supervisor.');
+        }
+
+        return DB::transaction(function () use ($transaction, $user) {
+            $rows = $this->lockTransactionAndSibling($transaction);
+
+            foreach ($rows as $row) {
+                if ($row->status !== 'void_requested') {
+                    throw new \InvalidArgumentException('Mutasi belum dalam status menunggu ACC void.');
+                }
+
+                if ($row->void_requested_by && $row->void_requested_by === $user->id && $user->role !== 'superadmin') {
+                    throw new \InvalidArgumentException('Request void harus di-ACC oleh user berbeda.');
+                }
+            }
+
+            foreach ($rows as $row) {
+                $account = PaymentAccount::lockForUpdate()->findOrFail($row->payment_account_id);
+                $account->update(['current_balance' => (int) $account->current_balance - (int) $row->signed_amount]);
+
+                $row->update([
+                    'status' => 'voided',
+                    'void_approved_by' => $user->id,
+                    'void_approved_at' => now(),
+                ]);
+            }
+
+            return $transaction->fresh($this->relations());
+        });
+    }
+
+    public function rejectVoid(PaymentAccountTransaction $transaction, ?string $note = null): PaymentAccountTransaction
+    {
+        return DB::transaction(function () use ($transaction, $note) {
+            $rows = $this->lockTransactionAndSibling($transaction);
+
+            foreach ($rows as $row) {
+                if ($row->status !== 'void_requested') {
+                    throw new \InvalidArgumentException('Mutasi belum dalam status menunggu ACC void.');
+                }
+            }
+
+            foreach ($rows as $row) {
+                $row->update([
+                    'status' => 'active',
+                    'void_rejected_by' => Auth::id(),
+                    'void_rejected_at' => now(),
+                    'void_rejection_note' => $note,
+                ]);
+            }
+
+            return $transaction->fresh($this->relations());
+        });
+    }
+
+    private function lockTransactionAndSibling(PaymentAccountTransaction $transaction): array
+    {
+        $transaction = PaymentAccountTransaction::query()->lockForUpdate()->findOrFail($transaction->id);
+        $rows = [$transaction];
+
+        if (in_array($transaction->type, ['transfer_out', 'transfer_in'], true) && $transaction->transfer_group_id) {
+            $sibling = PaymentAccountTransaction::query()
+                ->where('transfer_group_id', $transaction->transfer_group_id)
+                ->where('id', '!=', $transaction->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($sibling) {
+                $rows[] = $sibling;
+            }
+        }
+
+        return $rows;
+    }
+
     public function applyDelta(PaymentAccount $account, int $delta, array $payload): PaymentAccountTransaction
     {
         $before = (int) $account->current_balance;
@@ -180,6 +295,6 @@ class PaymentAccountTransactionService
 
     private function relations(): array
     {
-        return ['paymentAccount', 'relatedPaymentAccount', 'financeCategory', 'creator'];
+        return ['paymentAccount', 'relatedPaymentAccount', 'financeCategory', 'creator', 'voidRequester', 'voidApprover'];
     }
 }

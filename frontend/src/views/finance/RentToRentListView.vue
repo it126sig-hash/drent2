@@ -63,10 +63,12 @@ const showDebtDialog = ref(false)
 const showPaymentDialog = ref(false)
 const showPaymentConfirmDialog = ref(false)
 const showVoidDialog = ref(false)
+const showVoidPaymentDialog = ref(false)
 const paymentAccountsLoaded = ref(false)
 const detailAmountForm = ref({ amount_override: null, reason: '' })
 const showCancelConfirm = ref(false)
 const voidForm = ref({ bill: null, void_reason: '' })
+const voidPaymentForm = ref({ payment: null, void_reason: '' })
 const paymentForm = ref({
   payment_account_id: null,
   amount: null,
@@ -435,15 +437,23 @@ const submitMarkBillPaid = async (bill) => {
   await markBillPaid(bill.id)
 }
 
-const submitVoidPayment = async (payment) => {
+const openVoidPaymentDialog = (payment) => {
   const paymentId = payment?.payment_id || payment?.id
   if (!paymentId || ['voided', 'void_requested'].includes(payment.status)) return
-  const reason = window.prompt('Alasan request void pembayaran rent-to-rent:')
-  if (!reason?.trim()) return
-  await voidPayment(paymentId, { void_reason: reason.trim() })
+  voidPaymentForm.value = { payment, void_reason: '' }
+  showVoidPaymentDialog.value = true
+}
+
+const submitVoidPaymentRequest = async () => {
+  const payment = voidPaymentForm.value.payment
+  const paymentId = payment?.payment_id || payment?.id
+  if (!paymentId || !voidPaymentForm.value.void_reason?.trim()) return
+  await voidPayment(paymentId, { void_reason: voidPaymentForm.value.void_reason.trim() })
   if (selectedDebt.value?.id) {
     await fetchDebt(selectedDebt.value.id)
   }
+  showVoidPaymentDialog.value = false
+  voidPaymentForm.value = { payment: null, void_reason: '' }
 }
 
 const publicBillUrl = (bill) => {
@@ -990,7 +1000,7 @@ onMounted(async () => {
             </Column>
             <Column header="Aksi" style="min-width: 9rem">
               <template #body="{ data }">
-                <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(data.status)" @click="submitVoidPayment(data)">
+                <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(data.status)" @click="openVoidPaymentDialog(data)">
                   <i class="pi pi-ban"></i>
                   Void
                 </button>
@@ -1038,7 +1048,7 @@ onMounted(async () => {
 
               <!-- Footer: void action -->
               <div class="card-footer">
-                <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(payment.status)" @click="submitVoidPayment(payment)">
+                <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(payment.status)" @click="openVoidPaymentDialog(payment)">
                   <i class="pi pi-ban"></i>
                   Void
                 </button>
@@ -1199,7 +1209,7 @@ onMounted(async () => {
               </Column>
               <Column header="Aksi">
                 <template #body="{ data }">
-                  <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(data.status)" @click="submitVoidPayment(data)">
+                  <button class="btn-pill btn-danger btn-pill-compact" :disabled="actionLoading || ['voided', 'void_requested'].includes(data.status)" @click="openVoidPaymentDialog(data)">
                     <i class="pi pi-ban"></i>
                     Void
                   </button>
@@ -1357,6 +1367,26 @@ onMounted(async () => {
       <template #footer>
         <button class="app-dialog-button app-dialog-button-secondary" @click="showVoidDialog = false">Batal</button>
         <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !voidForm.void_reason?.trim()" @click="submitVoidRequest">Ajukan Void</button>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showVoidPaymentDialog" header="Ajukan Void Pembayaran" modal :style="{ width: '480px' }" class="custom-dialog">
+      <div class="dialog-stack">
+        <div class="app-muted-panel">
+          <div class="summary-row"><span>Dokumen</span><strong>{{ voidPaymentForm.payment?.bill_number || '-' }}</strong></div>
+          <div class="summary-row"><span>Akun pembayaran</span><strong>{{ voidPaymentForm.payment?.payment_account_name || '-' }}</strong></div>
+          <div class="summary-row"><span>Tanggal bayar</span><strong>{{ formatDateTime(voidPaymentForm.payment?.paid_at) }}</strong></div>
+          <div class="summary-row"><span>Nominal</span><strong>{{ formatCurrency(voidPaymentForm.payment?.amount) }}</strong></div>
+        </div>
+        <fieldset class="form-fieldset">
+          <label>Alasan Void</label>
+          <Textarea v-model="voidPaymentForm.void_reason" rows="4" class="w-full" placeholder="Tuliskan alasan untuk ACC supervisor" />
+          <span class="field-hint">Jika disetujui, pembayaran ini ikut void dan sisa hutang kembali bertambah.</span>
+        </fieldset>
+      </div>
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" @click="showVoidPaymentDialog = false">Batal</button>
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !voidPaymentForm.void_reason?.trim()" @click="submitVoidPaymentRequest">Ajukan Void</button>
       </template>
     </Dialog>
   </div>

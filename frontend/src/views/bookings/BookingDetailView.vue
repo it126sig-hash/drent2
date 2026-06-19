@@ -471,7 +471,8 @@ const costForm = ref({
   booking_detail_id: null,
   type: 'driver',
   label: '',
-  amount: 0
+  amount: 0,
+  is_additional: false
 });
 
 const extendForm = ref({
@@ -905,7 +906,7 @@ const cloneDetailCosts = (detail) => {
     label: c.label,
     amount: c.amount,
     keterangan: c.keterangan || '',
-    is_additional: c.is_additional ? 1 : 0,
+    is_additional: !!c.is_additional,
   })) || [];
 };
 
@@ -1396,7 +1397,7 @@ const openDetailDialog = async (detail = null) => {
       pricing_mode: detail.pricing_mode || 'non_all_in',
       pricing_package_id: detail.pricing_package_id || null,
       harga_all_in: hargaAllInVal,
-      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '', is_additional: c.is_additional ? 1 : 0 })) || [],
+      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '', is_additional: !!c.is_additional })) || [],
       detail_type: detail.detail_type
     };
   } else {
@@ -1455,7 +1456,8 @@ const openCostDialog = (detailId, cost = null) => {
       booking_detail_id: detailId,
       type: cost.type,
       label: cost.label,
-      amount: cost.amount
+      amount: cost.amount,
+      is_additional: !!cost.is_additional
     };
   } else {
     editingCostId.value = null;
@@ -1463,7 +1465,8 @@ const openCostDialog = (detailId, cost = null) => {
       booking_detail_id: detailId,
       type: 'driver',
       label: '',
-      amount: 0
+      amount: 0,
+      is_additional: false
     };
   }
   showCostDialog.value = true;
@@ -1600,7 +1603,7 @@ const onRollingNewCostTypeChange = (idx, typeId) => {
 };
 
 const addDetailCostRow = () => {
-  detailForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: 0 });
+  detailForm.value.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: false });
 };
 
 const removeDetailCostRow = (idx) => {
@@ -1699,7 +1702,7 @@ const doSubmitDetail = async () => {
             label: c.label,
             amount: c.amount,
             keterangan: c.keterangan || '',
-            is_additional: c.is_additional ? 1 : 0,
+            is_additional: !!c.is_additional,
           })) || [],
         };
         try {
@@ -1946,7 +1949,7 @@ const submitHandle = async () => {
         label: c.label,
         amount: c.amount,
         keterangan: c.keterangan || '',
-        is_additional: c.is_additional ? 1 : 0
+        is_additional: !!c.is_additional
       })) || [],
     };
 
@@ -3326,6 +3329,10 @@ const auditUserName = (user) => user?.name || '-';
                   <label class="text-[11px] font-semibold text-slate-500">Nominal</label>
                   <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, detailForm.lama_sewa || 1)" />
                 </div>
+                <div v-if="detailForm.pricing_mode === 'all_in'" class="md:col-span-4 flex items-center gap-2 pt-5">
+                  <Checkbox v-model="cost.is_additional" :binary="true" :inputId="`detail-cost-additional-${idx}`" />
+                  <label :for="`detail-cost-additional-${idx}`" class="text-[11px] font-semibold text-slate-500">Di luar All In</label>
+                </div>
                 <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" class="md:col-span-8 flex flex-col gap-1.5">
                   <label class="text-[11px] font-semibold text-slate-500">Detail Tambahan</label>
                   <InputText v-model="cost.keterangan" placeholder="Detail sesuai tipe biaya" class="w-full" />
@@ -3474,6 +3481,10 @@ const auditUserName = (user) => user?.name || '-';
             <i class="pi pi-wallet text-slate-400 text-[11px]"></i> Nominal
           </label>
           <InputNumber v-model="costForm.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+        </div>
+        <div class="flex items-center gap-2">
+          <Checkbox v-model="costForm.is_additional" :binary="true" inputId="cost-is-additional" />
+          <label for="cost-is-additional" class="text-xs font-semibold text-slate-600">Hitung di luar harga All In</label>
         </div>
       </div>
 

@@ -26,6 +26,7 @@ class UpdateBookingCostRequest extends FormRequest
             'type' => 'required|string|in:driver,bbm,tol,parkir,lainnya,diskon',
             'label' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0',
+            'is_additional' => 'nullable|boolean',
         ];
     }
 }

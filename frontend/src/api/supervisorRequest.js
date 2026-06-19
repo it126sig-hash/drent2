@@ -1,7 +1,7 @@
 import api from './axios'
 
-export const getSupervisorRequests = () => {
-  return api.get('/v1/supervisor-requests')
+export const getSupervisorRequests = (params) => {
+  return api.get('/v1/supervisor-requests', { params })
 }
 
 export default {

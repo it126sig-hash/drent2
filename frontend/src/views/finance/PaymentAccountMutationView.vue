@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { format } from 'date-fns'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { usePaymentAccount } from '../../composables/usePaymentAccount'
@@ -21,7 +22,7 @@ import ToggleButton from 'primevue/togglebutton'
 const toast = useToast()
 const confirm = useConfirm()
 const { accounts, fetchAll: fetchAccounts } = usePaymentAccount()
-const { transactions, loading, actionLoading, pagination, fetchAll, transfer, other } = usePaymentAccountTransaction()
+const { transactions, loading, actionLoading, pagination, fetchAll, transfer, other, voidTransaction } = usePaymentAccountTransaction()
 const {
   categories,
   loading: categoryLoading,
@@ -60,6 +61,8 @@ const showCategoryDialog = ref(false)
 const categoryForm = ref({ id: null, name: '', type: 'expense', is_active: true, sort_order: 0 })
 const formErrors = ref({})
 const isMobile = ref(window.innerWidth < 768)
+const showVoidDialog = ref(false)
+const voidForm = ref({ transaction: null, void_reason: '' })
 
 const handleResize = () => {
   isMobile.value = window.innerWidth < 768
@@ -90,7 +93,9 @@ const mutationTabs = [
 ]
 
 const visibleTransactionCount = computed(() => transactions.value.length)
-const netMutationTotal = computed(() => transactions.value.reduce((sum, transaction) => sum + Number(transaction.signed_amount || 0), 0))
+const netMutationTotal = computed(() => transactions.value
+  .filter((transaction) => transaction.status !== 'voided')
+  .reduce((sum, transaction) => sum + Number(transaction.signed_amount || 0), 0))
 const activeCategoryCount = computed(() => categories.value.filter((category) => category.is_active).length)
 
 onMounted(async () => {
@@ -114,7 +119,7 @@ const normalizedFilters = () => ({
 
 const toApiDate = (value) => {
   if (!value) return null
-  return value instanceof Date ? value.toISOString() : value
+  return value instanceof Date ? format(value, 'yyyy-MM-dd HH:mm:ss') : value
 }
 
 const formatCurrency = (value) =>
@@ -131,6 +136,7 @@ const transactionLabel = (type) => ({
   other_income: 'Pemasukan Lain-lain',
   other_expense: 'Pengeluaran Lain-lain',
   balance_adjustment: 'Adjust Saldo',
+  void_reversal: 'Pembatalan Mutasi',
 }[type] || type)
 
 const transactionSeverity = (type) => ({
@@ -139,7 +145,20 @@ const transactionSeverity = (type) => ({
   other_income: 'success',
   other_expense: 'danger',
   balance_adjustment: 'secondary',
+  void_reversal: 'secondary',
 }[type] || 'secondary')
+
+const voidableTypes = ['transfer_out', 'transfer_in', 'other_income', 'other_expense']
+const canVoid = (transaction) => voidableTypes.includes(transaction.type) && (transaction.status ?? 'active') === 'active'
+
+const voidStatusLabel = (status) => ({
+  void_requested: 'Menunggu ACC Void',
+  voided: 'Void',
+}[status] || null)
+
+const voidStatusSeverity = (status) => status === 'voided' ? 'danger' : 'warn'
+
+const rowClass = (data) => ['void_requested', 'voided'].includes(data.status) ? 'row-void' : ''
 
 const resetTransferForm = () => {
   transferForm.value = {
@@ -225,6 +244,25 @@ const submitOther = () => {
       }
     },
   })
+}
+
+const openVoidDialog = (transaction) => {
+  voidForm.value = { transaction, void_reason: '' }
+  showVoidDialog.value = true
+}
+
+const submitVoidRequest = async () => {
+  const transaction = voidForm.value.transaction
+  if (!transaction || voidForm.value.void_reason.trim().length < 3) return
+  try {
+    await voidTransaction(transaction.id, voidForm.value.void_reason.trim())
+    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Pengajuan void mutasi berhasil dikirim', life: 3000 })
+    showVoidDialog.value = false
+    voidForm.value = { transaction: null, void_reason: '' }
+    await refreshData()
+  } catch (err) {
+    showError(err)
+  }
 }
 
 const refreshData = async () => {
@@ -367,7 +405,7 @@ const showError = (err) => {
     </div>
 
     <div v-if="!isMobile" class="table-shell mutation-table-shell">
-      <DataTable :value="transactions" :loading="loading" scrollable scrollHeight="480px" responsiveLayout="scroll" class="drent-datatable" stripedRows>
+      <DataTable :value="transactions" :loading="loading" :rowClass="rowClass" scrollable scrollHeight="480px" responsiveLayout="scroll" class="drent-datatable" stripedRows>
         <template #empty>
           <div class="empty-state">
             <i class="pi pi-wallet"></i>
@@ -378,7 +416,13 @@ const showError = (err) => {
           <template #body="{ data }">{{ formatDate(data.transaction_at) }}</template>
         </Column>
         <Column field="type" header="Tipe" style="min-width: 12rem">
-          <template #body="{ data }"><Tag :value="transactionLabel(data.type)" :severity="transactionSeverity(data.type)" /></template>
+          <template #body="{ data }">
+            <Tag :value="transactionLabel(data.type)" :severity="transactionSeverity(data.type)" />
+            <div v-if="voidStatusLabel(data.status)" class="void-note">
+              <Tag :value="voidStatusLabel(data.status)" :severity="voidStatusSeverity(data.status)" />
+              <div class="text-xs text-secondary">{{ data.void_reason }}</div>
+            </div>
+          </template>
         </Column>
         <Column header="Rekening" style="min-width: 14rem">
           <template #body="{ data }">
@@ -400,6 +444,14 @@ const showError = (err) => {
         <Column field="description" header="Catatan" style="min-width: 16rem">
           <template #body="{ data }">{{ data.description || '-' }}</template>
         </Column>
+        <Column header="Aksi" style="min-width: 8rem">
+          <template #body="{ data }">
+            <button v-if="canVoid(data)" class="btn-pill btn-danger btn-pill-compact" type="button" @click="openVoidDialog(data)">
+              <i class="pi pi-ban"></i>
+              Void
+            </button>
+          </template>
+        </Column>
       </DataTable>
       <div class="paginator-wrapper">
         <Paginator :rows="pagination.per_page" :totalRecords="pagination.total" :first="(pagination.current_page - 1) * pagination.per_page"
@@ -417,13 +469,17 @@ const showError = (err) => {
         <i class="pi pi-wallet"></i>
         <span>Belum ada mutasi rekening.</span>
       </div>
-      <article v-else v-for="transaction in transactions" :key="transaction.id" class="mutation-card app-card">
+      <article v-else v-for="transaction in transactions" :key="transaction.id" class="mutation-card app-card" :class="rowClass(transaction)">
         <div class="mobile-card-head">
           <div>
             <h3>{{ transaction.payment_account?.nama_bank || '-' }}</h3>
             <p>{{ formatDate(transaction.transaction_at) }}</p>
           </div>
           <Tag :value="transactionLabel(transaction.type)" :severity="transactionSeverity(transaction.type)" />
+        </div>
+        <div v-if="voidStatusLabel(transaction.status)" class="void-note">
+          <Tag :value="voidStatusLabel(transaction.status)" :severity="voidStatusSeverity(transaction.status)" />
+          <div class="text-xs text-secondary">{{ transaction.void_reason }}</div>
         </div>
         <div class="mobile-info-grid">
           <div>
@@ -438,6 +494,12 @@ const showError = (err) => {
             <span>Catatan</span>
             <strong>{{ transaction.description || '-' }}</strong>
           </div>
+        </div>
+        <div v-if="canVoid(transaction)" class="card-footer">
+          <button class="btn-pill btn-danger btn-pill-compact" type="button" @click="openVoidDialog(transaction)">
+            <i class="pi pi-ban"></i>
+            Void
+          </button>
         </div>
       </article>
       <div v-if="transactions.length" class="mobile-paginator">
@@ -602,6 +664,32 @@ const showError = (err) => {
         </button>
       </template>
     </Dialog>
+
+    <!-- Dialog Void Mutasi -->
+    <Dialog v-model:visible="showVoidDialog" header="Ajukan Void Mutasi" modal class="custom-dialog" :style="{ width: '460px' }">
+      <div class="form-grid">
+        <div class="app-muted-panel">
+          <div class="text-xs text-secondary">Tipe</div>
+          <strong>{{ transactionLabel(voidForm.transaction?.type) }}</strong>
+          <div class="text-xs text-secondary" style="margin-top: 8px;">Nominal</div>
+          <strong>{{ formatCurrency(voidForm.transaction?.amount) }}</strong>
+        </div>
+        <div class="field">
+          <label>Alasan Void</label>
+          <Textarea v-model="voidForm.void_reason" rows="4" class="w-full" placeholder="Tuliskan alasan untuk ACC supervisor" />
+        </div>
+      </div>
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" type="button" :disabled="actionLoading" @click="showVoidDialog = false">
+          <i class="pi pi-times"></i>
+          Batal
+        </button>
+        <button class="app-dialog-button app-dialog-button-primary" type="button" :disabled="voidForm.void_reason.trim().length < 3 || actionLoading" @click="submitVoidRequest">
+          <i :class="actionLoading ? 'pi pi-spin pi-spinner' : 'pi pi-check'"></i>
+          Ajukan Void
+        </button>
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -657,6 +745,10 @@ const showError = (err) => {
 .mobile-info-grid span { color: var(--text-tertiary); font-size: 11px; font-weight: 700; }
 .mobile-info-grid strong { min-width: 0; overflow-wrap: anywhere; }
 .mobile-paginator { overflow: hidden; border: 1px solid var(--surface-border); border-radius: var(--radius-default); background: var(--surface-default); }
+.void-note { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.card-footer { margin-top: var(--space-md); display: flex; justify-content: flex-end; }
+:deep(.row-void) { background: rgba(220, 38, 38, .06) !important; box-shadow: inset 3px 0 0 0 #dc2626; }
+.mutation-card.row-void { background: rgba(220, 38, 38, .06); border-left: 3px solid #dc2626; }
 @media (max-width: 980px) {
   .entry-grid,
   .mobile-info-grid { grid-template-columns: 1fr; }

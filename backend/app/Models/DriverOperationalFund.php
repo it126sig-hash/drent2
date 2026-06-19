@@ -26,6 +26,15 @@ class DriverOperationalFund extends Model
         'closed_at',
         'closed_by',
         'close_note',
+        'status_before_void',
+        'void_reason',
+        'void_requested_by',
+        'void_requested_at',
+        'void_approved_by',
+        'void_approved_at',
+        'void_rejected_by',
+        'void_rejected_at',
+        'void_rejection_note',
     ];
 
     protected $casts = [
@@ -33,6 +42,9 @@ class DriverOperationalFund extends Model
         'paid_at' => 'datetime',
         'accepted_at' => 'datetime',
         'closed_at' => 'datetime',
+        'void_requested_at' => 'datetime',
+        'void_approved_at' => 'datetime',
+        'void_rejected_at' => 'datetime',
     ];
 
     public function booking()
@@ -78,6 +90,21 @@ class DriverOperationalFund extends Model
     public function closedBy()
     {
         return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    public function voidRequester()
+    {
+        return $this->belongsTo(User::class, 'void_requested_by');
+    }
+
+    public function voidApprover()
+    {
+        return $this->belongsTo(User::class, 'void_approved_by');
+    }
+
+    public function voidRejecter()
+    {
+        return $this->belongsTo(User::class, 'void_rejected_by');
     }
 
     public function approvedExpenseTotal(): int
