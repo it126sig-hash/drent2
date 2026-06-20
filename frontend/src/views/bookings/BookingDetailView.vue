@@ -403,6 +403,28 @@ const getBillableCostTotal = (pricingMode, costs = []) => {
   return sumCosts(costs, { discountsOnly: pricingMode === 'all_in' });
 };
 
+// Saat data costs dimuat ulang dari server (edit detail/rolling), flag _auto_all_in_ops dkk tidak ikut
+// tersimpan di backend, sehingga item OP package hasilnya "lupa" cara auto-scale-nya saat lama sewa diubah.
+// Fungsi ini menandai ulang item yang cocok dengan item package saat ini, dengan rate dasar = amount tersimpan / lama sewa awal.
+const tagPackageCostItems = (costs, pricingMode, packageId, duration) => {
+  if (pricingMode !== 'all_in' || !packageId) return costs;
+  const pkg = findPricingPackage(packageId);
+  if (!pkg) return costs;
+
+  const getCostKey = (c) => `${c.cost_type_id}_${c.type}_${c.label}`;
+  const packageKeys = new Set(packageCostItems(pkg).map(getCostKey));
+
+  return (costs || []).map(cost => {
+    if (!packageKeys.has(getCostKey(cost))) return cost;
+    return {
+      ...cost,
+      _auto_all_in_ops: true,
+      _all_in_package_cost: true,
+      _all_in_base_amount: (cost.amount || 0) / (duration || 1),
+    };
+  });
+};
+
 const applyPricingPackage = (target, packageId, costKey = 'costs', priceKey = 'harga_all_in', duration = 1) => {
   const pkg = findPricingPackage(packageId);
   if (!pkg) {
@@ -426,20 +448,8 @@ const applyPricingPackage = (target, packageId, costKey = 'costs', priceKey = 'h
   });
 };
 
-const onDetailPackageChange = () => {
-  applyPricingPackage(detailForm.value, detailForm.value.pricing_package_id, 'costs', 'harga_all_in', detailForm.value.lama_sewa || 1);
-};
-
 const onExtendPackageChange = () => {
   applyPricingPackage(extendForm.value, extendForm.value.pricing_package_id, 'costs', 'harga_all_in', extendForm.value.lama_sewa || 1);
-};
-
-const onRollingOldPackageChange = () => {
-  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id_lama, 'costs_lama', 'harga_all_in_lama', rollingForm.value.lama_sewa_lama || 1);
-};
-
-const onRollingNewPackageChange = () => {
-  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id, 'costs', 'harga_all_in', rollingForm.value.lama_sewa || 1);
 };
 
 
@@ -730,6 +740,59 @@ const detailDisplayedPriceTotal = computed(() => {
     : detailHargaSewa.value;
 });
 const detailGrandTotalInternal = computed(() => detailDisplayedPriceTotal.value + detailTotalBiayaOps.value);
+
+// Helper harga unit/all-in untuk form rolling (lama & baru), mengikuti aturan yang sama dengan detailForm di atas.
+const buildUnitPriceDisplay = (formRef, { mobilField, allInField, modeField, packageField }) => {
+  const isManualAllIn = computed(() => formRef.value[modeField] === 'all_in' && !formRef.value[packageField]);
+  const priceInputLabel = computed(() => {
+    if (isManualAllIn.value) return 'Harga All In';
+    if (formRef.value[modeField] === 'all_in' && formRef.value[packageField]) return 'Harga mobil harian / lepas kunci';
+    return 'Harga Mobil';
+  });
+  const priceInputHint = computed(() => {
+    if (isManualAllIn.value) return 'Diisi otomatis dari unit. Klik Edit Harga Unit untuk mengubah.';
+    if (formRef.value[modeField] === 'all_in' && formRef.value[packageField]) return 'Harga lepas kunci harian dari unit; tagihan konsumen memakai pricing package.';
+    return 'Diisi otomatis dari unit dan paket sewa.';
+  });
+  const priceInputValue = computed({
+    get() {
+      return isManualAllIn.value ? formRef.value[allInField] : formRef.value[mobilField];
+    },
+    set(value) {
+      if (isManualAllIn.value) {
+        formRef.value[allInField] = value;
+        return;
+      }
+      formRef.value[mobilField] = value;
+    },
+  });
+  return { isManualAllIn, priceInputLabel, priceInputHint, priceInputValue };
+};
+
+const selectedRollingOldUnit = computed(() => findUnitOption(rollingForm.value.unit_id_lama));
+const selectedRollingNewUnit = computed(() => findUnitOption(rollingForm.value.unit_id));
+
+const rollingOldPrice = buildUnitPriceDisplay(rollingForm, {
+  mobilField: 'harga_mobil_lama', allInField: 'harga_all_in_lama', modeField: 'pricing_mode_lama', packageField: 'pricing_package_id_lama',
+});
+const isRollingOldManualAllIn = rollingOldPrice.isManualAllIn;
+const rollingOldPriceInputLabel = rollingOldPrice.priceInputLabel;
+const rollingOldPriceInputHint = rollingOldPrice.priceInputHint;
+const rollingOldPriceInputValue = rollingOldPrice.priceInputValue;
+const rollingOldModalMobil = computed(() =>
+  getUnitModalByPaket(selectedRollingOldUnit.value, rollingForm.value.paket_sewa_lama, rollingForm.value.pricing_mode_lama, rollingForm.value.pricing_package_id_lama)
+);
+
+const rollingNewPrice = buildUnitPriceDisplay(rollingForm, {
+  mobilField: 'harga_mobil', allInField: 'harga_all_in', modeField: 'pricing_mode', packageField: 'pricing_package_id',
+});
+const isRollingNewManualAllIn = rollingNewPrice.isManualAllIn;
+const rollingNewPriceInputLabel = rollingNewPrice.priceInputLabel;
+const rollingNewPriceInputHint = rollingNewPrice.priceInputHint;
+const rollingNewPriceInputValue = rollingNewPrice.priceInputValue;
+const rollingNewModalMobil = computed(() =>
+  getUnitModalByPaket(selectedRollingNewUnit.value, rollingForm.value.paket_sewa, rollingForm.value.pricing_mode, rollingForm.value.pricing_package_id)
+);
 const detailTagihanKonsumen = computed(() => {
   if (detailForm.value.pricing_mode === 'all_in') {
     const lama = detailForm.value.lama_sewa || 1;
@@ -958,7 +1021,12 @@ const applyRollingOldDetail = (detail) => {
   rollingForm.value.pricing_mode_lama = detail?.pricing_mode || 'non_all_in';
   rollingForm.value.pricing_package_id_lama = detail?.pricing_package_id || null;
   rollingForm.value.harga_all_in_lama = detail?.harga_all_in || null;
-  rollingForm.value.costs_lama = cloneDetailCosts(detail);
+  rollingForm.value.costs_lama = tagPackageCostItems(
+    cloneDetailCosts(detail),
+    detail?.pricing_mode,
+    detail?.pricing_package_id,
+    oldDuration
+  );
   rollingForm.value.paket_sewa = detail?.paket_sewa || booking.value?.paket_sewa || 'harian';
   syncRollingNewSchedule();
 };
@@ -1013,6 +1081,7 @@ const getInitialBookingDetail = () => {
 };
 
 const isInitializingDetailDialog = ref(false);
+const isInitializingRollingDialog = ref(false);
 
 const getUnitHargaByPaket = (unit, paket) => {
   if (!unit) return 0;
@@ -1050,29 +1119,23 @@ const getUnitModalByPaket = (unit, paket, pricingMode = 'non_all_in', pricingPac
   }
 };
 
-const openUnitPriceDialog = () => {
-  if (!selectedDetailUnit.value) {
+const unitPriceDialogUnitId = ref(null);
+
+const openUnitPriceDialog = (unit) => {
+  if (!unit) {
     toast.add({ severity: 'warn', summary: 'Pilih Unit', detail: 'Pilih unit dulu sebelum edit harga.', life: 3000 });
     return;
   }
 
-  const unit = selectedDetailUnit.value;
   rememberUnitOption({ ...unit });
+  unitPriceDialogUnitId.value = unit.id;
   unitPriceForm.value = {
     id: unit.id,
     label: `${unit.merk || ''} ${unit.tipe || ''}`.trim() || unit.unitLabel || 'Unit',
-    harga_1_hari: unit.harga_1_hari || 0,
-    harga_1_minggu: unit.harga_1_minggu || 0,
-    harga_1_bulan: unit.harga_1_bulan || 0,
-    harga_all_in: unit.harga_all_in || 0,
-    harga_all_in_1_minggu: unit.harga_all_in_1_minggu || 0,
-    harga_all_in_1_bulan: unit.harga_all_in_1_bulan || 0,
-    modal_1_hari: unit.modal_1_hari || 0,
-    modal_1_minggu: unit.modal_1_minggu || 0,
-    modal_1_bulan: unit.modal_1_bulan || 0,
-    modal_all_in: unit.modal_all_in || 0,
-    modal_all_in_1_minggu: unit.modal_all_in_1_minggu || 0,
-    modal_all_in_1_bulan: unit.modal_all_in_1_bulan || 0,
+    ...unitPriceFields.reduce((payload, field) => {
+      payload[field] = unit[field] || 0;
+      return payload;
+    }, {}),
   };
   showUnitPriceDialog.value = true;
 };
@@ -1094,8 +1157,10 @@ const refreshSelectedUnit = async (unitId) => {
 
 const saveUnitPrice = async (data) => {
   if (unitPriceSaving.value) return;
-  if (!selectedDetailUnit.value?.id) return;
+  const unitId = unitPriceDialogUnitId.value;
+  if (!unitId) return;
 
+  const currentUnit = findUnitOption(unitId) || {};
   const pricePayload = unitPriceFields.reduce((payload, field) => {
     payload[field] = data?.[field] ?? 0;
     return payload;
@@ -1103,12 +1168,12 @@ const saveUnitPrice = async (data) => {
 
   unitPriceSaving.value = true;
   try {
-    await updateUnit(selectedDetailUnit.value.id, {
-      ...selectedDetailUnit.value,
+    await updateUnit(unitId, {
+      ...currentUnit,
       ...pricePayload,
-      id: selectedDetailUnit.value.id,
+      id: unitId,
     });
-    await refreshSelectedUnit(selectedDetailUnit.value.id);
+    await refreshSelectedUnit(unitId);
     toast.add({ severity: 'success', summary: 'Sukses', detail: 'Harga unit berhasil diperbarui.', life: 3000 });
     showUnitPriceDialog.value = false;
   } catch (err) {
@@ -1124,6 +1189,69 @@ const getCityIdByName = (cityName) => {
   return city ? city.id : null;
 };
 
+// Aturan auto-fill harga (dipakai bersama oleh detailForm & rollingForm lama/baru agar konsisten):
+//   - Saat init: fill bila harga current ≤ 1, preserve bila > 1.
+//   - Post-init paket/mode/package change: selalu re-fill (user pilih paket/mode/package berbeda).
+//   - Post-init unit_id change atau unitOptions arrive: fill bila ≤ 1, preserve bila > 1.
+const syncUnitPricing = (target, fields, oldPaket, oldMode, oldPackageId, isInit) => {
+  const {
+    unitField = 'unit_id',
+    paketField = 'paket_sewa',
+    modeField = 'pricing_mode',
+    packageField = 'pricing_package_id',
+    mobilField = 'harga_mobil',
+    allInField = 'harga_all_in',
+  } = fields;
+
+  const unit = findUnitOption(target[unitField]);
+  if (!unit) return;
+
+  const paket = target[paketField];
+  const pricingMode = target[modeField];
+  const packageId = target[packageField];
+
+  const paketChanged = paket !== oldPaket;
+  const modeChanged = pricingMode !== oldMode;
+  const packageChanged = packageId !== oldPackageId;
+  const userTriggeredRefill = paketChanged || modeChanged || packageChanged;
+
+  const currentHargaMobil = target[mobilField] || 0;
+  const currentHargaAllIn = target[allInField] || 0;
+
+  const shouldFillMobil = isInit
+    ? currentHargaMobil <= 1
+    : userTriggeredRefill
+      ? true
+      : currentHargaMobil <= 1;
+
+  const shouldFillAllIn = isInit
+    ? currentHargaAllIn <= 1
+    : userTriggeredRefill
+      ? true
+      : currentHargaAllIn <= 1;
+
+  if (pricingMode === 'non_all_in') {
+    if (shouldFillMobil) {
+      target[mobilField] = getUnitHargaByPaket(unit, paket);
+    }
+  } else if (pricingMode === 'all_in') {
+    if (shouldFillMobil) {
+      target[mobilField] = getUnitHargaByPaket(unit, 'harian');
+    }
+    if (!packageId) {
+      if (shouldFillAllIn) {
+        target[allInField] = getUnitAllInByPaket(unit, paket);
+      }
+    } else {
+      // pricing package selected: harga_all_in mengikuti package
+      const pkg = findPricingPackage(packageId);
+      if (pkg) {
+        target[allInField] = pkg.harga || 0;
+      }
+    }
+  }
+};
+
 watch(
   () => [
     detailForm.value.unit_id,
@@ -1132,59 +1260,41 @@ watch(
     detailForm.value.pricing_package_id,
     unitOptions.value
   ],
-  ([unitId, paket, pricingMode, packageId], oldValues) => {
-    const unit = findUnitOption(unitId);
-    if (!unit) return;
+  (_, oldValues) => {
+    syncUnitPricing(detailForm.value, {}, oldValues?.[1], oldValues?.[2], oldValues?.[3], isInitializingDetailDialog.value);
+  }
+);
 
-    const oldPaket = oldValues?.[1];
-    const oldMode = oldValues?.[2];
-    const oldPackageId = oldValues?.[3];
+watch(
+  () => [
+    rollingForm.value.unit_id_lama,
+    rollingForm.value.paket_sewa_lama,
+    rollingForm.value.pricing_mode_lama,
+    rollingForm.value.pricing_package_id_lama,
+    unitOptions.value
+  ],
+  (_, oldValues) => {
+    syncUnitPricing(rollingForm.value, {
+      unitField: 'unit_id_lama',
+      paketField: 'paket_sewa_lama',
+      modeField: 'pricing_mode_lama',
+      packageField: 'pricing_package_id_lama',
+      mobilField: 'harga_mobil_lama',
+      allInField: 'harga_all_in_lama',
+    }, oldValues?.[1], oldValues?.[2], oldValues?.[3], isInitializingRollingDialog.value);
+  }
+);
 
-    const paketChanged = paket !== oldPaket;
-    const modeChanged = pricingMode !== oldMode;
-    const packageChanged = packageId !== oldPackageId;
-    const userTriggeredRefill = paketChanged || modeChanged || packageChanged;
-
-    const isInit = isInitializingDetailDialog.value;
-    const currentHargaMobil = detailForm.value.harga_mobil || 0;
-    const currentHargaAllIn = detailForm.value.harga_all_in || 0;
-
-    // Aturan auto-fill harga:
-    //   - Saat init: fill bila harga current ≤ 1, preserve bila > 1.
-    //   - Post-init paket/mode/package change: selalu re-fill (user pilih paket/mode/package berbeda).
-    //   - Post-init unit_id change atau unitOptions arrive: fill bila ≤ 1, preserve bila > 1.
-    const shouldFillMobil = isInit
-      ? currentHargaMobil <= 1
-      : userTriggeredRefill
-        ? true
-        : currentHargaMobil <= 1;
-
-    const shouldFillAllIn = isInit
-      ? currentHargaAllIn <= 1
-      : userTriggeredRefill
-        ? true
-        : currentHargaAllIn <= 1;
-
-    if (pricingMode === 'non_all_in') {
-      if (shouldFillMobil) {
-        detailForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
-      }
-    } else if (pricingMode === 'all_in') {
-      if (shouldFillMobil) {
-        detailForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
-      }
-      if (!packageId) {
-        if (shouldFillAllIn) {
-          detailForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
-        }
-      } else {
-        // pricing package selected: harga_all_in mengikuti package (perilaku existing, tidak berubah)
-        const pkg = findPricingPackage(packageId);
-        if (pkg) {
-          detailForm.value.harga_all_in = pkg.harga || 0;
-        }
-      }
-    }
+watch(
+  () => [
+    rollingForm.value.unit_id,
+    rollingForm.value.paket_sewa,
+    rollingForm.value.pricing_mode,
+    rollingForm.value.pricing_package_id,
+    unitOptions.value
+  ],
+  (_, oldValues) => {
+    syncUnitPricing(rollingForm.value, {}, oldValues?.[1], oldValues?.[2], oldValues?.[3], isInitializingRollingDialog.value);
   }
 );
 
@@ -1400,7 +1510,12 @@ const openDetailDialog = async (detail = null) => {
       pricing_mode: detail.pricing_mode || 'non_all_in',
       pricing_package_id: detail.pricing_package_id || null,
       harga_all_in: hargaAllInVal,
-      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '', is_additional: !!c.is_additional })) || [],
+      costs: tagPackageCostItems(
+        detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '', is_additional: !!c.is_additional })) || [],
+        detail.pricing_mode,
+        detail.pricing_package_id,
+        detail.lama_sewa || booking.value?.lama_sewa || 1
+      ),
       detail_type: detail.detail_type
     };
   } else {
@@ -1503,6 +1618,7 @@ const openExtendDialog = () => {
 const openRollingDialog = () => {
   const active = activeDetails.value[0];
   rollingStep.value = 1;
+  isInitializingRollingDialog.value = true;
   rollingForm.value = {
     booking_detail_id: null,
     tgl_rolling: null,
@@ -1534,6 +1650,7 @@ const openRollingDialog = () => {
   };
   applyRollingOldDetail(active);
   showRollingDialog.value = true;
+  setTimeout(() => { isInitializingRollingDialog.value = false; }, 50);
 };
 
 const openBatalDialog = () => {
@@ -1584,7 +1701,10 @@ const onDetailCostTypeChange = (idx, typeId) => {
 
 const onRollingDetailChange = (detailId) => {
   const detail = activeDetails.value.find(item => item.id === detailId);
-  if (detail) applyRollingOldDetail(detail);
+  if (!detail) return;
+  isInitializingRollingDialog.value = true;
+  applyRollingOldDetail(detail);
+  setTimeout(() => { isInitializingRollingDialog.value = false; }, 50);
 };
 
 const onRollingOldUnitChange = (e) => {
@@ -3265,7 +3385,7 @@ const auditUserName = (user) => user?.name || '-';
                 <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                   <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> {{ detailPriceInputLabel }}
                 </label>
-                <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedDetailUnit" @click="openUnitPriceDialog" />
+                <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedDetailUnit" @click="openUnitPriceDialog(selectedDetailUnit)" />
               </div>
               <InputNumber v-model="detailPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
               <small class="text-xs text-slate-400">{{ detailPriceInputHint }}</small>
@@ -3291,7 +3411,7 @@ const auditUserName = (user) => user?.name || '-';
               <SelectButton v-model="detailForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             </div>
             <div v-if="detailForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." filter @filter="onPricingPackageFilter" showClear class="w-full" @change="onDetailPackageChange" />
+              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." filter @filter="onPricingPackageFilter" showClear class="w-full" />
               <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
@@ -3619,11 +3739,31 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Lama *</label>
-              <Dropdown v-model="rollingForm.unit_id_lama" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" class="w-full" @filter="onUnitFilter" @change="onRollingOldUnitChange" />
+              <Dropdown v-model="rollingForm.unit_id_lama" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" class="w-full" @filter="onUnitFilter" @change="onRollingOldUnitChange">
+                <template #option="{ option }">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex flex-col">
+                      <span class="font-semibold text-slate-800">{{ option.merk }} {{ option.tipe }}</span>
+                      <span class="text-xs text-slate-500">{{ option.no_polisi }} - {{ option.rental_owner?.nama ||
+                        'Internal' }}</span>
+                    </div>
+                    <Tag :value="option.status" :severity="option.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+                  </div>
+                </template>
+              </Dropdown>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
               <Dropdown v-model="rollingForm.driver_id_lama" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
+            </div>
+          </div>
+          <div v-if="selectedRollingOldUnit" class="app-muted-panel p-3 text-sm mt-3">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{ selectedRollingOldUnit.no_polisi }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Pemilik</span><strong>{{ selectedRollingOldUnit.rental_owner?.nama || 'Internal' }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Status</span>
+                <Tag :value="selectedRollingOldUnit.status" :severity="selectedRollingOldUnit.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+              </div>
             </div>
           </div>
         </fieldset>
@@ -3654,21 +3794,35 @@ const auditUserName = (user) => user?.name || '-';
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan Lama
           </legend>
           <div class="flex flex-col gap-3 mt-2">
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-                <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
-                <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
+                <div class="detail-price-label-row">
+                  <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                    <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> {{ rollingOldPriceInputLabel }}
+                  </label>
+                  <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedRollingOldUnit" @click="openUnitPriceDialog(selectedRollingOldUnit)" />
+                </div>
+                <InputNumber v-model="rollingOldPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
+                <small class="text-xs text-slate-400">{{ rollingOldPriceInputHint }}</small>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-600">Diskon</label>
+                <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <i class="pi pi-percentage text-orange-500 text-[11px]"></i> Diskon
+                </label>
                 <InputNumber v-model="rollingForm.diskon_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <i class="pi pi-database text-blue-500 text-[11px]"></i> Harga Modal / periode
+                </label>
+                <InputNumber :modelValue="rollingOldModalMobil" mode="currency" currency="IDR" locale="id-ID" disabled class="w-full" />
+                <small class="text-xs text-slate-400">Modal mengikuti unit, paket sewa, dan mode pricing.</small>
               </div>
             </div>
             <SelectButton v-model="rollingForm.pricing_mode_lama" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             <div v-if="rollingForm.pricing_mode_lama === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingOldPackageChange" />
-              <InputNumber v-if="!rollingForm.pricing_package_id_lama" v-model="rollingForm.harga_all_in_lama" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" />
+              <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
         </fieldset>
@@ -3676,22 +3830,43 @@ const auditUserName = (user) => user?.name || '-';
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional Lama
           </legend>
-          <div class="flex flex-col gap-2 mt-2">
-            <div v-if="!rollingForm.costs_lama.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.
+          <div class="flex flex-col gap-3 mt-3">
+            <div v-if="!rollingForm.costs_lama.length" class="text-center text-sm text-slate-400 py-5 border border-dashed border-slate-200 rounded-lg bg-white">
+              Belum ada biaya operasional.
             </div>
-            <div v-for="(cost, idx) in rollingForm.costs_lama" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4">
-                <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingOldCostTypeChange(idx, cost.cost_type_id)" />
+            <div v-for="(cost, idx) in rollingForm.costs_lama" :key="idx" class="rounded-lg border border-slate-200 bg-white p-3">
+              <div class="flex items-center justify-between gap-3 mb-3">
+                <span class="text-xs font-bold text-slate-500">Item {{ idx + 1 }}</span>
+                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs_lama.splice(idx, 1)" />
               </div>
-              <div class="col-span-4">
-                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Tipe Master</label>
+                  <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Pilih tipe" filter @filter="onCostTypeFilter" showClear class="w-full" @change="onRollingOldCostTypeChange(idx, cost.cost_type_id)" />
+                </div>
+                <div class="md:col-span-3 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Biaya / Diskon</label>
+                  <Dropdown v-model="cost.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                </div>
+                <div class="md:col-span-5 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Keterangan</label>
+                  <InputText v-model="cost.label" placeholder="Misal: Fee driver luar kota" class="w-full" />
+                </div>
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Nominal</label>
+                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa_lama || 1)" />
+                </div>
+                <div v-if="rollingForm.pricing_mode_lama === 'all_in'" class="md:col-span-4 flex items-center gap-2 pt-5">
+                  <Checkbox v-model="cost.is_additional" :binary="true" :inputId="`rolling-old-cost-additional-${idx}`" />
+                  <label :for="`rolling-old-cost-additional-${idx}`" class="text-[11px] font-semibold text-slate-500">Di luar All In</label>
+                </div>
+                <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" class="md:col-span-8 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Detail Tambahan</label>
+                  <InputText v-model="cost.keterangan" placeholder="Detail sesuai tipe biaya" class="w-full" />
+                </div>
               </div>
-              <div class="col-span-3">
-                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa_lama || 1)" />
-              </div>
-              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs_lama.splice(idx, 1)" /></div>
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs_lama.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' })" />
+            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs_lama.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: false })" />
           </div>
         </fieldset>
 
@@ -3719,11 +3894,31 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-2 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Baru *</label>
-              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { if ((rollingForm.harga_mobil || 0) <= 1) { rollingForm.harga_mobil = unit.harga_1_hari || 0; } })" class="w-full" />
+              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { if ((rollingForm.harga_mobil || 0) <= 1) { rollingForm.harga_mobil = unit.harga_1_hari || 0; } })" class="w-full">
+                <template #option="{ option }">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex flex-col">
+                      <span class="font-semibold text-slate-800">{{ option.merk }} {{ option.tipe }}</span>
+                      <span class="text-xs text-slate-500">{{ option.no_polisi }} - {{ option.rental_owner?.nama ||
+                        'Internal' }}</span>
+                    </div>
+                    <Tag :value="option.status" :severity="option.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+                  </div>
+                </template>
+              </Dropdown>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
               <Dropdown v-model="rollingForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
+            </div>
+          </div>
+          <div v-if="selectedRollingNewUnit" class="app-muted-panel p-3 text-sm mt-3">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{ selectedRollingNewUnit.no_polisi }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Pemilik</span><strong>{{ selectedRollingNewUnit.rental_owner?.nama || 'Internal' }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Status</span>
+                <Tag :value="selectedRollingNewUnit.status" :severity="selectedRollingNewUnit.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+              </div>
             </div>
           </div>
         </fieldset>
@@ -3739,8 +3934,6 @@ const auditUserName = (user) => user?.name || '-';
               <label class="text-xs font-semibold text-slate-600">Kembali</label>
               <Calendar v-model="rollingForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
             </div>
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Lama Sewa</label>
               <Dropdown v-model="rollingForm.lama_sewa" :options="lamaSewaOptions" optionLabel="label" optionValue="value" placeholder="Lama" class="w-full" disabled />
@@ -3749,41 +3942,79 @@ const auditUserName = (user) => user?.name || '-';
               <label class="text-xs font-semibold text-slate-600">Paket</label>
               <Dropdown v-model="rollingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" disabled />
             </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-              <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
-              <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
+              <div class="detail-price-label-row">
+                <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> {{ rollingNewPriceInputLabel }}
+                </label>
+                <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedRollingNewUnit" @click="openUnitPriceDialog(selectedRollingNewUnit)" />
+              </div>
+              <InputNumber v-model="rollingNewPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
+              <small class="text-xs text-slate-400">{{ rollingNewPriceInputHint }}</small>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Diskon</label>
+              <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                <i class="pi pi-percentage text-orange-500 text-[11px]"></i> Diskon
+              </label>
               <InputNumber v-model="rollingForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                <i class="pi pi-database text-blue-500 text-[11px]"></i> Harga Modal / periode
+              </label>
+              <InputNumber :modelValue="rollingNewModalMobil" mode="currency" currency="IDR" locale="id-ID" disabled class="w-full" />
+              <small class="text-xs text-slate-400">Modal mengikuti unit, paket sewa, dan mode pricing.</small>
             </div>
           </div>
           <div class="mt-3">
             <SelectButton v-model="rollingForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             <div v-if="rollingForm.pricing_mode === 'all_in'" class="flex flex-col gap-2 mt-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingNewPackageChange" />
-              <InputNumber v-if="!rollingForm.pricing_package_id" v-model="rollingForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" />
+              <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
         </fieldset>
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional</legend>
-          <div class="flex flex-col gap-2 mt-2">
-            <div v-if="!rollingForm.costs.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.</div>
-            <div v-for="(cost, idx) in rollingForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4">
-                <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingNewCostTypeChange(idx, cost.cost_type_id)" />
-              </div>
-              <div class="col-span-4">
-                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
-              </div>
-              <div class="col-span-3">
-                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa || 1)" />
-              </div>
-              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs.splice(idx, 1)" /></div>
+          <div class="flex flex-col gap-3 mt-3">
+            <div v-if="!rollingForm.costs.length" class="text-center text-sm text-slate-400 py-5 border border-dashed border-slate-200 rounded-lg bg-white">
+              Belum ada biaya operasional.
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: 0 })" />
+            <div v-for="(cost, idx) in rollingForm.costs" :key="idx" class="rounded-lg border border-slate-200 bg-white p-3">
+              <div class="flex items-center justify-between gap-3 mb-3">
+                <span class="text-xs font-bold text-slate-500">Item {{ idx + 1 }}</span>
+                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs.splice(idx, 1)" />
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Tipe Master</label>
+                  <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Pilih tipe" filter @filter="onCostTypeFilter" showClear class="w-full" @change="onRollingNewCostTypeChange(idx, cost.cost_type_id)" />
+                </div>
+                <div class="md:col-span-3 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Biaya / Diskon</label>
+                  <Dropdown v-model="cost.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                </div>
+                <div class="md:col-span-5 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Keterangan</label>
+                  <InputText v-model="cost.label" placeholder="Misal: Fee driver luar kota" class="w-full" />
+                </div>
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Nominal</label>
+                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa || 1)" />
+                </div>
+                <div v-if="rollingForm.pricing_mode === 'all_in'" class="md:col-span-4 flex items-center gap-2 pt-5">
+                  <Checkbox v-model="cost.is_additional" :binary="true" :inputId="`rolling-new-cost-additional-${idx}`" />
+                  <label :for="`rolling-new-cost-additional-${idx}`" class="text-[11px] font-semibold text-slate-500">Di luar All In</label>
+                </div>
+                <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" class="md:col-span-8 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Detail Tambahan</label>
+                  <InputText v-model="cost.keterangan" placeholder="Detail sesuai tipe biaya" class="w-full" />
+                </div>
+              </div>
+            </div>
+            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: false })" />
           </div>
         </fieldset>
         <div class="bg-slate-900 rounded-xl p-4 text-white">
