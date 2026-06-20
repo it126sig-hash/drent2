@@ -526,34 +526,34 @@ const handleImport = async () => {
 
 .summary-tile-compact span {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .summary-tile-compact strong {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 0; color: #94a3b8; }
-.empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: .5; }
+.empty-state i { font-size: var(--font-size-3rem); margin-bottom: 15px; opacity: .5; }
 .amount-text { font-family: var(--font-mono); font-weight: 700; color: var(--info-cyan); font-variant-numeric: tabular-nums; }
 .item-summary { display: flex; flex-direction: column; gap: 2px; }
 .form-grid { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
+.field label { font-weight: 700; font-size: var(--font-size-12px); color: var(--text-secondary); }
 .field-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .section-label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.empty-items { border: 1px dashed var(--surface-border); border-radius: var(--radius-default); background: var(--card-bg); color: var(--text-tertiary); padding: 18px; text-align: center; font-size: 12px; }
+.empty-items { border: 1px dashed var(--surface-border); border-radius: var(--radius-default); background: var(--card-bg); color: var(--text-tertiary); padding: 18px; text-align: center; font-size: var(--font-size-12px); }
 .item-row { border: 1px solid var(--surface-border); border-radius: var(--radius-default); background: var(--surface-default); padding: 12px; margin-bottom: var(--space-md); }
-.item-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.item-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: var(--text-secondary); font-size: var(--font-size-12px); font-weight: 700; }
 .item-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(120px, 0.8fr) minmax(140px, 1fr); gap: 12px; }
 .item-label-field, .item-note-field { grid-column: span 3; }
-.items-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.items-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--text-secondary); font-size: var(--font-size-12px); font-weight: 600; }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
 .action-btn-danger { color: var(--negative) !important; }
@@ -567,21 +567,21 @@ const handleImport = async () => {
 
 /* Route cell */
 .route-cell { display: flex; align-items: center; gap: 6px; }
-.route-kota { font-size: 12px; font-weight: 600; color: var(--text-primary); }
-.route-arrow { font-size: 10px; color: var(--text-tertiary); }
+.route-kota { font-size: var(--font-size-12px); font-weight: 600; color: var(--text-primary); }
+.route-arrow { font-size: var(--font-size-10px); color: var(--text-tertiary); }
 
 /* Import dialog */
 .import-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
-.import-info { display: flex; gap: 12px; align-items: flex-start; padding: 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
-.import-info i { font-size: 18px; margin-top: 2px; flex-shrink: 0; }
-.import-cols { display: block; margin-top: 4px; padding: 4px 8px; background: var(--card-bg); border-radius: 4px; font-size: 11px; color: var(--text-primary); font-family: var(--font-mono); }
+.import-info { display: flex; gap: 12px; align-items: flex-start; padding: 14px; font-size: var(--font-size-12px); color: var(--text-secondary); line-height: 1.6; }
+.import-info i { font-size: var(--font-size-18px); margin-top: 2px; flex-shrink: 0; }
+.import-cols { display: block; margin-top: 4px; padding: 4px 8px; background: var(--card-bg); border-radius: 4px; font-size: var(--font-size-11px); color: var(--text-primary); font-family: var(--font-mono); }
 .file-upload-area {
   display: flex; align-items: center; gap: 10px;
   border: 2px dashed var(--surface-border);
   border-radius: var(--radius-default);
   padding: 16px 18px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   color: var(--text-secondary);
   transition: border-color 0.2s;
 }
@@ -598,7 +598,7 @@ const handleImport = async () => {
   padding: 3px 6px;
   border-radius: 6px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.3;
   text-transform: capitalize;
@@ -619,7 +619,7 @@ const handleImport = async () => {
   color: var(--info-cyan);
 }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 
 @media (max-width: 640px) {

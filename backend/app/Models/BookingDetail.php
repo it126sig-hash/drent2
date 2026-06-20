@@ -26,6 +26,7 @@ class BookingDetail extends Model
         'harga_all_in',
         'detail_type',
         'status',
+        'created_by',
     ];
 
     protected $casts = [
@@ -47,6 +48,11 @@ class BookingDetail extends Model
     public function unit()
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function driver()

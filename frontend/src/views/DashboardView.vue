@@ -588,7 +588,7 @@ onMounted(fetchData)
 .kpi-sub-value {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 500;
   color: var(--text-secondary);
   opacity: 0.85;
@@ -622,7 +622,7 @@ onMounted(fetchData)
 }
 
 .kpi-delta {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   color: var(--text-secondary);
   text-align: right;
@@ -643,7 +643,7 @@ onMounted(fetchData)
 }
 
 .kpi-body p {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
 }
 
@@ -651,7 +651,7 @@ onMounted(fetchData)
   display: block;
   margin-top: 3px;
   font-family: var(--font-headline);
-  font-size: 21px;
+  font-size: var(--font-size-21px);
   color: var(--text-primary);
 }
 
@@ -713,7 +713,7 @@ onMounted(fetchData)
   border-radius: 8px;
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
@@ -742,7 +742,7 @@ onMounted(fetchData)
   border-radius: 999px;
   background: var(--surface-border);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   font-family: var(--font-mono);
 }
@@ -760,7 +760,7 @@ onMounted(fetchData)
 .section-heading h2 {
   margin: 0;
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 800;
   color: var(--text-primary);
 }
@@ -768,7 +768,7 @@ onMounted(fetchData)
 .panel-header span,
 .panel-link,
 .leaderboard-header span {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .panel-link {
@@ -837,12 +837,12 @@ onMounted(fetchData)
 .booking-main p,
 .booking-main span {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .booking-amount {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   color: var(--text-primary);
   white-space: nowrap;
 }
@@ -854,7 +854,7 @@ onMounted(fetchData)
   gap: 8px;
   padding: 28px 16px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .mini-empty {
@@ -871,7 +871,7 @@ onMounted(fetchData)
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .armada-row>div {
@@ -910,7 +910,7 @@ onMounted(fetchData)
 
 .finance-grid strong {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .finance-grid small {
@@ -973,12 +973,12 @@ onMounted(fetchData)
 }
 
 .alert-tile span {
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
 .alert-tile strong {
-  font-size: 24px;
+  font-size: var(--font-size-24px);
   font-family: var(--font-headline);
 }
 
@@ -988,7 +988,7 @@ onMounted(fetchData)
 
 .cashflow-header strong {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: var(--font-size-15px);
   white-space: nowrap;
 }
 
@@ -1005,7 +1005,7 @@ onMounted(fetchData)
   border-radius: 8px;
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   cursor: pointer;
 }
@@ -1054,7 +1054,7 @@ onMounted(fetchData)
 
 .cashflow-donut-hole span {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -1064,7 +1064,7 @@ onMounted(fetchData)
   overflow: hidden;
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.25;
   text-overflow: ellipsis;
 }
@@ -1085,7 +1085,7 @@ onMounted(fetchData)
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .cashflow-row-top span {
@@ -1100,13 +1100,13 @@ onMounted(fetchData)
 .cashflow-row-top b {
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .cashflow-row strong {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   white-space: nowrap;
 }
 
@@ -1131,7 +1131,7 @@ onMounted(fetchData)
 .section-heading p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .leaderboard-card {
@@ -1165,7 +1165,7 @@ onMounted(fetchData)
   border-radius: 8px;
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   white-space: nowrap;
   cursor: pointer;
@@ -1206,7 +1206,7 @@ onMounted(fetchData)
   background: var(--card-bg);
   border: 1px solid var(--surface-border);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   margin-top: 2px;
 }
@@ -1235,13 +1235,13 @@ onMounted(fetchData)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   color: var(--text-primary);
 }
 
 .leaderboard-bar-count {
   flex: 0 0 auto;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 800;
   font-family: var(--font-mono);
   color: var(--primary);
@@ -1263,7 +1263,7 @@ onMounted(fetchData)
 }
 
 .leaderboard-bar-meta {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1379,7 +1379,7 @@ onMounted(fetchData)
   }
 
   .kpi-body strong {
-    font-size: 17px;
+    font-size: var(--font-size-17px);
   }
 
   .kpi-icon {

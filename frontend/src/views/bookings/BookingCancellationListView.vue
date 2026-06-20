@@ -588,7 +588,7 @@ onMounted(async () => {
 <style scoped>
 .booking-code-link {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 600;
   color: var(--info-cyan);
   background: none;
@@ -628,10 +628,10 @@ onMounted(async () => {
   gap: 8px;
   padding: 48px 16px;
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 .table-empty-icon {
-  font-size: 28px;
+  font-size: var(--font-size-28px);
   opacity: 0.4;
 }
 
@@ -648,7 +648,7 @@ onMounted(async () => {
 }
 
 .form-label {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
   letter-spacing: 0.02em;
@@ -657,7 +657,7 @@ onMounted(async () => {
 /* Mobile card field hint */
 .field-hint {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-tertiary);
   margin-bottom: 2px;
 }
@@ -669,7 +669,7 @@ onMounted(async () => {
 }
 
 .btn-sm {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   padding: 6px 12px;
   min-height: 30px;
 }

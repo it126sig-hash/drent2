@@ -406,7 +406,7 @@ const getRoleBadgeClass = (role) => {
 
 .user-name {
   font-family: var(--font-headline);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -418,7 +418,7 @@ const getRoleBadgeClass = (role) => {
 }
 
 .user-email {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-secondary);
 }
 
@@ -426,7 +426,7 @@ const getRoleBadgeClass = (role) => {
   color: var(--negative) !important;
 }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card-list .card-footer { justify-content: flex-end; }
 
 .empty-state {
@@ -439,7 +439,7 @@ const getRoleBadgeClass = (role) => {
 }
 
 .empty-state i {
-  font-size: 2.4rem;
+  font-size: var(--font-size-2p4rem);
   margin-bottom: var(--space-md);
   opacity: 0.7;
 }
@@ -456,7 +456,7 @@ const getRoleBadgeClass = (role) => {
   padding: 3px 6px;
   border-radius: 6px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.3;
   text-transform: capitalize;

@@ -394,14 +394,14 @@ const formatCurrency = (value) => {
 }
 
 .type-tag {
-  font-size: 0.65rem;
+  font-size: var(--font-size-0p65rem);
   padding: 2px 8px;
   width: fit-content;
 }
 
 .status-tag {
   font-weight: 600;
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   padding: 4px 10px;
 }
 
@@ -426,7 +426,7 @@ const formatCurrency = (value) => {
 }
 
 .empty-state i {
-  font-size: 3rem;
+  font-size: var(--font-size-3rem);
   margin-bottom: 15px;
   opacity: 0.5;
 }
@@ -460,14 +460,14 @@ const formatCurrency = (value) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
 }
 
 .mobile-card-header p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .mobile-card-meta {
@@ -485,7 +485,7 @@ const formatCurrency = (value) => {
 .mobile-card-meta span {
   display: block;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -494,7 +494,7 @@ const formatCurrency = (value) => {
   display: block;
   margin-top: 3px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .mobile-card-actions {

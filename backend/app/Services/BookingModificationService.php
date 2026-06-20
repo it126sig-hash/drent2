@@ -39,6 +39,7 @@ class BookingModificationService
                 'harga_all_in'       => $data['harga_all_in'] ?? null,
                 'detail_type'        => 'extend',
                 'status'             => 'aktif',
+                'created_by'         => auth()->id(),
             ]);
 
             foreach ($data['costs'] ?? [] as $costData) {
@@ -136,6 +137,7 @@ class BookingModificationService
                 'harga_all_in'       => $data['harga_all_in'] ?? null,
                 'detail_type'        => 'rolling',
                 'status'             => 'aktif',
+                'created_by'         => auth()->id(),
             ]);
 
             foreach ($data['costs'] ?? [] as $costData) {

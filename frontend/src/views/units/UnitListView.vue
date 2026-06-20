@@ -555,7 +555,7 @@ const formatCurrency = (value) => {
       <div class="form-container p-fluid flex flex-col gap-4" style="padding: 15px 5px; display: flex; flex-direction: column; gap: 15px;">
         <!-- Pilihan Tipe Batch Edit -->
         <div class="field" style="display: flex; flex-direction: column; gap: 8px;">
-          <label class="font-semibold" style="font-size: 0.85rem; font-weight: 600; color: #475569;">Metode Update</label>
+          <label class="font-semibold" style="font-size: var(--font-size-0p85rem); font-weight: 600; color: #475569;">Metode Update</label>
           <Dropdown
             id="batch_mode"
             v-model="batchMethod"
@@ -568,7 +568,7 @@ const formatCurrency = (value) => {
 
         <!-- Dropdown Pemilik (Hanya jika metode 'owner') -->
         <div v-if="batchMethod === 'owner'" class="field animate-fade-in" style="display: flex; flex-direction: column; gap: 8px;">
-          <label for="batch_owner" class="label-required" style="font-size: 0.85rem; font-weight: 600; color: #475569;">Pilih Pemilik Rental</label>
+          <label for="batch_owner" class="label-required" style="font-size: var(--font-size-0p85rem); font-weight: 600; color: #475569;">Pilih Pemilik Rental</label>
           <AutoComplete 
             id="batch_owner" 
             v-model="selectedBatchOwner" 
@@ -594,7 +594,7 @@ const formatCurrency = (value) => {
 
         <!-- Dropdown Kota Tujuan -->
         <div class="field" style="display: flex; flex-direction: column; gap: 8px;">
-          <label for="batch_city" class="label-required" style="font-size: 0.85rem; font-weight: 600; color: #475569;">Pilih Kota Baru</label>
+          <label for="batch_city" class="label-required" style="font-size: var(--font-size-0p85rem); font-weight: 600; color: #475569;">Pilih Kota Baru</label>
           <Dropdown 
             id="batch_city" 
             v-model="batchCityId" 
@@ -648,7 +648,7 @@ const formatCurrency = (value) => {
 
 .modal-amount-text {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   margin-top: 2px;
@@ -657,7 +657,7 @@ const formatCurrency = (value) => {
 
 .modal-amount-text-mobile {
   display: block;
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   margin-top: 1px;
@@ -686,7 +686,7 @@ const formatCurrency = (value) => {
   color: var(--text-white);
   padding: 4px 10px;
   border-radius: 4px;
-  font-size: 0.85rem;
+  font-size: var(--font-size-0p85rem);
   letter-spacing: 1px;
 }
 
@@ -702,7 +702,7 @@ const formatCurrency = (value) => {
 
 .unit-year {
   color: var(--text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
 }
 
 .owner-text {
@@ -715,7 +715,7 @@ const formatCurrency = (value) => {
 
 .status-tag {
   font-weight: 600;
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   padding: 4px 10px;
 }
 
@@ -740,7 +740,7 @@ const formatCurrency = (value) => {
 }
 
 .empty-state i {
-  font-size: 3rem;
+  font-size: var(--font-size-3rem);
   margin-bottom: 15px;
   opacity: 0.5;
 }
@@ -774,14 +774,14 @@ const formatCurrency = (value) => {
   margin: 10px 0 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
 }
 
 .mobile-card-header p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .mobile-card-meta {
@@ -799,7 +799,7 @@ const formatCurrency = (value) => {
 .mobile-card-meta span {
   display: block;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -808,7 +808,7 @@ const formatCurrency = (value) => {
   display: block;
   margin-top: 3px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .mobile-card-actions {

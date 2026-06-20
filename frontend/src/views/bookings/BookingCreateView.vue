@@ -2009,7 +2009,7 @@ const formatDate = (value) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -2017,7 +2017,7 @@ const formatDate = (value) => {
 .booking-page-subtitle {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
@@ -2073,7 +2073,7 @@ const formatDate = (value) => {
   gap: var(--space-sm);
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -2088,7 +2088,7 @@ const formatDate = (value) => {
   border-radius: var(--radius-full);
   background: #E1F4F6;
   color: #085A66;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .form-field-vertical {
@@ -2098,7 +2098,7 @@ const formatDate = (value) => {
 }
 
 .field-label {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -2119,7 +2119,7 @@ const formatDate = (value) => {
 
 :deep(.field-action-button.p-button) {
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .text-tosca {
@@ -2136,7 +2136,7 @@ const formatDate = (value) => {
   background: var(--surface-default);
   transition: all 0.2s;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   min-height: 38px;
 }
 
@@ -2163,13 +2163,13 @@ const formatDate = (value) => {
 
 :deep(.p-button) {
   border-radius: var(--radius-full);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
 }
 
 :deep(.p-message) {
   border-radius: var(--radius-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 :deep(.premium-input .p-inputtext:focus),
@@ -2185,7 +2185,7 @@ const formatDate = (value) => {
   color: var(--text-secondary);
   border-radius: var(--radius-full) !important;
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   padding: 8px;
 }
 
@@ -2212,26 +2212,26 @@ const formatDate = (value) => {
 
 .option-title {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
 .option-meta,
 .option-source {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
 .option-positive {
   color: #147239;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
 .option-warning {
   color: #8C660A;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -2246,7 +2246,7 @@ const formatDate = (value) => {
   margin-bottom: 10px;
   color: var(--text-primary);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .info-grid,
@@ -2257,7 +2257,7 @@ const formatDate = (value) => {
 
 .info-grid {
   grid-template-columns: minmax(96px, 0.38fr) 1fr;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .info-grid span,
@@ -2356,14 +2356,14 @@ const formatDate = (value) => {
 
 .create-mode-title {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   line-height: 1.25;
 }
 
 .create-mode-description {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.45;
 }
 
@@ -2391,7 +2391,7 @@ const formatDate = (value) => {
   padding: 14px;
   color: var(--text-secondary);
   text-align: center;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .cost-row {
@@ -2419,13 +2419,13 @@ const formatDate = (value) => {
   justify-content: space-between;
   gap: 12px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .waiting-total-panel strong {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 600;
 }
 
@@ -2461,13 +2461,13 @@ const formatDate = (value) => {
 .unit-price-heading span {
   display: block;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
 .unit-price-heading strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .unit-price-grid {
@@ -2489,7 +2489,7 @@ const formatDate = (value) => {
 .unit-price-section h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
@@ -2518,7 +2518,7 @@ const formatDate = (value) => {
   margin-bottom: var(--space-md);
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
 }
 
@@ -2540,7 +2540,7 @@ const formatDate = (value) => {
 .summary-kpi span {
   display: block;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.3;
 }
 
@@ -2549,7 +2549,7 @@ const formatDate = (value) => {
   margin-top: 3px;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -2565,7 +2565,7 @@ const formatDate = (value) => {
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-default);
   background: var(--surface-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .summary-actions {
@@ -2586,7 +2586,7 @@ const formatDate = (value) => {
 .premium-tag {
   border-radius: var(--radius-sm);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -2619,7 +2619,7 @@ const formatDate = (value) => {
 
 .option-source {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1;
   text-transform: uppercase;
@@ -2679,7 +2679,7 @@ const formatDate = (value) => {
 
 .numeric-value {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 500;
 }
 
@@ -2766,13 +2766,13 @@ const formatDate = (value) => {
   border: 1px solid #B0DDE4;
   border-radius: var(--radius-full);
   color: #085A66;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
 
 .unit-city-filter-chip i {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.chip-clear-btn.p-button) {
@@ -2781,7 +2781,7 @@ const formatDate = (value) => {
   padding: 0 !important;
   border-radius: 50% !important;
   color: #085A66 !important;
-  font-size: 9px;
+  font-size: var(--font-size-9px);
 }
 
 :deep(.chip-clear-btn.p-button:hover) {
@@ -2791,7 +2791,7 @@ const formatDate = (value) => {
 /* ── Field hint ───────────────────────────────────────── */
 .field-hint {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -2809,14 +2809,14 @@ const formatDate = (value) => {
 }
 
 .conflict-icon-wrap i {
-  font-size: 36px;
+  font-size: var(--font-size-36px);
   color: #D4A017;
 }
 
 .conflict-message {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   line-height: 1.5;
 }
 
@@ -2834,7 +2834,7 @@ const formatDate = (value) => {
   background: #FDF4D9;
   border: 1px solid #F2C94C;
   border-radius: var(--radius-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-primary);
   line-height: 1.4;
 }
@@ -2848,6 +2848,6 @@ const formatDate = (value) => {
 .conflict-note {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 </style>

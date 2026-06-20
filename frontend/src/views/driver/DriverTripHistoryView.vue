@@ -313,14 +313,14 @@ onMounted(async () => {
 }
 
 .trip-headline strong {
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 900;
 }
 
 .trip-headline p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.35;
 }
 
@@ -328,7 +328,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-primary);
 }
 
@@ -340,7 +340,7 @@ onMounted(async () => {
 
 .trip-info-row i {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   width: 14px;
   text-align: center;
 }
@@ -359,7 +359,7 @@ onMounted(async () => {
   border-radius: var(--radius-default);
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
 }
 
@@ -375,7 +375,7 @@ onMounted(async () => {
 
 .detail-section-title {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -384,7 +384,7 @@ onMounted(async () => {
 
 .detail-subtitle {
   margin: var(--space-sm) 0 0;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   color: var(--text-primary);
 }
@@ -394,7 +394,7 @@ onMounted(async () => {
   grid-template-columns: 110px 1fr;
   row-gap: 6px;
   column-gap: var(--space-md);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
@@ -420,7 +420,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   gap: var(--space-md);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .receipt-row {
@@ -436,7 +436,7 @@ onMounted(async () => {
 .receipt-row p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.35;
 }
 
@@ -455,7 +455,7 @@ onMounted(async () => {
 
 .muted-line {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
 }
 

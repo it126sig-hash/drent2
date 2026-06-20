@@ -330,12 +330,12 @@ onMounted(async () => {
 .balance-panel span,
 .balance-panel small {
   color: rgba(255, 255, 255, 0.74);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
 .balance-panel strong {
-  font-size: 24px;
+  font-size: var(--font-size-24px);
   line-height: 1.1;
   font-weight: 900;
 }
@@ -360,7 +360,7 @@ onMounted(async () => {
   border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
 }
 
@@ -414,13 +414,13 @@ onMounted(async () => {
 .receipt-row p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.35;
 }
 
 .fund-amount {
   margin: var(--space-md) 0;
-  font-size: 22px;
+  font-size: var(--font-size-22px);
   font-weight: 900;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -431,7 +431,7 @@ onMounted(async () => {
   grid-template-columns: 96px 1fr;
   row-gap: 6px;
   margin-bottom: var(--space-md);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.35;
 }
 
@@ -456,7 +456,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   gap: var(--space-md);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .card-actions {
@@ -490,7 +490,7 @@ onMounted(async () => {
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   text-decoration: underline;
 }
@@ -503,7 +503,7 @@ onMounted(async () => {
 .muted-line,
 .empty-state {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
 }
 
@@ -530,13 +530,13 @@ onMounted(async () => {
 
 .form-fieldset label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
 .field-hint {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.mobile-bottom-sheet) {

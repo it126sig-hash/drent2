@@ -105,7 +105,7 @@ const handleClose = () => {
   padding: 10px;
   background-color: #f8fafc;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: var(--font-size-0p9rem);
   color: #475569;
   border-left: 4px solid #06b6d4;
 }
@@ -118,7 +118,7 @@ const handleClose = () => {
 }
 
 .field label {
-  font-size: 0.85rem;
+  font-size: var(--font-size-0p85rem);
   font-weight: 600;
   color: #334155;
 }

@@ -234,7 +234,7 @@ const getStatusSeverity = (status) => {
 <style scoped>
 /* Mewarisi token global DRENT dari src/style.css */
 .mobile-card-list { padding: var(--space-md); }
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 .mobile-card { cursor: pointer; }
 </style>

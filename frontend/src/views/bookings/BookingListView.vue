@@ -500,6 +500,15 @@ const getExtraDetailCount = (booking) => {
   return Math.max(count - 1, 0);
 };
 
+const getDetailTypeBadges = (booking) => {
+  const types = new Set(
+    getRentableDetails(booking)
+      .map(detail => detail.detail_type)
+      .filter(type => type === 'extend' || type === 'rolling')
+  );
+  return [...types];
+};
+
 const getRentableDetails = (booking) => {
   return (booking?.booking_details || []).filter(detail => detail.status !== 'batal');
 };
@@ -850,6 +859,9 @@ const getBookingCardClass = (booking) => {
                 <span class="font-medium text-xs">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
                 <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(data)) }}</span>
                 <span class="text-[11px] font-bold text-secondary mt-1">{{ getRentalDuration(data) }}</span>
+                <div v-if="getDetailTypeBadges(data).length" class="flex gap-1 mt-1">
+                  <BookingStatusBadge v-for="type in getDetailTypeBadges(data)" :key="type" :status="type" />
+                </div>
                 <span v-if="getLateInfo(data)" class="late-note">
                   <i class="pi pi-clock"></i>
                   {{ getLateInfo(data).note }}
@@ -970,6 +982,10 @@ const getBookingCardClass = (booking) => {
                   </div>
                 </div>
                 <span class="booking-duration-pill"><i class="pi pi-clock"></i>{{ getRentalDuration(booking) }}</span>
+              </div>
+
+              <div v-if="getDetailTypeBadges(booking).length" class="flex gap-1 mt-1">
+                <BookingStatusBadge v-for="type in getDetailTypeBadges(booking)" :key="type" :status="type" />
               </div>
 
               <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
@@ -1132,7 +1148,7 @@ const getBookingCardClass = (booking) => {
   border-radius: var(--radius-xs);
   background: rgba(229, 83, 75, 0.08);
   color: var(--negative);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1.2;
 }
@@ -1144,7 +1160,7 @@ const getBookingCardClass = (booking) => {
 }
 
 .late-note i {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
 }
 
 .driver-cell {
@@ -1157,7 +1173,7 @@ const getBookingCardClass = (booking) => {
 
 .driver-name {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -1200,13 +1216,13 @@ const getBookingCardClass = (booking) => {
 
 .info-col .label {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 500;
 }
 
 .info-col .value {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
 }
 
@@ -1238,7 +1254,7 @@ const getBookingCardClass = (booking) => {
 .booking-card-code {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   letter-spacing: 0;
   white-space: nowrap;
@@ -1276,7 +1292,7 @@ const getBookingCardClass = (booking) => {
 .booking-card-title {
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 800;
   line-height: 1.2;
 }
@@ -1284,7 +1300,7 @@ const getBookingCardClass = (booking) => {
 .booking-card-subtitle {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
 }
 
@@ -1311,13 +1327,13 @@ const getBookingCardClass = (booking) => {
   flex: 0 0 auto;
   margin-top: 1px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .booking-info-label {
   display: block;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1.2;
 }
@@ -1325,7 +1341,7 @@ const getBookingCardClass = (booking) => {
 .booking-info-value {
   display: block;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -1347,7 +1363,7 @@ const getBookingCardClass = (booking) => {
 }
 
 .booking-period-text {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .booking-duration-pill {
@@ -1361,13 +1377,13 @@ const getBookingCardClass = (booking) => {
   border-radius: var(--radius-full);
   background: var(--primary);
   color: var(--text-white);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   white-space: nowrap;
 }
 
 .booking-duration-pill i {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
 }
 
 .booking-card-footer {
@@ -1382,21 +1398,21 @@ const getBookingCardClass = (booking) => {
 
 .booking-total-amount {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 900;
   line-height: 1.2;
 }
 
 .booking-paid-amount {
   color: var(--positive);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 900;
   line-height: 1.2;
 }
 
 .booking-remaining-amount {
   color: var(--warning);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   line-height: 1.2;
 }
@@ -1415,7 +1431,7 @@ const getBookingCardClass = (booking) => {
 
 .calendar-title {
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   text-transform: capitalize;
@@ -1433,7 +1449,7 @@ const getBookingCardClass = (booking) => {
   background: var(--card-bg);
   padding: var(--space-lg);
   border-radius: var(--radius-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 :deep(.mobile-bottom-sheet) {
@@ -1457,7 +1473,7 @@ const getBookingCardClass = (booking) => {
   }
 
   .page-header .text-h1 {
-    font-size: 20px;
+    font-size: var(--font-size-20px);
     line-height: 1.2;
   }
 
@@ -1474,7 +1490,7 @@ const getBookingCardClass = (booking) => {
   .toggle-item {
     min-height: 32px;
     padding: 7px 16px;
-    font-size: 12px;
+    font-size: var(--font-size-12px);
   }
 
   .filter-bar {
@@ -1514,7 +1530,7 @@ const getBookingCardClass = (booking) => {
 
   .filter-group label {
     margin-left: 4px;
-    font-size: 10px;
+    font-size: var(--font-size-10px);
   }
 
   .booking-filter-bar .filter-search :deep(.p-inputtext) {
@@ -1637,7 +1653,7 @@ const getBookingCardClass = (booking) => {
 
   .card-header :deep(.status-badge) {
     padding: 5px 10px;
-    font-size: 10px;
+    font-size: var(--font-size-10px);
   }
 
   .card-body {
@@ -1683,11 +1699,11 @@ const getBookingCardClass = (booking) => {
 
   .booking-card-topline :deep(.status-badge) {
     padding: 5px 10px;
-    font-size: 10px;
+    font-size: var(--font-size-10px);
   }
 
   .booking-card-title {
-    font-size: 15px;
+    font-size: var(--font-size-15px);
   }
 
   .booking-card-footer {
@@ -1732,7 +1748,7 @@ const getBookingCardClass = (booking) => {
 
 .calendar-title {
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   min-width: 160px;
@@ -1761,7 +1777,7 @@ const getBookingCardClass = (booking) => {
   position: absolute;
   left: 10px;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   z-index: 1;
 }
 
@@ -1770,7 +1786,7 @@ const getBookingCardClass = (booking) => {
   padding-left: 30px;
   border-radius: var(--radius-default);
   border-color: var(--surface-border);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .calendar-filter-dropdown :deep(.p-select),
@@ -1778,7 +1794,7 @@ const getBookingCardClass = (booking) => {
   min-height: 34px;
   border-radius: var(--radius-default);
   border-color: var(--surface-border);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .calendar-load-more {

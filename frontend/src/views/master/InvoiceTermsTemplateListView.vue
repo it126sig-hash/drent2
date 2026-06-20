@@ -171,7 +171,7 @@ const confirmDelete = (row) => {
         <Column header="Nama Template" style="min-width: 200px">
           <template #body="{ data }">
             <div class="font-semibold">{{ data.name }}</div>
-            <Tag v-if="data.is_default" value="Default" severity="success" class="mt-1" style="font-size:10px" />
+            <Tag v-if="data.is_default" value="Default" severity="success" class="mt-1" style="font-size: var(--font-size-10px)" />
           </template>
         </Column>
 
@@ -211,7 +211,7 @@ const confirmDelete = (row) => {
           <span class="drent-badge" :class="tpl.is_active ? 'success' : 'neutral'">{{ tpl.is_active ? 'Aktif' : 'Nonaktif' }}</span>
         </div>
         <div class="card-body">
-          <Tag v-if="tpl.is_default" value="Default" severity="success" style="font-size:10px; width: fit-content" />
+          <Tag v-if="tpl.is_default" value="Default" severity="success" style="font-size: var(--font-size-10px); width: fit-content" />
           <div class="content-preview" v-html="tpl.content"></div>
         </div>
         <div class="card-footer">
@@ -286,13 +286,13 @@ const confirmDelete = (row) => {
 }
 
 .summary-tile-compact span {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .summary-tile-compact strong {
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -305,10 +305,10 @@ const confirmDelete = (row) => {
   padding: 50px 0;
   color: #94a3b8;
 }
-.empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: .5; }
+.empty-state i { font-size: var(--font-size-3rem); margin-bottom: 15px; opacity: .5; }
 
 .content-preview {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-secondary);
   max-height: 60px;
   overflow: hidden;
@@ -326,8 +326,8 @@ const confirmDelete = (row) => {
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-row { display: flex; gap: 16px; }
 .field-row .field { flex: 1; }
-.field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
-.hint { color: var(--text-tertiary); font-size: 11px; line-height: 1.4; }
+.field label { font-weight: 700; font-size: var(--font-size-12px); color: var(--text-secondary); }
+.hint { color: var(--text-tertiary); font-size: var(--font-size-11px); line-height: 1.4; }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
 .action-btn-danger { color: var(--negative) !important; }
@@ -338,7 +338,7 @@ const confirmDelete = (row) => {
   align-items: center;
   padding: 3px 6px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   text-transform: capitalize;
   white-space: nowrap;

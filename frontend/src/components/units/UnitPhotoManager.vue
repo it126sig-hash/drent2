@@ -123,7 +123,7 @@ const handleDelete = (photoId) => {
 }
 
 .section-title {
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   font-weight: 800;
   color: #0891b2;
   margin: 0 0 15px 0;
@@ -165,7 +165,7 @@ const handleDelete = (photoId) => {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--font-size-0p85rem);
   color: #4b5563;
   transition: all 0.2s;
 }
@@ -213,7 +213,7 @@ const handleDelete = (photoId) => {
 }
 
 .photo-label {
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   font-weight: 600;
   color: #64748b;
   white-space: nowrap;
@@ -226,7 +226,7 @@ const handleDelete = (photoId) => {
   text-align: center;
   color: #94a3b8;
   font-style: italic;
-  font-size: 0.9rem;
+  font-size: var(--font-size-0p9rem);
 }
 
 .p-button-tosca {

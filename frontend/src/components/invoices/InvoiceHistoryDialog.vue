@@ -126,7 +126,7 @@ const close = () => emit('update:modelValue', false)
 .history-empty {
   padding: 14px 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   text-align: center;
 }
 
@@ -189,7 +189,7 @@ const close = () => emit('update:modelValue', false)
   flex-wrap: wrap;
 }
 
-.history-tag { font-size: 11px; }
+.history-tag { font-size: var(--font-size-11px); }
 
 .history-time {
   margin-left: auto;
@@ -200,7 +200,7 @@ const close = () => emit('update:modelValue', false)
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }

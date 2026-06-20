@@ -26,6 +26,8 @@ const statusMap = {
   'generated':    { class: 'success', label: props.text },
   'not_generated':{ class: 'warning', label: props.text },
   'lunas':{ class: 'success', label: "Lunas" },
+  'rolling': { class: 'info', label: 'Rolling' },
+  'extend':  { class: 'warning', label: 'Extend' },
 };
 
 const config = computed(() => {

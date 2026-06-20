@@ -919,7 +919,7 @@ onMounted(async () => {
               <div class="card-head">
                 <div class="card-head-left">
                   <span class="card-invoice-num">{{ data.invoice_number }}</span>
-                  <Tag v-if="hasInvoiceChange(data)" :value="invoiceChangeLabel(data)" severity="warn" style="font-size:10px" />
+                  <Tag v-if="hasInvoiceChange(data)" :value="invoiceChangeLabel(data)" severity="warn" style="font-size: var(--font-size-10px)" />
                 </div>
                 <Tag :value="data.status" :severity="invoiceSeverity(data.status)" />
               </div>
@@ -1241,7 +1241,7 @@ onMounted(async () => {
   border: none;
   background: transparent;
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-family: var(--font-mono);
   cursor: pointer;
@@ -1250,12 +1250,12 @@ onMounted(async () => {
 }
 
 .card-code-btn i {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   opacity: 0.65;
 }
 
 .card-customer-tag {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -1263,14 +1263,14 @@ onMounted(async () => {
 }
 
 .card-invoice-num {
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 800;
   color: var(--text-primary);
 }
 
 .card-title {
   padding: 0 14px 12px;
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.3;
@@ -1289,14 +1289,14 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-secondary);
   flex-wrap: wrap;
 }
 
 .card-meta-icon {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-tertiary);
   width: 14px;
 }
@@ -1307,7 +1307,7 @@ onMounted(async () => {
   border: 1px solid var(--surface-border);
   border-radius: 4px;
   background: var(--surface-default);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   font-family: var(--font-mono);
   color: var(--text-primary);
@@ -1340,14 +1340,14 @@ onMounted(async () => {
 }
 
 .card-booking-code {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-family: var(--font-mono);
   color: var(--primary);
 }
 
 .card-booking-customer {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -1370,7 +1370,7 @@ onMounted(async () => {
 }
 
 .card-due-text {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   color: var(--text-secondary);
 }
@@ -1393,7 +1393,7 @@ onMounted(async () => {
 }
 
 .card-amount-item span {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1401,7 +1401,7 @@ onMounted(async () => {
 }
 
 .card-amount-item strong {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -1467,14 +1467,14 @@ onMounted(async () => {
   background: rgba(245, 158, 11, 0.1);
   color: #92400e;
   padding: var(--space-md);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   line-height: 1.4;
 }
 
 .field-error {
   color: var(--negative);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -1511,13 +1511,13 @@ onMounted(async () => {
 
 .form-fieldset label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
 .field-hint {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.4;
 }
 
@@ -1597,7 +1597,7 @@ onMounted(async () => {
 
 .payment-invoice-kicker {
   color: #E5534B;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   letter-spacing: 0;
 }
@@ -1606,13 +1606,13 @@ onMounted(async () => {
   margin: 2px 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 22px;
+  font-size: var(--font-size-22px);
 }
 
 .payment-invoice-top p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-invoice-meta {
@@ -1634,12 +1634,12 @@ onMounted(async () => {
 .payment-invoice-table-header,
 .payment-history-row span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .payment-invoice-meta strong {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-invoice-table {
@@ -1671,7 +1671,7 @@ onMounted(async () => {
   padding: 12px;
   border-bottom: 1px solid var(--surface-border);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-invoice-table-row>span,
@@ -1688,7 +1688,7 @@ onMounted(async () => {
   display: block;
   margin-top: 3px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -1732,7 +1732,7 @@ onMounted(async () => {
 .payment-total-row span,
 .payment-total-row strong,
 .payment-history-row strong {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-history-row {
@@ -1754,13 +1754,13 @@ onMounted(async () => {
   display: block;
   margin-top: 3px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .payment-invoice-empty {
   padding: 14px 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   text-align: center;
 }
 
@@ -1931,7 +1931,7 @@ onMounted(async () => {
 }
 
 .history-tag {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .history-time {
@@ -1943,7 +1943,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }

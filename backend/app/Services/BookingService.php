@@ -132,6 +132,7 @@ class BookingService
                 'paket_sewa' => $data['paket_sewa'] ?? null,
                 'detail_type' => 'initial',
                 'status' => 'draft',
+                'created_by' => auth()->id(),
             ]);
 
             // 8. Create BookingPayment record for DP

@@ -204,7 +204,7 @@ onMounted(fetchBill)
 .summary-grid span {
   display: block;
   color: #687586;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -217,19 +217,19 @@ p {
 
 h1 {
   margin: 6px 0 10px;
-  font-size: 28px;
+  font-size: var(--font-size-28px);
 }
 
 h2 {
   margin: 6px 0;
-  font-size: 16px;
+  font-size: var(--font-size-16px);
 }
 
 p,
 small,
 .empty-line {
   color: #687586;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .download-button {
@@ -262,7 +262,7 @@ small,
 .summary-grid strong {
   display: block;
   margin-top: 6px;
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-variant-numeric: tabular-nums;
 }
 
@@ -291,14 +291,14 @@ td {
   padding: 12px;
   border-bottom: 1px solid #e5e9ef;
   text-align: left;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   vertical-align: top;
 }
 
 th {
   background: #f8fafc;
   color: #687586;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   text-transform: uppercase;
 }
 

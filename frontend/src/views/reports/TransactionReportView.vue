@@ -781,16 +781,16 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
 .report-filter-bar { margin-bottom: 0; }
 .account-filter { min-width: 20rem; }
 .branch-filter { min-width: 13rem; }
-.source-type-filter { min-width: 14rem; font-size: 0.8rem; }
-.page-size-filter { min-width: 7rem; font-size: 0.8rem; }
-.void-meta { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; font-size: 10px; color: var(--text-tertiary); }
+.source-type-filter { min-width: 14rem; font-size: var(--font-size-0p8rem); }
+.page-size-filter { min-width: 7rem; font-size: var(--font-size-0p8rem); }
+.void-meta { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; font-size: var(--font-size-10px); color: var(--text-tertiary); }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .kpi-card { padding: 14px; display: flex; align-items: center; gap: 12px; position: relative; }
 .kpi-card-link { cursor: pointer; transition: box-shadow 0.15s; }
 .kpi-card-link:hover { box-shadow: 0 0 0 2px var(--primary-color, #6366f1); }
-.kpi-link-arrow { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--text-tertiary); }
-.kpi-card span { display: block; color: var(--text-secondary); font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.kpi-card strong { display: block; margin-top: 4px; font-family: var(--font-mono); font-size: 16px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.kpi-link-arrow { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: var(--font-size-11px); color: var(--text-tertiary); }
+.kpi-card span { display: block; color: var(--text-secondary); font-size: var(--font-size-11px); font-weight: 700; text-transform: uppercase; }
+.kpi-card strong { display: block; margin-top: 4px; font-family: var(--font-mono); font-size: var(--font-size-16px); color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .kpi-icon { width: 36px; height: 36px; border-radius: var(--radius-default); display: grid; place-items: center; background: var(--card-bg); color: var(--text-secondary); flex-shrink: 0; }
 .kpi-card.positive .kpi-icon { background: rgba(39, 168, 88, .12); color: var(--positive); }
 .kpi-card.negative .kpi-icon { background: rgba(229, 83, 75, .12); color: var(--negative); }
@@ -801,27 +801,27 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
 .r2r-summary-section .app-section-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md); }
 .r2r-kpi-row { display: flex; flex-wrap: wrap; gap: var(--space-lg); padding: var(--space-md) var(--space-md) var(--space-md); border-top: 1px solid var(--surface-border); margin-top: var(--space-md); }
 .r2r-kpi-item { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
-.r2r-kpi-item span { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); }
-.r2r-kpi-item strong { font-family: var(--font-mono); font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.r2r-kpi-item span { font-size: var(--font-size-11px); font-weight: 700; text-transform: uppercase; color: var(--text-secondary); }
+.r2r-kpi-item strong { font-family: var(--font-mono); font-size: var(--font-size-15px); font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .text-positive { color: var(--positive); }
 .text-negative { color: var(--negative); }
 
 /* Reconciliation badges */
-.recon-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.recon-badge { display: inline-flex; align-items: center; gap: 4px; font-size: var(--font-size-11px); font-weight: 700; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
 .recon-badge.ok { background: rgba(39, 168, 88, .12); color: var(--positive, #27a858); }
 .recon-badge.fail { background: rgba(229, 83, 75, .12); color: var(--negative, #e5534b); }
 
 /* Void badge */
-.void-badge { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.08); color: var(--text-tertiary); letter-spacing: 0.05em; text-transform: uppercase; }
+.void-badge { display: inline-block; font-size: var(--font-size-10px); font-weight: 800; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.08); color: var(--text-tertiary); letter-spacing: 0.05em; text-transform: uppercase; }
 .void-entry { opacity: 0.7; }
 .report-table-shell :deep(tr.void-row td:first-child) { border-left: 3px solid var(--negative, #e5534b); }
 
 .report-section { overflow: hidden; }
 .report-section-header h2 { margin: 0; }
-.report-section-header p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; }
+.report-section-header p { margin: 3px 0 0; color: var(--text-secondary); font-size: var(--font-size-12px); }
 .report-table-shell { display: block; padding: var(--space-md); }
 .empty-state { padding: 38px; text-align: center; color: var(--text-tertiary); }
-.text-xs { font-size: .78rem; }
+.text-xs { font-size: var(--font-size-p78rem); }
 .text-secondary { color: var(--text-secondary); }
 .amount { font-weight: 800; font-variant-numeric: tabular-nums; }
 .amount.negative { color: var(--negative); }
@@ -830,12 +830,12 @@ const selectedMonthLabel = computed(() => monthOptions.find((month) => month.val
 .mobile-state { display: flex; justify-content: center; padding: var(--space-xl); color: var(--text-secondary); }
 .report-mobile-card { padding: var(--space-lg); }
 .mobile-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md); }
-.mobile-card-head h3 { margin: 0; font-family: var(--font-headline); font-size: 15px; }
-.mobile-card-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+.mobile-card-head h3 { margin: 0; font-family: var(--font-headline); font-size: var(--font-size-15px); }
+.mobile-card-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--font-size-12px); }
 .mobile-card-head strong { font-family: var(--font-mono); white-space: nowrap; }
 .mobile-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-md); }
 .mobile-info-grid div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.mobile-info-grid span { color: var(--text-tertiary); font-size: 11px; font-weight: 700; }
+.mobile-info-grid span { color: var(--text-tertiary); font-size: var(--font-size-11px); font-weight: 700; }
 .mobile-info-grid strong { overflow-wrap: anywhere; }
 .span-2 { grid-column: span 2; }
 @media (max-width: 980px) {

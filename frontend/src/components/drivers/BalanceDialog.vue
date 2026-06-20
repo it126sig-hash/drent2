@@ -110,7 +110,7 @@ const formatCurrency = (value) => {
 
 .section-label {
   display: block;
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
@@ -126,7 +126,7 @@ const formatCurrency = (value) => {
 .balance-badge {
   padding: 12px 16px;
   border-radius: 10px;
-  font-size: 1.25rem;
+  font-size: var(--font-size-1p25rem);
   font-weight: 800;
   display: flex;
   align-items: center;
@@ -146,14 +146,14 @@ const formatCurrency = (value) => {
 }
 
 .help-text {
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   color: #94a3b8;
   display: flex;
   align-items: center;
 }
 
 .large-input :deep(.p-inputnumber-input) {
-  font-size: 1.25rem;
+  font-size: var(--font-size-1p25rem);
   font-weight: 800;
   color: #1e293b;
   padding: 12px;

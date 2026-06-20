@@ -251,7 +251,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .role-item.active .role-icon {
@@ -267,11 +267,11 @@ onMounted(() => {
   font-family: var(--font-headline);
   font-weight: 600;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .role-count {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-tertiary);
   margin-top: 2px;
 }
@@ -284,7 +284,7 @@ onMounted(() => {
 .editor-header h2 {
   margin: 0;
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
 }
 
@@ -296,7 +296,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
 }
 
@@ -314,7 +314,7 @@ onMounted(() => {
 
 .group-title {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   color: var(--text-primary);
   padding-bottom: 8px;
@@ -332,7 +332,7 @@ onMounted(() => {
 
 .subgroup-title {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -359,7 +359,7 @@ onMounted(() => {
 
 .checkbox-label {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
@@ -389,7 +389,7 @@ onMounted(() => {
 }
 
 .loading-state i {
-  font-size: 24px;
+  font-size: var(--font-size-24px);
 }
 
 .text-info {

@@ -282,29 +282,29 @@ const onPageChange = (event) => {
 
 .summary-tile-compact span {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .summary-tile-compact strong {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 0; color: #94a3b8; }
-.empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: .5; }
-.order-badge { background: var(--card-bg); color: var(--text-secondary); padding: 2px 8px; border-radius: var(--radius-xs); font-weight: 700; font-size: 11px; border: 1px solid var(--surface-border); }
-.kode-badge { font-family: var(--font-mono); background: var(--card-bg); color: var(--text-primary); padding: 3px 8px; border-radius: var(--radius-xs); font-size: 11px; border: 1px solid var(--surface-border); }
+.empty-state i { font-size: var(--font-size-3rem); margin-bottom: 15px; opacity: .5; }
+.order-badge { background: var(--card-bg); color: var(--text-secondary); padding: 2px 8px; border-radius: var(--radius-xs); font-weight: 700; font-size: var(--font-size-11px); border: 1px solid var(--surface-border); }
+.kode-badge { font-family: var(--font-mono); background: var(--card-bg); color: var(--text-primary); padding: 3px 8px; border-radius: var(--radius-xs); font-size: var(--font-size-11px); border: 1px solid var(--surface-border); }
 .form-grid { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-row { display: flex; gap: 16px; }
 .field-row .field { flex: 1; }
-.field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
-.hint { color: var(--text-tertiary); font-size: 11px; }
+.field label { font-weight: 700; font-size: var(--font-size-12px); color: var(--text-secondary); }
+.hint { color: var(--text-tertiary); font-size: var(--font-size-11px); }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
 .action-btn-danger { color: var(--negative) !important; }
@@ -316,7 +316,7 @@ const onPageChange = (event) => {
   padding: 3px 6px;
   border-radius: 6px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.3;
   text-transform: capitalize;
@@ -342,6 +342,6 @@ const onPageChange = (event) => {
   color: var(--info-cyan);
 }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 </style>

@@ -571,12 +571,12 @@ const formatRentalPeriod = (booking) => {
 .customer-info small,
 .stacked-text small {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .status-tag {
   font-weight: 700;
-  font-size: 0.72rem;
+  font-size: var(--font-size-0p72rem);
 }
 
 .truncate-text,
@@ -614,7 +614,7 @@ const formatRentalPeriod = (booking) => {
 }
 
 .empty-state i {
-  font-size: 2rem;
+  font-size: var(--font-size-2rem);
   opacity: 0.55;
 }
 
@@ -645,13 +645,13 @@ const formatRentalPeriod = (booking) => {
 
 .app-section-header h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .app-section-header p {
   margin: 3px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .timeline-list {
@@ -709,7 +709,7 @@ const formatRentalPeriod = (booking) => {
 .timeline-head span,
 .timeline-content p {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .timeline-content p {
@@ -736,7 +736,7 @@ const formatRentalPeriod = (booking) => {
 
 .info-list dt {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -744,7 +744,7 @@ const formatRentalPeriod = (booking) => {
 .info-list dd {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   overflow-wrap: anywhere;
 }
 
@@ -779,7 +779,7 @@ const formatRentalPeriod = (booking) => {
 
 .history-row small {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.customer-detail-dialog .p-dialog-content) {
@@ -820,13 +820,13 @@ const formatRentalPeriod = (booking) => {
   }
 
   .mobile-card-head h3 {
-    font-size: 15px;
+    font-size: var(--font-size-15px);
   }
 
   .mobile-card-head p,
   .mobile-note {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-12px);
   }
 
   .mobile-note {

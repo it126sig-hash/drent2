@@ -59,15 +59,15 @@ onBeforeUnmount(() => {
     <div v-if="editable" class="terms-editor-toolbar">
       <button type="button" class="toolbar-btn" :class="{ active: editor?.isActive('bold') }"
         @click="editor?.chain().focus().toggleBold().run()" title="Bold">
-        <span style="font-weight:700;font-size:13px;line-height:1">B</span>
+        <span style="font-weight:700;font-size: var(--font-size-13px);line-height:1">B</span>
       </button>
       <button type="button" class="toolbar-btn" :class="{ active: editor?.isActive('italic') }"
         @click="editor?.chain().focus().toggleItalic().run()" title="Italic">
-        <span style="font-style:italic;font-weight:700;font-size:13px;line-height:1">I</span>
+        <span style="font-style:italic;font-weight:700;font-size: var(--font-size-13px);line-height:1">I</span>
       </button>
       <button type="button" class="toolbar-btn" :class="{ active: editor?.isActive('underline') }"
         @click="editor?.chain().focus().toggleUnderline().run()" title="Underline">
-        <span style="text-decoration:underline;font-weight:700;font-size:13px">U</span>
+        <span style="text-decoration:underline;font-weight:700;font-size: var(--font-size-13px)">U</span>
       </button>
       <div class="toolbar-sep"></div>
       <button type="button" class="toolbar-btn" :class="{ active: editor?.isActive('bulletList') }"
@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   transition: background 0.15s, color 0.15s;
 }
 
@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
   min-height: 120px;
   max-height: 260px;
   overflow-y: auto;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   color: var(--text-primary);
   line-height: 1.6;
 }

@@ -310,7 +310,7 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   background: var(--surface-default);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -341,7 +341,7 @@ onUnmounted(() => {
 :deep(.drent-datatable .p-datatable-thead > tr > th) {
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   text-transform: uppercase;
 }
 
@@ -371,13 +371,13 @@ onUnmounted(() => {
 
 .detail-stack strong {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.35;
 }
 
 .detail-stack span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.4;
 }
 
@@ -438,7 +438,7 @@ onUnmounted(() => {
 .card-title-stack span,
 .request-date {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .booking-code {
@@ -449,7 +449,7 @@ onUnmounted(() => {
   color: var(--text-primary);
   cursor: pointer;
   font-family: var(--font-headline);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 800;
   line-height: 1.3;
   text-align: left;
@@ -477,7 +477,7 @@ onUnmounted(() => {
 
 .label {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   line-height: 1.2;
   text-transform: uppercase;
@@ -485,7 +485,7 @@ onUnmounted(() => {
 
 .value {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -498,7 +498,7 @@ onUnmounted(() => {
   gap: var(--space-sm);
   padding: var(--space-xl);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 

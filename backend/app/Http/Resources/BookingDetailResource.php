@@ -25,6 +25,10 @@ class BookingDetailResource extends JsonResource
             'diskon_mobil' => (int) $this->diskon_mobil,
             'detail_type' => $this->detail_type,
             'status' => $this->status,
+            'created_by_user' => $this->whenLoaded('createdBy', fn() => $this->createdBy ? [
+                'id'   => $this->createdBy->id,
+                'name' => $this->createdBy->name,
+            ] : null),
         ];
     }
 }

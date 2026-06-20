@@ -398,7 +398,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
                 </div>
                 <div class="text-primary text-xs font-mono-numeric flex items-center gap-1">
                   <span>{{ formatDate(data.periode.tgl_sewa) }}</span>
-                  <i class="pi pi-arrow-right text-secondary" style="font-size: 8px"></i>
+                  <i class="pi pi-arrow-right text-secondary" style="font-size: var(--font-size-8px)"></i>
                   <span>{{ formatDate(data.periode.tgl_kembali) }}</span>
                 </div>
                 <span class="text-secondary text-xs block mt-1 font-body">{{ data.periode.paket }}</span>
@@ -701,18 +701,18 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
 <style scoped>
 /* === Custom Layout Utilities === */
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card { cursor: pointer; }
 .page-title {
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .page-subtitle {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 400;
 }
 
@@ -747,7 +747,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   flex-shrink: 0;
 }
 
@@ -759,21 +759,21 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
 .kpi-label {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 500;
   color: var(--text-secondary);
 }
 
 .kpi-value {
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 .kpi-delta {
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -795,7 +795,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
 .filter-group label {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
   margin-left: 2px;
@@ -818,7 +818,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 .status-badge {
   padding: 4px 8px !important;
   border-radius: var(--radius-sm) !important;
-  font-size: 11px !important;
+  font-size: var(--font-size-11px) !important;
 }
 
 .status-badge.success {

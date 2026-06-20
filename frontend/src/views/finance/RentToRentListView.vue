@@ -693,7 +693,7 @@ onMounted(async () => {
               <template #body="{ data }">
                 <div class="amount-stack">
                   <strong>{{ formatCurrency(data.total_amount) }}</strong>
-                  <span v-if="data.pending_amount_request" style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; width: fit-content; margin-top: 4px; display: inline-block;">Pending ACC: {{ data.pending_amount_request.requested_amount_override !== null ? formatCurrency(data.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
+                  <span v-if="data.pending_amount_request" style="color: #8C660A; background-color: #FDF4D9; padding: 2px 6px; border-radius: 4px; font-size: var(--font-size-10px); font-weight: bold; width: fit-content; margin-top: 4px; display: inline-block;">Pending ACC: {{ data.pending_amount_request.requested_amount_override !== null ? formatCurrency(data.pending_amount_request.requested_amount_override) : 'Reset ke Default' }}</span>
                   <span v-else-if="data.amount_override !== null">Manual override</span>
                   <span v-else>Modal default booking</span>
                 </div>
@@ -1229,7 +1229,7 @@ onMounted(async () => {
           <div class="payment-form-panel" style="display: flex; flex-direction: column; gap: 12px; padding: 12px;">
             <div class="section-label" style="margin-bottom: 4px;">Edit Harga Modal</div>
 
-            <div v-if="selectedDebt.pending_amount_request" class="pending-request-banner" style="background-color: #FDF4D9; color: #8C660A; border: 1px solid #D4A017; border-radius: 6px; padding: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 4px;">
+            <div v-if="selectedDebt.pending_amount_request" class="pending-request-banner" style="background-color: #FDF4D9; color: #8C660A; border: 1px solid #D4A017; border-radius: 6px; padding: 10px; font-size: var(--font-size-12px); display: flex; flex-direction: column; gap: 4px;">
               <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
                 <i class="pi pi-clock"></i> Menunggu ACC Supervisor
               </div>
@@ -1240,7 +1240,7 @@ onMounted(async () => {
                 <strong>Alasan:</strong> {{ selectedDebt.pending_amount_request.reason }}
               </div>
               <div style="margin-top: 6px;">
-                <button class="btn-pill btn-secondary btn-pill-compact" style="background-color: #ffffff; border: 1px solid #CDD2DF; color: #1A1D2E; font-size: 11px; padding: 4px 8px;" :disabled="actionLoading" @click="handleCancelAmountChange">
+                <button class="btn-pill btn-secondary btn-pill-compact" style="background-color: #ffffff; border: 1px solid #CDD2DF; color: #1A1D2E; font-size: var(--font-size-11px); padding: 4px 8px;" :disabled="actionLoading" @click="handleCancelAmountChange">
                   Batalkan Pengajuan
                 </button>
               </div>
@@ -1253,8 +1253,8 @@ onMounted(async () => {
 
             <fieldset class="form-fieldset" style="display: flex; flex-direction: column; gap: 4px; border: none; padding: 0; margin: 0; box-shadow: none;">
               <label>Alasan Perubahan (Min. 5 karakter)</label>
-              <Textarea v-model="detailAmountForm.reason" rows="3" class="w-full" placeholder="Tuliskan alasan pengajuan..." :disabled="!selectedDebt.can_request_amount_change" style="resize: vertical; font-family: inherit; font-size: 12px;" />
-              <span class="field-hint" style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">Pengajuan ini memerlukan persetujuan dari supervisor sebelum nominal baru diterapkan.</span>
+              <Textarea v-model="detailAmountForm.reason" rows="3" class="w-full" placeholder="Tuliskan alasan pengajuan..." :disabled="!selectedDebt.can_request_amount_change" style="resize: vertical; font-family: inherit; font-size: var(--font-size-12px);" />
+              <span class="field-hint" style="font-size: var(--font-size-10px); color: var(--text-secondary); margin-top: 2px;">Pengajuan ini memerlukan persetujuan dari supervisor sebelum nominal baru diterapkan.</span>
             </fieldset>
 
             <div class="table-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
@@ -1338,7 +1338,7 @@ onMounted(async () => {
           <div class="summary-row"><span>Nominal dibayar</span><strong>{{ formatCurrency(paymentForm.amount) }}</strong></div>
           <div class="summary-row" style="border-top: 1px solid var(--surface-border); padding-top: 8px; margin-top: 4px;"><span>Sisa setelah bayar</span><strong>{{ formatCurrency(remainingAfterPayment) }}</strong></div>
         </div>
-        <p class="field-hint" style="margin: 0; font-size: 12px;">
+        <p class="field-hint" style="margin: 0; font-size: var(--font-size-12px);">
           Pembayaran akan langsung mengurangi saldo akun
           <strong>{{ selectedPaymentAccountLabel }}</strong>
           dan tidak bisa dibatalkan tanpa proses void. Lanjutkan?
@@ -1409,7 +1409,7 @@ onMounted(async () => {
 
 .pill-toggle.pill-toggle-compact .toggle-item {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .table-actions {
@@ -1444,7 +1444,7 @@ onMounted(async () => {
 
 .form-fieldset label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -1500,7 +1500,7 @@ onMounted(async () => {
 .field-hint,
 .section-label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -1508,7 +1508,7 @@ onMounted(async () => {
   display: block;
   margin-top: 6px;
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
@@ -1528,7 +1528,7 @@ onMounted(async () => {
 .detail-top h2 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 900;
 }
 
@@ -1547,7 +1547,7 @@ onMounted(async () => {
 
 .owner-totals span {
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--font-size-15px);
   font-weight: 900;
 }
 
@@ -1627,7 +1627,7 @@ onMounted(async () => {
   border: none;
   background: transparent;
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-family: var(--font-mono);
   cursor: pointer;
@@ -1636,12 +1636,12 @@ onMounted(async () => {
 }
 
 .card-code-btn i {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   opacity: 0.65;
 }
 
 .card-invoice-num {
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 800;
   color: var(--text-primary);
 }
@@ -1652,14 +1652,14 @@ onMounted(async () => {
   border-radius: 999px;
   background: var(--surface-border);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   font-family: var(--font-mono);
 }
 
 .card-title {
   padding: 0 14px 12px;
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.3;
@@ -1678,14 +1678,14 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-secondary);
   flex-wrap: wrap;
 }
 
 .card-meta-icon {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-tertiary);
   width: 14px;
 }
@@ -1696,7 +1696,7 @@ onMounted(async () => {
   border: 1px solid var(--surface-border);
   border-radius: 4px;
   background: var(--surface-default);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   font-family: var(--font-mono);
   color: var(--text-primary);
@@ -1720,18 +1720,18 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   padding: 2px 0;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .card-booking-code {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-family: var(--font-mono);
   color: var(--text-primary);
 }
 
 .card-booking-customer {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -1755,7 +1755,7 @@ onMounted(async () => {
   background: #FDF4D9;
   color: #8C660A;
   border: 1px solid #D4A017;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -1781,7 +1781,7 @@ onMounted(async () => {
 }
 
 .card-amount-item span {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1789,7 +1789,7 @@ onMounted(async () => {
 }
 
 .card-amount-item strong {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -1823,7 +1823,7 @@ onMounted(async () => {
   border-radius: var(--radius-default);
   color: var(--text-secondary);
   text-align: center;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -1897,20 +1897,20 @@ onMounted(async () => {
 
 .info-grid span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
 .info-grid strong {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-total-row {
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid var(--surface-border);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-total-row.grand {

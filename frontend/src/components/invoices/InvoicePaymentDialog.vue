@@ -286,7 +286,7 @@ const close = () => emit('update:modelValue', false)
 
 .payment-invoice-kicker {
   color: #E5534B;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -294,13 +294,13 @@ const close = () => emit('update:modelValue', false)
   margin: 2px 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 22px;
+  font-size: var(--font-size-22px);
 }
 
 .payment-invoice-top p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-invoice-meta {
@@ -320,12 +320,12 @@ const close = () => emit('update:modelValue', false)
 
 .payment-invoice-meta span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .payment-invoice-meta strong {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-invoice-table {
@@ -345,7 +345,7 @@ const close = () => emit('update:modelValue', false)
   border-radius: var(--radius-xs, 4px);
   background: var(--text-primary);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -354,7 +354,7 @@ const close = () => emit('update:modelValue', false)
   padding: 12px;
   border-bottom: 1px solid var(--surface-border);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-invoice-table-row>span,
@@ -371,7 +371,7 @@ const close = () => emit('update:modelValue', false)
   display: block;
   margin-top: 3px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -415,7 +415,7 @@ const close = () => emit('update:modelValue', false)
 .payment-total-row span,
 .payment-total-row strong,
 .payment-history-row strong {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .payment-history-row {
@@ -444,11 +444,11 @@ const close = () => emit('update:modelValue', false)
   display: block;
   margin-top: 3px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -469,14 +469,14 @@ const close = () => emit('update:modelValue', false)
 
 .form-fieldset label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
 .payment-invoice-empty {
   padding: 14px 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   text-align: center;
 }
 

@@ -1174,7 +1174,7 @@ onMounted(loadData)
 .title-block span,
 .eyebrow {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
 }
 
@@ -1222,7 +1222,7 @@ onMounted(loadData)
 .summary-item span,
 .summary-item small {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .summary-item strong {
@@ -1271,7 +1271,7 @@ onMounted(loadData)
 
 .step-button span {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
@@ -1282,7 +1282,7 @@ onMounted(loadData)
   place-items: center;
   border-radius: var(--radius-full);
   background: var(--card-bg);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .step-button.active,
@@ -1341,7 +1341,7 @@ onMounted(loadData)
 
 .section-heading p {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .section-body {
@@ -1387,7 +1387,7 @@ onMounted(loadData)
   display: block;
   margin-top: 2px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -1418,7 +1418,7 @@ onMounted(loadData)
 .photo-visual-icon {
   width: 38px;
   color: var(--info-cyan);
-  font-size: 17px;
+  font-size: var(--font-size-17px);
 }
 
 .photo-trigger {
@@ -1569,7 +1569,7 @@ onMounted(loadData)
   display: block;
   margin-bottom: var(--space-sm);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -1586,13 +1586,13 @@ onMounted(loadData)
   display: block;
   margin-top: var(--space-xs);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .otp-input :deep(input),
 .otp-input {
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   letter-spacing: 0;
 }
 
@@ -1613,7 +1613,7 @@ onMounted(loadData)
 
 .review-summary span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .review-summary strong {
@@ -1693,7 +1693,7 @@ onMounted(loadData)
 .gallery-note {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .gallery-thumbs {

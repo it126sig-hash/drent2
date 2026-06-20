@@ -399,7 +399,7 @@ const getCheckSummary = (booking, type) => ({
 :deep(.drent-datatable .p-datatable-thead > tr > th) {
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   text-transform: uppercase;
 }
 
@@ -415,7 +415,7 @@ const getCheckSummary = (booking, type) => ({
   color: var(--text-primary);
   font-weight: 800;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .vehicle-cell,
@@ -485,7 +485,7 @@ const getCheckSummary = (booking, type) => ({
   gap: var(--space-sm);
   padding: var(--space-xl);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -505,7 +505,7 @@ const getCheckSummary = (booking, type) => ({
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
   text-align: left;
   overflow-wrap: anywhere;
@@ -520,7 +520,7 @@ const getCheckSummary = (booking, type) => ({
 
 .vehicle-summary strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
@@ -528,7 +528,7 @@ const getCheckSummary = (booking, type) => ({
 .vehicle-summary span,
 .vehicle-summary small {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.35;
 }
 
@@ -559,7 +559,7 @@ const getCheckSummary = (booking, type) => ({
 
 .label {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1.2;
   text-transform: uppercase;
@@ -567,7 +567,7 @@ const getCheckSummary = (booking, type) => ({
 
 .value {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
@@ -575,7 +575,7 @@ const getCheckSummary = (booking, type) => ({
 
 .check-summary small {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -590,7 +590,7 @@ const getCheckSummary = (booking, type) => ({
   gap: var(--space-sm);
   flex-wrap: wrap;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 

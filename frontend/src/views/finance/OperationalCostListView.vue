@@ -1297,7 +1297,7 @@ onUnmounted(() => {
               <i class="pi pi-check"></i>
               Tandai selesai
             </button>
-            <span v-if="booking.operational_revert_status === 'pending'" class="status-badge warning text-center" style="padding:6px 0;font-size:12px;">
+            <span v-if="booking.operational_revert_status === 'pending'" class="status-badge warning text-center" style="padding:6px 0;font-size: var(--font-size-12px);">
               Menunggu ACC
             </span>
             <button v-else-if="activeTab === 'completed'" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="handleRevertOperational(booking)">
@@ -1763,7 +1763,7 @@ onUnmounted(() => {
 }
 
 .form-fieldset label {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   color: var(--text-secondary);
 }
@@ -1779,7 +1779,7 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   background: rgba(43, 52, 72, 0.08);
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -1795,7 +1795,7 @@ onUnmounted(() => {
 .detail-line {
   padding-bottom: 8px;
   border-bottom: 1px dashed var(--surface-border);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .detail-line-rowspan {
@@ -1809,7 +1809,7 @@ onUnmounted(() => {
 
 .amount-stack {
   align-items: flex-end;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -1865,7 +1865,7 @@ onUnmounted(() => {
 
 .group-summary-balance span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -1892,7 +1892,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 7px;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .amount-breakdown-row {
@@ -1934,7 +1934,7 @@ onUnmounted(() => {
   background: var(--surface-default);
   padding: 6px 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2028,14 +2028,14 @@ onUnmounted(() => {
 .deposit-history-head span,
 .deposit-history-meta {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
 .deposit-history-amount {
   margin-top: var(--space-sm);
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
@@ -2092,14 +2092,14 @@ onUnmounted(() => {
 .detail-review-header h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 800;
 }
 
 .detail-review-header p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2148,7 +2148,7 @@ onUnmounted(() => {
 
 .detail-metric-card span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 900;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2157,7 +2157,7 @@ onUnmounted(() => {
 .detail-metric-card strong {
   min-width: 0;
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 900;
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -2237,7 +2237,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .detail-table-title i {
@@ -2246,7 +2246,7 @@ onUnmounted(() => {
 
 .detail-table-header span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2256,7 +2256,7 @@ onUnmounted(() => {
 
 .detail-table-header small {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 900;
   text-transform: uppercase;
 }
@@ -2270,7 +2270,7 @@ onUnmounted(() => {
   padding: 14px 16px;
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 900;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2294,7 +2294,7 @@ onUnmounted(() => {
 
 .detail-total-panel .summary-row {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2312,7 +2312,7 @@ onUnmounted(() => {
 .detail-total-row span,
 .detail-total-row strong {
   color: var(--text-primary) !important;
-  font-size: 15px;
+  font-size: var(--font-size-15px);
   font-weight: 900;
 }
 
@@ -2361,7 +2361,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .void-summary-row span {
@@ -2410,7 +2410,7 @@ onUnmounted(() => {
 .fund-mini-item small {
   grid-column: 1 / -1;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -2451,13 +2451,13 @@ onUnmounted(() => {
 .timeline-description {
   margin: 3px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .timeline-amount {
   margin-top: var(--space-sm);
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
@@ -2465,7 +2465,7 @@ onUnmounted(() => {
 .timeline-meta {
   margin-top: 6px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -2496,7 +2496,7 @@ onUnmounted(() => {
 .timeline-source,
 .empty-timeline {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -2510,7 +2510,7 @@ onUnmounted(() => {
 .payment-invoice-empty {
   padding: 14px 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   text-align: center;
 }
 
@@ -2525,14 +2525,14 @@ onUnmounted(() => {
 .compact-section-header h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 800;
 }
 
 .compact-section-header p {
   margin: 2px 0 0;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -2547,7 +2547,7 @@ onUnmounted(() => {
 .reject-note {
   margin-top: 4px;
   color: var(--negative);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -2563,7 +2563,7 @@ onUnmounted(() => {
 .swipe-hint {
   margin: 6px 0 0;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   text-align: center;
 }
 
@@ -2641,7 +2641,7 @@ onUnmounted(() => {
   border: none;
   background: transparent;
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-family: var(--font-mono);
   cursor: pointer;
@@ -2650,19 +2650,19 @@ onUnmounted(() => {
 }
 
 .card-code-btn i {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   opacity: 0.65;
 }
 
 .card-invoice-num {
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 800;
   color: var(--text-primary);
 }
 
 .card-title {
   padding: 0 14px 12px;
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.3;
@@ -2681,14 +2681,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-secondary);
   flex-wrap: wrap;
 }
 
 .card-meta-icon {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-tertiary);
   width: 14px;
 }
@@ -2729,7 +2729,7 @@ onUnmounted(() => {
 }
 
 .card-amount-item span {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2737,7 +2737,7 @@ onUnmounted(() => {
 }
 
 .card-amount-item strong {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -2761,7 +2761,7 @@ onUnmounted(() => {
 
 .field-hint {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.custom-dialog .p-dialog-footer) {
@@ -2851,7 +2851,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: baseline;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.6;
   border-bottom: 1px dashed rgba(0, 0, 0, 0.07);
   padding-bottom: 2px;
@@ -2899,7 +2899,7 @@ onUnmounted(() => {
 
 .breakdown-empty {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 /* ── Right-align all amount data ── */
@@ -2911,7 +2911,7 @@ onUnmounted(() => {
 :deep(.operational-table-shell .p-datatable-thead > tr > th) {
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.05em;

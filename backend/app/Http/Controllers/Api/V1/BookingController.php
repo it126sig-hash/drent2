@@ -37,6 +37,7 @@ class BookingController extends Controller
         'bookingDetails.unit.rentalOwner',
         'bookingDetails.driver',
         'bookingDetails.costs.costType',
+        'bookingDetails.createdBy',
         'payments.creator',
         'payments.voidRequester',
         'payments.voidApprover',

@@ -203,7 +203,7 @@ const close = () => emit('update:modelValue', false)
   background: rgba(245, 158, 11, 0.1);
   color: #92400e;
   padding: 14px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   line-height: 1.4;
 }
@@ -222,7 +222,7 @@ const close = () => emit('update:modelValue', false)
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .form-fieldset {
@@ -237,13 +237,13 @@ const close = () => emit('update:modelValue', false)
 
 .form-fieldset label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
 .field-hint {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.4;
 }
 </style>

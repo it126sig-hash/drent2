@@ -303,7 +303,7 @@ const confirmDelete = (owner) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: 0;
@@ -315,13 +315,13 @@ const confirmDelete = (owner) => {
   gap: var(--space-sm);
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
 .detail-subtitle i {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .detail-action-bar {
@@ -338,7 +338,7 @@ const confirmDelete = (owner) => {
   background: var(--text-primary) !important;
   color: var(--text-white) !important;
   padding: 8px 16px !important;
-  font-size: 12px !important;
+  font-size: var(--font-size-12px) !important;
   font-weight: 600 !important;
   box-shadow: none !important;
 }
@@ -395,7 +395,7 @@ const confirmDelete = (owner) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -403,7 +403,7 @@ const confirmDelete = (owner) => {
 .app-section-header p {
   margin: 2px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
@@ -439,18 +439,18 @@ const confirmDelete = (owner) => {
 .bank-name {
   font-weight: 700;
   color: var(--info-cyan);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .bank-acc {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .bank-owner {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .muted-value {
@@ -459,7 +459,7 @@ const confirmDelete = (owner) => {
 
 .status-tag {
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   padding: 4px 8px;
 }
 
@@ -482,14 +482,14 @@ const confirmDelete = (owner) => {
 .empty-state i {
   margin-bottom: var(--space-md);
   color: var(--neutral-6);
-  font-size: 34px;
+  font-size: var(--font-size-34px);
   opacity: 0.5;
 }
 
 .empty-state p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .paginator-wrapper {
@@ -503,7 +503,7 @@ const confirmDelete = (owner) => {
   background-color: var(--card-bg);
   color: var(--text-secondary);
   font-family: var(--font-headline);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0;
@@ -549,7 +549,7 @@ const confirmDelete = (owner) => {
   color: var(--text-secondary);
 }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .owner-table-card .mobile-card-list { padding: var(--space-md); }
 .mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 
@@ -565,7 +565,7 @@ const confirmDelete = (owner) => {
   }
 
   .detail-title {
-    font-size: 18px;
+    font-size: var(--font-size-18px);
     overflow-wrap: anywhere;
   }
 

@@ -220,7 +220,7 @@ onMounted(() => loadReport(1))
 .summary-card span {
   display: block;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -229,7 +229,7 @@ onMounted(() => loadReport(1))
   display: block;
   margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }

@@ -1322,8 +1322,8 @@ watch(
   }
 );
 
-const syncAllInOperationalCosts = (target, duration, costKey = 'costs', packageIdKey = 'pricing_package_id') => {
-  if (target.pricing_mode !== 'all_in') {
+const syncAllInOperationalCosts = (target, duration, costKey = 'costs', packageIdKey = 'pricing_package_id', modeKey = 'pricing_mode') => {
+  if (target[modeKey] !== 'all_in') {
     if (target[costKey]) {
       target[costKey] = target[costKey].filter(cost => !cost._all_in_package_cost);
     }
@@ -1411,6 +1411,7 @@ watch(
     rollingForm.value.lama_sewa,
   ],
   () => {
+    if (isInitializingRollingDialog.value) return;
     syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa || 1, 'costs', 'pricing_package_id');
   }
 );
@@ -1422,7 +1423,8 @@ watch(
     rollingForm.value.lama_sewa_lama,
   ],
   () => {
-    syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa_lama || 1, 'costs_lama', 'pricing_package_id_lama');
+    if (isInitializingRollingDialog.value) return;
+    syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa_lama || 1, 'costs_lama', 'pricing_package_id_lama', 'pricing_mode_lama');
   }
 );
 
@@ -2763,10 +2765,12 @@ const auditUserName = (user) => user?.name || '-';
                 <div v-if="detail.detail_type === 'extend'" class="px-5 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700">
                   <i class="pi pi-calendar-plus text-[11px]"></i>
                   Ada Transaksi Extend
+                  <span v-if="detail.created_by_user" class="ml-auto font-semibold normal-case">oleh {{ auditUserName(detail.created_by_user) }}</span>
                 </div>
                 <div v-else-if="detail.detail_type === 'rolling'" class="px-5 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-700">
                   <i class="pi pi-sync text-[11px]"></i>
                   Ada Transaksi Rolling
+                  <span v-if="detail.created_by_user" class="ml-auto font-semibold normal-case">oleh {{ auditUserName(detail.created_by_user) }}</span>
                 </div>
                 <!-- Unit Header -->
                 <div class="p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-slate-50/40">
@@ -4287,7 +4291,7 @@ const auditUserName = (user) => user?.name || '-';
   border: 1px solid #B0DDE4;
   border-radius: 9999px;
   color: #085A66;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
   align-self: flex-start;
@@ -4295,7 +4299,7 @@ const auditUserName = (user) => user?.name || '-';
 }
 
 .unit-city-filter-chip i {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.chip-clear-btn.p-button) {
@@ -4304,7 +4308,7 @@ const auditUserName = (user) => user?.name || '-';
   padding: 0 !important;
   border-radius: 50% !important;
   color: #085A66 !important;
-  font-size: 9px;
+  font-size: var(--font-size-9px);
 }
 
 .detail-page-header {
@@ -4321,7 +4325,7 @@ const auditUserName = (user) => user?.name || '-';
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: 0;
@@ -4333,14 +4337,14 @@ const auditUserName = (user) => user?.name || '-';
   gap: var(--space-sm);
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 400;
   line-height: 1.4;
 }
 
 .detail-subtitle i {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 
@@ -4353,7 +4357,7 @@ const auditUserName = (user) => user?.name || '-';
   border-radius: var(--radius-sm);
   background: #FCEAE9;
   color: #B02A24;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -4367,7 +4371,7 @@ const auditUserName = (user) => user?.name || '-';
   min-height: 34px;
   border-radius: var(--radius-full) !important;
   padding: 8px 16px !important;
-  font-size: 12px !important;
+  font-size: var(--font-size-12px) !important;
   font-weight: 600 !important;
   box-shadow: none !important;
 }
@@ -4426,14 +4430,14 @@ const auditUserName = (user) => user?.name || '-';
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
 }
 
 .app-section-header p {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
@@ -4463,7 +4467,7 @@ const auditUserName = (user) => user?.name || '-';
 
 :deep(.detail-price-action.p-button) {
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .unit-price-dialog {
@@ -4486,13 +4490,13 @@ const auditUserName = (user) => user?.name || '-';
 .unit-price-heading span {
   display: block;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
 .unit-price-heading strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .unit-price-grid {
@@ -4514,7 +4518,7 @@ const auditUserName = (user) => user?.name || '-';
 .unit-price-section h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
@@ -4536,7 +4540,7 @@ const auditUserName = (user) => user?.name || '-';
 
 .unit-price-fields :deep(.p-inputtext) {
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   min-height: 36px;
 }
 
@@ -4569,7 +4573,7 @@ const auditUserName = (user) => user?.name || '-';
 .app-card :deep(.status-badge) {
   border-radius: var(--radius-sm);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .app-card :deep(.status-badge.neutral) {
@@ -4612,7 +4616,7 @@ const auditUserName = (user) => user?.name || '-';
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: 0;
@@ -4641,14 +4645,14 @@ const auditUserName = (user) => user?.name || '-';
 .summary-row span,
 .summary-status span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 500;
 }
 
 .summary-row strong {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 500;
   line-height: 1.4;
   text-align: right;
@@ -4673,7 +4677,7 @@ const auditUserName = (user) => user?.name || '-';
 .summary-balance span {
   display: block;
   margin-bottom: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -4681,7 +4685,7 @@ const auditUserName = (user) => user?.name || '-';
 .summary-balance strong {
   display: block;
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -4698,7 +4702,7 @@ const auditUserName = (user) => user?.name || '-';
 .custom-mini-table :deep(.p-datatable-thead > tr > th) {
   background-color: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -4724,7 +4728,7 @@ const auditUserName = (user) => user?.name || '-';
 :deep(.custom-dialog .p-dialog-header) {
   padding: 1.25rem 1.5rem;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: var(--font-size-1p05rem);
   color: var(--text-primary);
   border-bottom: 1px solid var(--surface-border);
 }
@@ -4742,7 +4746,7 @@ const auditUserName = (user) => user?.name || '-';
   min-height: 36px;
   border-radius: var(--radius-full) !important;
   padding: 8px 18px !important;
-  font-size: 12px !important;
+  font-size: var(--font-size-12px) !important;
   font-weight: 600 !important;
   box-shadow: none !important;
   transition: opacity 0.2s ease, background-color 0.2s ease;
@@ -4815,7 +4819,7 @@ fieldset legend {
 
 .cost-mini-box span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -4823,7 +4827,7 @@ fieldset legend {
 
 .cost-mini-box strong {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 @media (min-width: 1024px) {
@@ -4935,7 +4939,7 @@ fieldset legend {
   }
 
   .detail-title {
-    font-size: 18px;
+    font-size: var(--font-size-18px);
     overflow-wrap: anywhere;
   }
 
