@@ -34,7 +34,7 @@ class PricingPackagePolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package');
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package.create');
     }
 
     /**
@@ -43,7 +43,7 @@ class PricingPackagePolicy
     public function update(User $user, PricingPackage $pricingPackage): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package')
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package.update')
             && $user->branch_id === $pricingPackage->branch_id;
     }
 
@@ -53,7 +53,7 @@ class PricingPackagePolicy
     public function delete(User $user, PricingPackage $pricingPackage): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package')
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.pricing_package.delete')
             && $user->branch_id === $pricingPackage->branch_id;
     }
 }

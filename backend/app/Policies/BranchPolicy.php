@@ -15,13 +15,14 @@ class BranchPolicy
      */
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch'], true);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.branch');
     }
 
     /**
      * Cek apakah user dapat melihat detail branch tertentu.
      * - superadmin: harus tenant yang sama
-     * - admin_branch: harus branch sendiri
+     * - role lain: butuh permission 'master.branch', dan kalau admin_branch harus branch sendiri
      */
     public function view(User $user, Branch $branch): bool
     {
@@ -33,19 +34,24 @@ class BranchPolicy
             return true;
         }
 
+        if (!app(\App\Services\PermissionService::class)->hasPermission($user, 'master.branch')) {
+            return false;
+        }
+
         if ($user->role === 'admin_branch') {
             return $user->branch_id === $branch->id;
         }
 
-        return false;
+        return true;
     }
 
     /**
-     * Hanya superadmin yang dapat membuat branch baru.
+     * Cek apakah user dapat membuat branch baru.
      */
     public function create(User $user): bool
     {
-        return $user->role === 'superadmin';
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.branch.create');
     }
 
     /**
@@ -63,19 +69,30 @@ class BranchPolicy
             return true;
         }
 
+        if (!app(\App\Services\PermissionService::class)->hasPermission($user, 'master.branch.update')) {
+            return false;
+        }
+
         if ($user->role === 'admin_branch') {
             return $user->branch_id === $branch->id;
         }
 
-        return false;
+        return true;
     }
 
     /**
-     * Hanya superadmin yang dapat hapus branch (di tenant yang sama).
+     * Cek apakah user dapat hapus branch (di tenant yang sama).
      */
     public function delete(User $user, Branch $branch): bool
     {
-        return $user->role === 'superadmin'
-            && $user->tenant_id === $branch->tenant_id;
+        if ($user->tenant_id !== $branch->tenant_id) {
+            return false;
+        }
+
+        if ($user->role === 'superadmin') {
+            return true;
+        }
+
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.branch.delete');
     }
 }

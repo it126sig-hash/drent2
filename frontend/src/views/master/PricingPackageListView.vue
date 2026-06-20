@@ -27,7 +27,9 @@ const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
 
-const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('master.pricing_package.create'))
+const canEdit = computed(() => authStore.hasPermission('master.pricing_package.update'))
+const canDelete = computed(() => authStore.hasPermission('master.pricing_package.delete'))
 const costTypeOptions = computed(() =>
   costTypes.value
     .filter((type) => type.is_active)
@@ -231,11 +233,11 @@ const handleImport = async () => {
         </div>
       </div>
       <div class="header-actions">
-        <button v-if="canManage" class="btn-pill btn-secondary" type="button" @click="openImportDialog">
+        <button v-if="canCreate" class="btn-pill btn-secondary" type="button" @click="openImportDialog">
           <i class="pi pi-upload"></i>
           <span>Import CSV</span>
         </button>
-        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Paket</span>
         </button>
@@ -312,10 +314,10 @@ const handleImport = async () => {
         <Column header="Aksi" style="min-width:110px;text-align:center">
           <template #body="{ data }">
             <div class="action-pill-group">
-              <button class="action-btn" type="button" title="Edit" @click="openEdit(data)">
+              <button v-if="canEdit" class="action-btn" type="button" title="Edit" @click="openEdit(data)">
                 <i class="pi pi-pencil"></i>
               </button>
-              <button v-if="canManage" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
                 <i class="pi pi-trash"></i>
               </button>
             </div>
@@ -347,10 +349,10 @@ const handleImport = async () => {
           <div v-if="pkg.keterangan"><span class="field-hint">Ket.</span> {{ pkg.keterangan }}</div>
         </div>
         <div class="card-footer">
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(pkg)">
+          <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(pkg)">
             <i class="pi pi-pencil"></i> Edit
           </button>
-          <button v-if="canManage" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(pkg)">
+          <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(pkg)">
             <i class="pi pi-trash"></i> Hapus
           </button>
         </div>

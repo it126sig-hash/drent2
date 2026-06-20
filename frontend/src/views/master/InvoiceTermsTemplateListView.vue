@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
+import { useAuthStore } from '../../stores/auth'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Dialog from 'primevue/dialog'
@@ -19,6 +20,11 @@ import {
 
 const toast = useToast()
 const confirm = useConfirm()
+const authStore = useAuthStore()
+
+const canCreate = computed(() => authStore.hasPermission('finance.invoice_terms.create'))
+const canEdit = computed(() => authStore.hasPermission('finance.invoice_terms.update'))
+const canDelete = computed(() => authStore.hasPermission('finance.invoice_terms.delete'))
 
 const templates = ref([])
 const loading = ref(false)
@@ -129,7 +135,7 @@ const confirmDelete = (row) => {
         <p class="text-secondary text-xs">Kelola template teks syarat &amp; ketentuan yang bisa dipilih saat membuat invoice.</p>
       </div>
       <div class="header-actions">
-        <button class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           Tambah Template
         </button>
@@ -186,10 +192,10 @@ const confirmDelete = (row) => {
         <Column header="Aksi" style="min-width: 110px; text-align: center">
           <template #body="{ data }">
             <div class="action-pill-group">
-              <button class="action-btn" type="button" title="Edit" @click="openEdit(data)">
+              <button v-if="canEdit" class="action-btn" type="button" title="Edit" @click="openEdit(data)">
                 <i class="pi pi-pencil"></i>
               </button>
-              <button class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
                 <i class="pi pi-trash"></i>
               </button>
             </div>
@@ -209,10 +215,10 @@ const confirmDelete = (row) => {
           <div class="content-preview" v-html="tpl.content"></div>
         </div>
         <div class="card-footer">
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(tpl)">
+          <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(tpl)">
             <i class="pi pi-pencil"></i> Edit
           </button>
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(tpl)">
+          <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(tpl)">
             <i class="pi pi-trash"></i> Hapus
           </button>
         </div>

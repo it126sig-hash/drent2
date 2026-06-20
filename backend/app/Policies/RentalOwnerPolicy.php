@@ -25,20 +25,20 @@ class RentalOwnerPolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.create');
     }
 
     public function update(User $user, RentalOwner $rentalOwner): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.update')
             && $user->tenant_id === $rentalOwner->tenant_id;
     }
 
     public function delete(User $user, RentalOwner $rentalOwner): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.delete')
             && $user->tenant_id === $rentalOwner->tenant_id;
     }
 

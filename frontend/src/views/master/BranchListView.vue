@@ -34,10 +34,12 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 const isSuperadmin = computed(() => authStore.user?.role === 'superadmin')
 const userBranchId = computed(() => authStore.user?.branch_id)
 
-const canCreate = computed(() => isSuperadmin.value)
-const canDelete = (row) => isSuperadmin.value
+const canCreate = computed(() => authStore.hasPermission('master.branch.create'))
+const canDelete = (row) => isSuperadmin.value || authStore.hasPermission('master.branch.delete')
 const canEdit = (row) =>
-  isSuperadmin.value || (authStore.user?.role === 'admin_branch' && row?.id === userBranchId.value)
+  isSuperadmin.value ||
+  (authStore.hasPermission('master.branch.update') &&
+    (authStore.user?.role !== 'admin_branch' || row?.id === userBranchId.value))
 
 const errorMessage = (err, fallback) => {
   const errors = err?.response?.data?.errors

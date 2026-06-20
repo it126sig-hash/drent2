@@ -21,8 +21,9 @@ const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
 
-const canManage = computed(() => ['superadmin', 'admin_branch', 'cs'].includes(authStore.user?.role))
-const canDelete = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('master.city.create'))
+const canManage = computed(() => authStore.hasPermission('master.city.update'))
+const canDelete = computed(() => authStore.hasPermission('master.city.delete'))
 
 const showDialog = ref(false)
 const saving = ref(false)
@@ -134,7 +135,7 @@ const onPageChange = (event) => {
         </div>
       </div>
       <div class="header-actions">
-        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Kota</span>
         </button>

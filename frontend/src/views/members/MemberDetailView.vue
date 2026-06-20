@@ -79,12 +79,10 @@ const fetchSecureDoc = async (type) => {
 }
 
 const canActivate = computed(() => {
-  return ['superadmin', 'admin_branch'].includes(authStore.user?.role) && member.value?.status_member === 'Pending'
+  return authStore.hasPermission('member.update') && member.value?.status_member === 'Pending'
 })
 
-const canManage = computed(() => {
-  return ['superadmin', 'admin_branch', 'cs'].includes(authStore.user?.role)
-})
+const canManage = computed(() => authStore.hasPermission('member.update'))
 
 const onActivate = () => {
   confirm.require({

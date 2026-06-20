@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRentalOwner } from '../../composables/useRentalOwner'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
+import { useAuthStore } from '../../stores/auth'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -12,18 +13,23 @@ import Tag from 'primevue/tag'
 import ConfirmDialog from 'primevue/confirmdialog'
 import RentalOwnerFormDialog from '../../components/rental-owners/RentalOwnerFormDialog.vue'
 
-const { 
-  rentalOwners, 
-  loading, 
-  pagination, 
-  fetchAll, 
-  store, 
-  update, 
-  remove 
+const {
+  rentalOwners,
+  loading,
+  pagination,
+  fetchAll,
+  store,
+  update,
+  remove
 } = useRentalOwner()
 
 const toast = useToast()
 const confirm = useConfirm()
+const authStore = useAuthStore()
+
+const canCreate = computed(() => authStore.hasPermission('vehicle.rental_owner.create'))
+const canEdit = computed(() => authStore.hasPermission('vehicle.rental_owner.update'))
+const canDelete = computed(() => authStore.hasPermission('vehicle.rental_owner.delete'))
 
 const searchQuery = ref('')
 const showDialog = ref(false)
@@ -120,7 +126,7 @@ const confirmDelete = (owner) => {
         </p>
       </div>
       <div class="detail-action-bar">
-        <Button label="Tambah Pemilik" icon="pi pi-plus" class="detail-primary-action" @click="openNew" />
+        <Button v-if="canCreate" label="Tambah Pemilik" icon="pi pi-plus" class="detail-primary-action" @click="openNew" />
       </div>
     </div>
 
@@ -202,16 +208,18 @@ const confirmDelete = (owner) => {
         <Column header="Aksi" style="min-width: 120px; text-align: center">
           <template #body="{ data }">
             <div class="action-buttons">
-              <Button 
-                icon="pi pi-pencil" 
-                class="p-button-rounded p-button-text p-button-secondary" 
-                @click="editOwner(data)" 
+              <Button
+                v-if="canEdit"
+                icon="pi pi-pencil"
+                class="p-button-rounded p-button-text p-button-secondary"
+                @click="editOwner(data)"
                 v-tooltip.top="'Edit'"
               />
-              <Button 
-                icon="pi pi-trash" 
-                class="p-button-rounded p-button-text p-button-danger" 
-                @click="confirmDelete(data)" 
+              <Button
+                v-if="canDelete"
+                icon="pi pi-trash"
+                class="p-button-rounded p-button-text p-button-danger"
+                @click="confirmDelete(data)"
                 v-tooltip.top="'Hapus'"
               />
             </div>
@@ -231,10 +239,10 @@ const confirmDelete = (owner) => {
             <div v-if="owner.bank"><span class="field-hint">Bank</span> {{ owner.bank }} · {{ owner.no_rek }} (a.n {{ owner.atas_nama }})</div>
           </div>
           <div class="card-footer">
-            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="editOwner(owner)">
+            <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="editOwner(owner)">
               <i class="pi pi-pencil"></i> Edit
             </button>
-            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(owner)">
+            <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(owner)">
               <i class="pi pi-trash"></i> Hapus
             </button>
           </div>

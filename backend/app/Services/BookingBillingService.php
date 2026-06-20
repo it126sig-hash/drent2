@@ -39,6 +39,19 @@ class BookingBillingService
         });
     }
 
+    public function usesDealingAmount(Booking $booking): bool
+    {
+        return in_array($booking->status, ['follow_up', 'confirm'], true)
+            && (int) $booking->harga_dealing > 0;
+    }
+
+    public function invoiceAmount(Booking $booking): int
+    {
+        return $this->usesDealingAmount($booking)
+            ? (int) $booking->harga_dealing
+            : $this->totalTagihan($booking);
+    }
+
     public function paidAmount(Booking $booking): int
     {
         if (! $booking->relationLoaded('payments')) {

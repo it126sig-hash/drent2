@@ -22,7 +22,9 @@ const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
 
-const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('master.payment_account.create'))
+const canManage = computed(() => authStore.hasPermission('master.payment_account.update'))
+const canDelete = computed(() => authStore.hasPermission('master.payment_account.delete'))
 const canAdjust = computed(() => ['superadmin', 'admin_branch', 'finance'].includes(authStore.user?.role))
 
 const showDialog = ref(false)
@@ -179,7 +181,7 @@ const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum 
         </div>
       </div>
       <div class="header-actions">
-        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Akun</span>
         </button>
@@ -258,7 +260,7 @@ const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum 
               <button v-if="canAdjust" class="action-btn action-btn-primary" type="button" title="Adjust Saldo" @click="openAdjust(data)">
                 <i class="pi pi-calculator"></i>
               </button>
-              <button v-if="canManage" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
                 <i class="pi pi-trash"></i>
               </button>
             </div>

@@ -24,19 +24,19 @@ class CustomerPolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'customer.create');
     }
 
     public function update(User $user, Customer $customer): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'customer.update');
     }
 
     public function delete(User $user, Customer $customer): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'customer.delete');
     }
 
     public function restore(User $user, Customer $customer): bool

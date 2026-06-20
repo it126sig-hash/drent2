@@ -662,6 +662,9 @@ const totalRecordedPayments = computed(() => {
 const hasPricedDetails = computed(() => billableDetails.value.some(detail => detail.unit_id && ((detail.harga_mobil || 0) > 0 || (detail.harga_all_in || 0) > 0)));
 const bookingCalculatedTagihan = computed(() => billableDetails.value.reduce((sum, detail) => sum + detailConsumerBill(detail), 0));
 const bookingTotalTagihan = computed(() => {
+  if (['follow_up', 'confirm'].includes(booking.value?.status) && booking.value?.harga_dealing) {
+    return booking.value.harga_dealing;
+  }
   if (!hasPricedDetails.value) return booking.value?.harga_dealing ?? 0;
   return bookingCalculatedTagihan.value || booking.value?.total_tagihan || 0;
 });
@@ -1988,11 +1991,6 @@ const showInvoicePaymentDialog = ref(false);
 const showInvoiceHistoryDialog = ref(false);
 const invoiceActionLoading = ref(false);
 
-// True once booking has been moved to waiting_list or beyond
-const isUnitHandled = computed(() =>
-  ['waiting_list', 'rental_unit', 'selesai'].includes(booking.value?.status)
-);
-
 // Whether the current invoice has amount changes requiring a refresh
 const hasBookingInvoiceChange = computed(() =>
   Boolean(bookingInvoice.value?.invoice_reconciliation?.is_changed)
@@ -2473,7 +2471,7 @@ const auditUserName = (user) => user?.name || '-';
         <Button v-if="booking && booking.status === 'rental_unit'" label="Selesai" icon="pi pi-flag-fill" class="detail-primary-action" @click="openCompleteDialog" :loading="loading" />
         <Button v-if="booking && !['selesai', 'batal', 'cancelled'].includes(booking.status)" label="Batalkan" icon="pi pi-ban" severity="danger" outlined class="detail-secondary-action" @click="openBatalDialog" :loading="loading" />
         <!-- Buat Invoice: unit sudah handled, belum ada invoice, punya akses finance -->
-        <Button v-if="booking && ['waiting_list', 'rental_unit'].includes(booking.status) && !hasBookingInvoice && canAccessInvoice" label="Buat Invoice" icon="pi pi-file-plus" severity="secondary" outlined class="detail-secondary-action" @click="showGenerateInvoiceDialog = true" />
+        <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list', 'rental_unit'].includes(booking.status) && !hasBookingInvoice && canAccessInvoice" label="Buat Invoice" icon="pi pi-file-plus" severity="secondary" outlined class="detail-secondary-action" @click="showGenerateInvoiceDialog = true" />
         <!-- Kirim Invoice + Print PDF: invoice sudah ada -->
         <template v-if="booking && hasBookingInvoice && canAccessInvoice">
           <Button label="Kirim Invoice" icon="pi pi-send" severity="secondary" outlined class="detail-secondary-action" :loading="invoiceActionLoading" @click="sendInvoice" />
@@ -2850,12 +2848,10 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h3 class="text-sm font-bold text-slate-800">Pembayaran</h3>
             </div>
-            <!-- Tambah: sebelum unit di-handle (follow_up / confirm) -->
-            <Button v-if="!isUnitHandled && !['cancelled', 'batal'].includes(booking.status)" label="Tambah" icon="pi pi-plus" size="small" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran booking" @click="openPaymentDialog" />
-            <!-- Perbarui Invoice: unit sudah di-handle & invoice perlu update -->
-            <Button v-else-if="isUnitHandled && hasBookingInvoice && canRefreshBookingInvoice" label="Perbarui Invoice" icon="pi pi-refresh" size="small" class="bg-amber-500 hover:bg-amber-600 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Invoice perlu diperbarui karena ada perubahan biaya" :loading="invoiceActionLoading" @click="refreshBookingInvoice" />
-            <!-- Bayar Invoice: unit sudah di-handle & invoice ada & tidak perlu update -->
-            <Button v-else-if="isUnitHandled && hasBookingInvoice && !['cancelled', 'batal'].includes(booking.status)" label="Bayar Invoice" icon="pi pi-wallet" size="small" :disabled="['paid', 'void'].includes(bookingInvoice?.status) || invoiceActionLoading" :loading="invoiceActionLoading" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran invoice" @click="openInvoicePaymentDialog" />
+            <!-- Perbarui Invoice: invoice ada & perlu update -->
+            <Button v-if="hasBookingInvoice && canRefreshBookingInvoice" label="Perbarui Invoice" icon="pi pi-refresh" size="small" class="bg-amber-500 hover:bg-amber-600 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Invoice perlu diperbarui karena ada perubahan biaya" :loading="invoiceActionLoading" @click="refreshBookingInvoice" />
+            <!-- Bayar Invoice: invoice ada & tidak perlu update -->
+            <Button v-else-if="hasBookingInvoice && !['cancelled', 'batal'].includes(booking.status)" label="Bayar Invoice" icon="pi pi-wallet" size="small" :disabled="['paid', 'void'].includes(bookingInvoice?.status) || invoiceActionLoading" :loading="invoiceActionLoading" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran invoice" @click="openInvoicePaymentDialog" />
           </div>
 
           <div v-if="!booking.payments?.length && !booking.cancellation?.ada_refund" class="p-6 text-center text-slate-400">

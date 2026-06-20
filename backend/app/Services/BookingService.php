@@ -335,6 +335,10 @@ class BookingService
             $booking->unsetRelation('bookingDetails')->unsetRelation('payments');
             app(BookingBillingService::class)->updateCachedSisaTagihan($booking->fresh());
 
+            // Invoice yang sudah dibuat saat masih follow_up/confirm (pakai harga dealing) ikut
+            // disinkronkan ke nominal item-based sekarang unit & biaya sudah final.
+            app(ReceivableService::class)->refreshBookingInvoiceIfAny($booking->fresh());
+
             return $booking->fresh();
         });
     }

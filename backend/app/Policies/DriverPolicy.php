@@ -24,19 +24,19 @@ class DriverPolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.create');
     }
 
     public function update(User $user, Driver $driver): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.update');
     }
 
     public function delete(User $user, Driver $driver): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.delete');
     }
 
     public function updateBalance(User $user, Driver $driver): bool

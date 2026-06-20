@@ -420,7 +420,7 @@ class ReceivableService
             }
 
             $amounts = $bookings->mapWithKeys(fn(Booking $booking) => [
-                $booking->id => $this->billingService->totalTagihan($booking),
+                $booking->id => $this->billingService->invoiceAmount($booking),
             ]);
 
             if ($amounts->contains(fn($amount) => $amount <= 0)) {
@@ -466,6 +466,29 @@ class ReceivableService
 
             return $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']);
         });
+    }
+
+    /**
+     * Sinkronkan ulang nominal invoice booking ini (kalau ada) dengan data transaksi/biaya terbaru.
+     * Dipanggil otomatis setiap kali booking di-handle, supaya invoice yang dibuat dari harga
+     * dealing (saat masih follow_up/confirm) ikut diperbarui ke kalkulasi item-based yang riil.
+     */
+    public function refreshBookingInvoiceIfAny(Booking $booking): void
+    {
+        $invoice = $booking->invoices()
+            ->where('invoices.status', '!=', 'void')
+            ->latest('invoices.generated_at')
+            ->first();
+
+        if (! $invoice) {
+            return;
+        }
+
+        try {
+            $this->refreshInvoiceAmount($invoice, true);
+        } catch (\InvalidArgumentException $e) {
+            // Tidak ada nominal yang perlu diperbarui (misal sudah lunas tanpa penambahan biaya) — aman diabaikan.
+        }
     }
 
     public function markSent(Invoice $invoice): Invoice
@@ -834,6 +857,24 @@ class ReceivableService
 
         return $invoice->bookings
             ->flatMap(function (Booking $booking) {
+                if ($this->billingService->usesDealingAmount($booking)) {
+                    $detail = $booking->bookingDetails->whereNotIn('status', ['batal'])->first();
+                    $unit = $detail?->unit;
+
+                    return collect([[
+                        'type' => 'rental',
+                        'description' => $booking->kode_booking,
+                        'booking_code' => $booking->kode_booking,
+                        'vehicle_name' => trim(implode(' ', array_filter([$unit?->merk, $unit?->tipe]))) ?: ($detail?->unit_placeholder ?? null),
+                        'vehicle_plate' => $unit?->no_polisi,
+                        'rental_start_date' => $detail?->tgl_sewa,
+                        'rental_end_date' => $detail?->tgl_kembali,
+                        'price' => (int) $booking->harga_dealing,
+                        'qty' => 1,
+                        'amount' => (int) $booking->harga_dealing,
+                    ]]);
+                }
+
                 return $booking->bookingDetails
                     ->whereNotIn('status', ['batal'])
                     ->flatMap(function ($detail) use ($booking) {
@@ -887,9 +928,9 @@ class ReceivableService
     {
         $invoice->loadMissing(['bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.bookingPayments']);
 
-        return $invoice->bookings->mapWithKeys(function (Booking $booking) use ($invoice) {
+        return $invoice->bookings->mapWithKeys(function (Booking $booking) {
             return [
-                $booking->id => $this->billingService->totalTagihan($booking),
+                $booking->id => $this->billingService->invoiceAmount($booking),
             ];
         });
     }

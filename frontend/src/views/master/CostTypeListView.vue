@@ -20,7 +20,9 @@ const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
 
-const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('master.cost_type.create'))
+const canEdit = computed(() => authStore.hasPermission('master.cost_type.update'))
+const canDelete = computed(() => authStore.hasPermission('master.cost_type.delete'))
 
 const showDialog = ref(false)
 const form = ref({ id: null, nama: '', kode: '', require_description: false, sort_order: 0, is_active: true })
@@ -106,7 +108,7 @@ const onPageChange = (event) => {
         </div>
       </div>
       <div class="header-actions">
-        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Tipe Biaya</span>
         </button>
@@ -171,10 +173,10 @@ const onPageChange = (event) => {
         <Column header="Aksi" style="min-width:110px;text-align:center">
           <template #body="{ data }">
             <div class="action-pill-group">
-              <button class="action-btn" type="button" title="Edit" @click="openEdit(data)">
+              <button v-if="canEdit" class="action-btn" type="button" title="Edit" @click="openEdit(data)">
                 <i class="pi pi-pencil"></i>
               </button>
-              <button v-if="canManage" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
                 <i class="pi pi-trash"></i>
               </button>
             </div>
@@ -201,10 +203,10 @@ const onPageChange = (event) => {
           <div><span class="field-hint">Butuh Keterangan</span> {{ ct.require_description ? 'Ya' : 'Tidak' }}</div>
         </div>
         <div class="card-footer">
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(ct)">
+          <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(ct)">
             <i class="pi pi-pencil"></i> Edit
           </button>
-          <button v-if="canManage" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(ct)">
+          <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(ct)">
             <i class="pi pi-trash"></i> Hapus
           </button>
         </div>

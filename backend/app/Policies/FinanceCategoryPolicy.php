@@ -9,7 +9,8 @@ class FinanceCategoryPolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.finance_category');
     }
 
     public function view(User $user, FinanceCategory $financeCategory): bool
@@ -20,12 +21,13 @@ class FinanceCategoryPolicy
 
         return $user->tenant_id === $financeCategory->tenant_id
             && $user->branch_id === $financeCategory->branch_id
-            && in_array($user->role, ['admin_branch', 'finance']);
+            && app(\App\Services\PermissionService::class)->hasPermission($user, 'master.finance_category');
     }
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance']);
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'master.finance_category.create');
     }
 
     public function update(User $user, FinanceCategory $financeCategory): bool
