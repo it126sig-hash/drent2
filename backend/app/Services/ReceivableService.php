@@ -10,8 +10,10 @@ use App\Models\Payment;
 use App\Models\PaymentAccount;
 use Carbon\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use App\Services\PaymentAccountTransactionService;
 
 class ReceivableService
@@ -540,6 +542,118 @@ class ReceivableService
         });
     }
 
+    public function requestVoidInvoicePayment(Payment $payment, string $reason): Payment
+    {
+        if ($payment->status === 'voided') {
+            throw ValidationException::withMessages([
+                'payment' => ['Pembayaran ini sudah void.'],
+            ]);
+        }
+
+        if ($payment->status === 'void_requested') {
+            throw ValidationException::withMessages([
+                'payment' => ['Request void pembayaran ini masih menunggu approval supervisor.'],
+            ]);
+        }
+
+        $payment->update([
+            'status' => 'void_requested',
+            'void_reason' => $reason,
+            'void_requested_by' => Auth::id(),
+            'void_requested_at' => now(),
+            'void_approved_by' => null,
+            'void_approved_at' => null,
+            'void_rejected_by' => null,
+            'void_rejected_at' => null,
+            'void_rejection_note' => null,
+        ]);
+
+        return $payment->fresh(['invoice', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover', 'voidRejecter']);
+    }
+
+    public function approveVoidInvoicePayment(Payment $payment): Payment
+    {
+        return DB::transaction(function () use ($payment) {
+            $payment = Payment::query()->lockForUpdate()->findOrFail($payment->id);
+
+            if ($payment->status !== 'void_requested') {
+                throw ValidationException::withMessages([
+                    'payment' => ['Hanya pembayaran dengan status request void yang bisa di-approve.'],
+                ]);
+            }
+
+            if ($payment->void_requested_by === Auth::id() && Auth::user()?->role !== 'superadmin') {
+                throw ValidationException::withMessages([
+                    'payment' => ['Request void harus di-ACC oleh supervisor lain.'],
+                ]);
+            }
+
+            $payment->update([
+                'status' => 'voided',
+                'void_approved_by' => Auth::id(),
+                'void_approved_at' => now(),
+            ]);
+
+            // Alokasi BookingPayment hasil pembayaran invoice ini ikut void,
+            // supaya angka per-booking (cached_sisa_tagihan) tetap konsisten dengan invoice.paid_amount.
+            BookingPayment::where('invoice_payment_id', $payment->id)->update(['status' => 'voided']);
+
+            $invoice = Invoice::query()
+                ->with(['bookings.bookingDetails.costs', 'bookings.payments', 'payments'])
+                ->lockForUpdate()
+                ->findOrFail($payment->invoice_id);
+
+            foreach ($invoice->bookings as $booking) {
+                $this->billingService->updateCachedSisaTagihan($booking);
+            }
+
+            $invoice->refresh();
+            $invoice->load(['bookings.payments', 'payments']);
+            $paidAmount = $this->invoicePaidAmount($invoice);
+            $invoice->update([
+                'paid_amount' => $paidAmount,
+                'status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount),
+            ]);
+
+            $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+            $this->transactionService->applyDelta($account, -(int) $payment->amount, [
+                'type' => 'invoice_payment_void',
+                'amount' => (int) $payment->amount,
+                'description' => "Void pembayaran invoice #{$invoice->invoice_number}: " . $payment->void_reason,
+                'created_by' => Auth::id(),
+                'transaction_at' => now(),
+            ]);
+
+            InvoiceHistory::create([
+                'invoice_id' => $invoice->id,
+                'event_type' => 'payment_voided',
+                'description' => 'Pembayaran di-void: ' . $payment->void_reason,
+                'payment_amount' => (int) $payment->amount,
+                'created_by' => Auth::id(),
+            ]);
+
+            return $payment->fresh(['invoice', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover', 'voidRejecter']);
+        });
+    }
+
+    public function rejectVoidInvoicePayment(Payment $payment, ?string $note = null): Payment
+    {
+        if ($payment->status !== 'void_requested') {
+            throw ValidationException::withMessages([
+                'payment' => ['Hanya pembayaran dengan status request void yang bisa ditolak.'],
+            ]);
+        }
+
+        $payment->update([
+            'status' => 'active',
+            'void_rejected_by' => Auth::id(),
+            'void_rejected_at' => now(),
+            'void_rejection_note' => $note,
+        ]);
+
+        return $payment->fresh(['invoice', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover', 'voidRejecter']);
+    }
+
     public function publicInvoice(string $token): array
     {
         $invoice = Invoice::query()
@@ -623,7 +737,7 @@ class ReceivableService
                 : null,
             'created_by_name' => $payment->creator?->name,
             'amount' => (int) $payment->amount,
-            'status' => 'active',
+            'status' => $payment->status ?? 'active',
             'payment_type' => null,
             'note' => null,
             'paid_at' => $payment->paid_at?->toISOString(),
@@ -665,17 +779,20 @@ class ReceivableService
     {
         $invoice->loadMissing(['bookings.payments.paymentAccount', 'payments.paymentAccount']);
 
-        $invoicePayments = collect($invoice->payments->map(fn(Payment $payment) => [
-            'id' => 'invoice-' . $payment->id,
-            'source' => 'invoice',
-            'payment_account_id' => $payment->payment_account_id,
-            'payment_account_name' => $payment->paymentAccount
-                ? trim($payment->paymentAccount->nama_bank . ' ' . $payment->paymentAccount->nomor_rekening)
-                : null,
-            'amount' => (int) $payment->amount,
-            'paid_at' => $payment->paid_at?->toISOString(),
-            'created_at' => $payment->created_at?->toISOString(),
-        ])->all());
+        $invoicePayments = collect($invoice->payments
+            ->filter(fn(Payment $payment) => ($payment->status ?? 'active') !== 'voided')
+            ->map(fn(Payment $payment) => [
+                'id' => 'invoice-' . $payment->id,
+                'source' => 'invoice',
+                'payment_account_id' => $payment->payment_account_id,
+                'payment_account_name' => $payment->paymentAccount
+                    ? trim($payment->paymentAccount->nama_bank . ' ' . $payment->paymentAccount->nomor_rekening)
+                    : null,
+                'amount' => (int) $payment->amount,
+                'paid_at' => $payment->paid_at?->toISOString(),
+                'created_at' => $payment->created_at?->toISOString(),
+            ])
+            ->all());
 
         $directPayments = collect($invoice->bookings
             ->flatMap(fn(Booking $booking) => $booking->payments)
@@ -781,7 +898,9 @@ class ReceivableService
     {
         $invoice->loadMissing(['bookings.payments', 'payments']);
 
-        return (int) $invoice->payments->sum('amount')
+        return (int) $invoice->payments
+            ->filter(fn(Payment $payment) => ($payment->status ?? 'active') !== 'voided')
+            ->sum('amount')
             + (int) $invoice->bookings->sum(fn(Booking $booking) => $this->directBookingPayments($booking));
     }
 

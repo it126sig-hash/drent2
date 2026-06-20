@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingPayment;
+use App\Models\Payment;
 use App\Models\RentToRentBill;
 use App\Models\RentToRentPayment;
 use Illuminate\Http\Request;
@@ -420,6 +421,60 @@ class SupervisorRequestController extends Controller
                 ] : null),
             ]);
 
+        $voidInvoicePayments = Payment::query()
+            ->with(['invoice.bookings.customer', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover'])
+            ->whereIn('status', ['void_requested', 'voided'])
+            ->when($dateFrom, fn($q) => $q->whereDate('void_requested_at', '>=', $dateFrom))
+            ->when($dateTo, fn($q) => $q->whereDate('void_requested_at', '<=', $dateTo))
+            ->when($user->role !== 'superadmin', fn($q) => $q->whereHas(
+                'invoice',
+                fn($invoice) => $invoice->where('branch_id', $user->branch_id)
+            ))
+            ->latest('updated_at')
+            ->get()
+            ->map(function (Payment $payment) {
+                $bookingCodes = $payment->invoice?->bookings?->pluck('kode_booking')->filter()->values() ?? collect();
+                $customerName = $payment->invoice?->bookings?->pluck('customer.nama')->filter()->unique()->join(', ');
+
+                return [
+                    'id' => 'invoice_payment_void_'.$payment->id,
+                    'type' => 'invoice_payment_void',
+                    'type_label' => 'Void Pembayaran Invoice',
+                    'status' => $payment->status === 'voided' ? 'approved' : 'pending',
+                    'status_label' => $payment->status === 'voided' ? 'Disetujui' : 'Menunggu ACC',
+                    'requested_at' => $payment->void_requested_at?->toISOString(),
+                    'approved_at' => $payment->void_approved_at?->toISOString(),
+                    'reason' => $payment->void_reason,
+                    'booking' => [
+                        'id' => null,
+                        'kode_booking' => $bookingCodes->join(', '),
+                        'customer_name' => $customerName,
+                    ],
+                    'bill' => [
+                        'id' => $payment->invoice?->id,
+                        'bill_number' => $payment->invoice?->invoice_number,
+                        'booking_codes' => $bookingCodes,
+                    ],
+                    'payment' => [
+                        'id' => $payment->id,
+                        'amount' => (int) $payment->amount,
+                        'paid_at' => $payment->paid_at?->toISOString(),
+                        'payment_account' => $payment->paymentAccount ? [
+                            'nama_bank' => $payment->paymentAccount->nama_bank,
+                            'nomor_rekening' => $payment->paymentAccount->nomor_rekening,
+                        ] : null,
+                    ],
+                    'requester' => $payment->voidRequester ? [
+                        'id' => $payment->voidRequester->id,
+                        'name' => $payment->voidRequester->name,
+                    ] : null,
+                    'approver' => $payment->voidApprover ? [
+                        'id' => $payment->voidApprover->id,
+                        'name' => $payment->voidApprover->name,
+                    ] : null,
+                ];
+            });
+
         $requests = $voidPayments
             ->concat($returnRequests)
             ->concat($revertRequests)
@@ -429,6 +484,7 @@ class SupervisorRequestController extends Controller
             ->concat($voidFunds)
             ->concat($voidPaymentTransactions)
             ->concat($rentToRentAmountChanges)
+            ->concat($voidInvoicePayments)
             ->sortByDesc(fn($item) => $item['approved_at'] ?? $item['requested_at'] ?? '')
             ->values();
 

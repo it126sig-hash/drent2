@@ -261,6 +261,52 @@ export function useReceivable() {
     }
   }
 
+  const requestVoidInvoicePayment = async (paymentId, data) => {
+    actionLoading.value = true
+    try {
+      const response = await receivableApi.requestVoidInvoicePayment(paymentId, data)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request void pembayaran invoice dikirim ke supervisor', life: 3000 })
+      await fetchPaymentHistory()
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengajukan void pembayaran invoice'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const approveVoidInvoicePayment = async (paymentId) => {
+    actionLoading.value = true
+    try {
+      const response = await receivableApi.approveVoidInvoicePayment(paymentId)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Void pembayaran invoice disetujui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menyetujui void pembayaran invoice'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const rejectVoidInvoicePayment = async (paymentId, data = {}) => {
+    actionLoading.value = true
+    try {
+      const response = await receivableApi.rejectVoidInvoicePayment(paymentId, data)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Void pembayaran invoice ditolak', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menolak void pembayaran invoice'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
   return {
     receivables,
     invoices,
@@ -282,6 +328,9 @@ export function useReceivable() {
     openPdf,
     addPayment,
     requestVoidPayment,
+    requestVoidInvoicePayment,
+    approveVoidInvoicePayment,
+    rejectVoidInvoicePayment,
     fetchInvoiceHistories,
   }
 }

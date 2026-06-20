@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateInvoiceRequest;
 use App\Http\Requests\RefreshInvoiceAmountRequest;
+use App\Http\Requests\RejectVoidInvoicePaymentRequest;
+use App\Http\Requests\RequestVoidInvoicePaymentRequest;
 use App\Http\Requests\StoreInvoicePaymentRequest;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\PublicInvoiceResource;
 use App\Http\Resources\ReceivableResource;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Services\InvoicePdfService;
 use App\Services\ReceivableService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -187,6 +190,33 @@ class ReceivableController extends Controller
                 'created_at'     => $h->created_at?->toISOString(),
             ]),
         ]);
+    }
+
+    public function requestVoidInvoicePayment(RequestVoidInvoicePaymentRequest $request, Payment $payment): InvoiceResource
+    {
+        $this->authorize('update', $payment->invoice);
+
+        $this->receivableService->requestVoidInvoicePayment($payment, $request->validated('void_reason'));
+
+        return new InvoiceResource($payment->invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']));
+    }
+
+    public function approveVoidInvoicePayment(Payment $payment): InvoiceResource
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor']), 403);
+
+        $this->receivableService->approveVoidInvoicePayment($payment);
+
+        return new InvoiceResource($payment->invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']));
+    }
+
+    public function rejectVoidInvoicePayment(RejectVoidInvoicePaymentRequest $request, Payment $payment): InvoiceResource
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor']), 403);
+
+        $this->receivableService->rejectVoidInvoicePayment($payment, $request->validated('void_rejection_note'));
+
+        return new InvoiceResource($payment->invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']));
     }
 
     public function publicInvoice(Request $request, string $token): PublicInvoiceResource

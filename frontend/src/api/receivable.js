@@ -46,6 +46,18 @@ export const getInvoiceHistories = (invoiceId) => {
   return api.get(`/v1/invoices/${invoiceId}/histories`)
 }
 
+export const requestVoidInvoicePayment = (paymentId, data) => {
+  return api.post(`/v1/invoice-payments/${paymentId}/request-void`, data)
+}
+
+export const approveVoidInvoicePayment = (paymentId) => {
+  return api.post(`/v1/invoice-payments/${paymentId}/approve-void`)
+}
+
+export const rejectVoidInvoicePayment = (paymentId, data = {}) => {
+  return api.post(`/v1/invoice-payments/${paymentId}/reject-void`, data)
+}
+
 export default {
   getReceivables,
   getPaymentHistory,
@@ -58,4 +70,7 @@ export default {
   addInvoicePayment,
   getPublicInvoice,
   getInvoiceHistories,
+  requestVoidInvoicePayment,
+  approveVoidInvoicePayment,
+  rejectVoidInvoicePayment,
 }

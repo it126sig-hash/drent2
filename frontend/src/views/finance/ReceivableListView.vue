@@ -51,6 +51,7 @@ const {
   openPdf,
   addPayment,
   requestVoidPayment,
+  requestVoidInvoicePayment,
 } = useReceivable()
 const { accounts, fetchAll: fetchPaymentAccounts } = usePaymentAccount()
 
@@ -135,7 +136,9 @@ const generateInvoiceBookings = computed(() =>
   }))
 )
 
-const selectedVoidPaymentId = computed(() => bookingPaymentId(selectedVoidPayment.value))
+const selectedVoidPaymentId = computed(() => selectedVoidPayment.value?.source === 'invoice'
+  ? invoicePaymentId(selectedVoidPayment.value)
+  : bookingPaymentId(selectedVoidPayment.value))
 
 
 const formatCurrency = (value) => {
@@ -486,9 +489,16 @@ const bookingPaymentId = (payment) => {
   return match ? Number(match[1]) : null
 }
 
+const invoicePaymentId = (payment) => {
+  if (!payment?.id) return null
+
+  const match = String(payment.id).match(/^invoice-(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
 const canRequestVoidPayment = (payment) =>
-  ['transaction', 'invoice_allocation'].includes(payment?.source)
-  && bookingPaymentId(payment)
+  ['transaction', 'invoice_allocation', 'invoice'].includes(payment?.source)
+  && (payment.source === 'invoice' ? invoicePaymentId(payment) : bookingPaymentId(payment))
   && (payment.status || 'active') === 'active'
 
 const openVoidPaymentDialog = (payment) => {
@@ -505,7 +515,8 @@ const submitVoidPaymentRequest = async () => {
   if (!selectedVoidPaymentId.value) return
 
   try {
-    await requestVoidPayment(selectedVoidPaymentId.value, voidPaymentForm.value)
+    const request = selectedVoidPayment.value?.source === 'invoice' ? requestVoidInvoicePayment : requestVoidPayment
+    await request(selectedVoidPaymentId.value, voidPaymentForm.value)
     showVoidPaymentDialog.value = false
     selectedVoidPayment.value = null
   } catch (err) {

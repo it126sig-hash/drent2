@@ -164,6 +164,9 @@ Route::prefix('v1')->group(function () {
         Route::post('invoices/{invoice}/refresh-amount', [ReceivableController::class, 'refreshInvoiceAmount']);
         Route::post('invoices/{invoice}/payments', [ReceivableController::class, 'storeInvoicePayment']);
         Route::get('invoices/{invoice}/histories', [ReceivableController::class, 'invoiceHistories']);
+        Route::post('invoice-payments/{payment}/request-void', [ReceivableController::class, 'requestVoidInvoicePayment']);
+        Route::post('invoice-payments/{payment}/approve-void', [ReceivableController::class, 'approveVoidInvoicePayment']);
+        Route::post('invoice-payments/{payment}/reject-void', [ReceivableController::class, 'rejectVoidInvoicePayment']);
         Route::apiResource('invoice-terms-templates', InvoiceTermsTemplateController::class)->except(['show']);
 
         // Transactions

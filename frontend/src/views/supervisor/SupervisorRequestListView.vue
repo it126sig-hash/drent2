@@ -14,6 +14,7 @@ import { getSupervisorRequests } from '../../api/supervisorRequest'
 import { useBooking } from '../../composables/useBooking'
 import { useOperationalFund } from '../../composables/useOperationalFund'
 import { usePaymentAccountTransaction } from '../../composables/usePaymentAccountTransaction'
+import { useReceivable } from '../../composables/useReceivable'
 
 const router = useRouter()
 const {
@@ -38,6 +39,11 @@ const {
   rejectVoidTransaction,
 } = usePaymentAccountTransaction()
 
+const {
+  approveVoidInvoicePayment,
+  rejectVoidInvoicePayment,
+} = useReceivable()
+
 const requests = ref([])
 const loading = ref(false)
 const activeTab = ref('all')
@@ -60,6 +66,7 @@ const requestTabs = [
   { label: 'Kembali Rental Unit', value: 'return_rental_unit' },
   { label: 'Revert Operasional', value: 'operational_revert' },
   { label: 'Ubah Nominal R2R', value: 'rent_to_rent_amount_change' },
+  { label: 'Void Pembayaran Invoice', value: 'invoice_payment_void' },
 ]
 
 const statusTabs = [
@@ -112,7 +119,7 @@ const formatDateTime = (value) => {
 
 const statusTone = (status) => status === 'approved' ? 'success' : 'warning'
 
-const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment', 'void_operational_expense', 'void_operational_fund', 'void_payment_transaction', 'rent_to_rent_amount_change'].includes(type) ? 'warning' : 'info'
+const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment', 'void_operational_expense', 'void_operational_fund', 'void_payment_transaction', 'rent_to_rent_amount_change', 'invoice_payment_void'].includes(type) ? 'warning' : 'info'
 
 const bookingCode = (request) => request.bill?.bill_number || request.booking?.kode_booking || '-'
 
@@ -151,6 +158,10 @@ const requestDetailLabel = (request) => {
     return `Ubah Nominal: ${formatCurrency(request.debt?.current_amount)} -> ${request.debt?.requested_amount !== null ? formatCurrency(request.debt?.requested_amount) : 'Reset ke Default (Modal Booking)'}`
   }
 
+  if (request.type === 'invoice_payment_void') {
+    return `Void Pembayaran Invoice ${request.bill?.bill_number || '-'}: ${formatCurrency(request.payment?.amount)}`
+  }
+
   return 'Ubah status booking dari selesai ke rental_unit'
 }
 
@@ -182,6 +193,11 @@ const requestSecondaryDetail = (request) => {
     return `Hutang R2R: ${request.debt?.kode_booking || '-'}`
   }
 
+  if (request.type === 'invoice_payment_void') {
+    const account = request.payment?.payment_account
+    return `${account?.nama_bank || '-'} ${account?.nomor_rekening || ''}`.trim()
+  }
+
   return request.booking?.kode_booking || '-'
 }
 
@@ -202,6 +218,8 @@ const approveRequest = async (request) => {
     await approveRevertOperational(request.booking.id)
   } else if (request.type === 'rent_to_rent_amount_change') {
     await rentToRentApi.approveRentToRentAmountChange(request.amount_change.id)
+  } else if (request.type === 'invoice_payment_void') {
+    await approveVoidInvoicePayment(request.payment.id)
   } else {
     await approveReturnToRentalUnit(request.booking.id)
   }
@@ -242,6 +260,10 @@ const submitReject = async () => {
     })
   } else if (selectedRequest.value.type === 'rent_to_rent_amount_change') {
     await rentToRentApi.rejectRentToRentAmountChange(selectedRequest.value.amount_change.id, rejectionNote.value)
+  } else if (selectedRequest.value.type === 'invoice_payment_void') {
+    await rejectVoidInvoicePayment(selectedRequest.value.payment.id, {
+      void_rejection_note: rejectionNote.value,
+    })
   } else {
     await rejectReturnToRentalUnit(selectedRequest.value.booking.id, {
       rejection_note: rejectionNote.value,
