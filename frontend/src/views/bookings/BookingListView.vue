@@ -825,40 +825,40 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-          <Column header="Kode" style="min-width: 9rem">
+          <Column header="Kode" :style="{ minWidth: 'var(--col-w-sm)' }">
             <template #body="{ data }">
               <div class="flex flex-col items-start gap-1">
-                <span class="font-semibold text-xs">{{ data.kode_booking }}</span>
+                <span class="font-semibold cell-fs-12">{{ data.kode_booking }}</span>
                 <BookingStatusBadge :status="data.status" />
               </div>
             </template>
           </Column>
-          <Column header="Pelanggan" style="min-width: 10rem">
+          <Column header="Pelanggan" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col items-start gap-1">
                 <span class="font-semibold">{{ data.customer?.nama || '-' }}</span>
                 <BookingStatusBadge v-if="data.customer?.status" :status="data.customer.status" />
-                <span v-else class="text-xs text-tertiary">Status belum ada</span>
+                <span v-else class="cell-fs-12 text-tertiary">Status belum ada</span>
               </div>
             </template>
           </Column>
-          <Column header="Unit" style="min-width: 10rem">
+          <Column header="Unit" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col gap-0.5">
-                <span class="font-semibold text-xs">{{ getVehicleInfo(data).title }}</span>
-                <span class="text-xs text-secondary font-mono-numeric">{{ getVehicleInfo(data).subtitle }}</span>
+                <span class="font-semibold cell-fs-12">{{ getVehicleInfo(data).title }}</span>
+                <span class="cell-fs-12 text-secondary font-mono-numeric">{{ getVehicleInfo(data).subtitle }}</span>
                 <div class="mt-1" v-if="getVehicleInfo(data).ownerType">
                   <BookingStatusBadge :status="getVehicleInfo(data).ownerType" :text="getVehicleInfo(data).ownerName" />
                 </div>
               </div>
             </template>
           </Column>
-          <Column header="Periode" style="min-width: 10rem">
+          <Column header="Periode" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
-                <span class="font-medium text-xs">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
-                <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(data)) }}</span>
-                <span class="text-[11px] font-bold text-secondary mt-1">{{ getRentalDuration(data) }}</span>
+                <span class="font-medium cell-fs-12">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
+                <span class="cell-fs-10 text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(data)) }}</span>
+                <span class="cell-fs-11 font-bold text-secondary mt-1">{{ getRentalDuration(data) }}</span>
                 <div v-if="getDetailTypeBadges(data).length" class="flex gap-1 mt-1">
                   <BookingStatusBadge v-for="type in getDetailTypeBadges(data)" :key="type" :status="type" />
                 </div>
@@ -869,13 +869,13 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-          <Column header="Total Biaya" style="min-width: 10rem">
+          <Column header="Total Biaya" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col items-end">
-                <span class="font-mono-numeric text-primary text-sm">{{ formatCurrency(getTotalSewa(data)) }}</span>
-                <span class="font-mono-numeric text-positive text-sm">{{ formatCurrency(getPaidAmount(data)) }}</span>
+                <span class="font-mono-numeric text-primary cell-fs-14">{{ formatCurrency(getTotalSewa(data)) }}</span>
+                <span class="font-mono-numeric text-positive cell-fs-14">{{ formatCurrency(getPaidAmount(data)) }}</span>
                 <div v-if="getTotalSewa(data) - getPaidAmount(data) > 0">
-                  <span class="font-mono-numeric text-info text-sm italic">(sisa){{
+                  <span class="font-mono-numeric text-info cell-fs-14 italic">(sisa){{
                     formatCurrency(getTotalSewa(data) - getPaidAmount(data)) }}</span>
                 </div>
                 <div v-else>
@@ -884,28 +884,28 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-          <Column header="Tujuan" style="min-width: 11rem">
+          <Column header="Tujuan" :style="{ minWidth: 'var(--col-w-lg)' }">
             <template #body="{ data }">
               <span class="table-text-clamp font-bold">{{ data.kota || '-' }}</span>
               <span class="table-text-clamp font-medium">{{ data.tujuan || '-' }}</span>
             </template>
           </Column>
 
-          <Column header="Alamat & Catatan" style="min-width: 17rem">
+          <Column header="Alamat & Catatan" :style="{ minWidth: 'var(--col-w-xl)' }">
             <template #body="{ data }">
               <div v-if="hasPickupNotes(data)" class="table-note-stack">
                 <div v-if="data.alamat_penjemputan" class="table-note-line">
                   <span class="font-bold">{{ data.alamat_penjemputan }}</span>
                 </div>
                 <div v-if="data.catatan" class="table-note-line">
-                  <span class="text-xs text-secondary italic">*{{ data.catatan }}</span>
+                  <span class="cell-fs-12 text-secondary italic">*{{ data.catatan }}</span>
                 </div>
               </div>
               <span v-else class="text-secondary">-</span>
             </template>
           </Column>
 
-          <Column header="Driver" style="min-width: 10rem">
+          <Column header="Driver" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="driver-cell" :class="{ 'driver-cell-empty': !getDriverInfo(data).hasDriver }">
                 <span class="driver-name">{{ getDriverInfo(data).name }}</span>
@@ -1127,6 +1127,27 @@ const getBookingCardClass = (booking) => {
 </template>
 
 <style scoped>
+.page-container {
+  --col-w-sm: 9rem;
+  --col-w-md: 10rem;
+  --col-w-lg: 11rem;
+  --col-w-xl: 17rem;
+}
+
+@media (min-width: 769px) and (max-width: 1365px) {
+  .page-container {
+    --col-w-sm: 7.2rem;
+    --col-w-md: 8rem;
+    --col-w-lg: 8.8rem;
+    --col-w-xl: 13.6rem;
+  }
+}
+
+.cell-fs-10 { font-size: var(--font-size-10px); }
+.cell-fs-11 { font-size: var(--font-size-11px); }
+.cell-fs-12 { font-size: var(--font-size-12px); }
+.cell-fs-14 { font-size: var(--font-size-14px); }
+
 .create-label-mobile {
   display: none;
 }

@@ -34,7 +34,8 @@ export const permissionDefinitions = [
         name: 'Piutang',
         items: [
           { key: 'finance.receivable', label: 'Lihat Piutang' },
-          { key: 'finance.receivable.create', label: 'Buat Invoice / Bayar Piutang' },
+          { key: 'finance.receivable.create', label: 'Buat Invoice' },
+          { key: 'finance.receivable.pay', label: 'Bayar Piutang / Invoice' },
           { key: 'finance.receivable.update', label: 'Edit Piutang' }
         ]
       },

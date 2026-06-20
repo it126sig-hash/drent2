@@ -224,6 +224,9 @@ body {
 
 /* Use this on list pages whose table should fill the remaining viewport. */
 @media (min-width: 769px) {
+  html {
+  font-size: 70% !important;
+}
   .page-container.table-page-active {
     height: 100dvh;
     min-height: 0;

@@ -55,6 +55,8 @@ const {
 } = useReceivable()
 const { accounts, fetchAll: fetchPaymentAccounts } = usePaymentAccount()
 
+const canPayInvoice = computed(() => authStore.hasPermission('finance.receivable.pay'))
+
 const activeTab = ref('receivables')
 const selectedRows = ref([])
 const showGenerateDialog = ref(false)
@@ -671,7 +673,7 @@ onMounted(async () => {
                   <i class="pi pi-refresh"></i>
                   Update Invoice
                 </button>
-                <button v-else-if="data.invoice?.generated" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)">
+                <button v-else-if="data.invoice?.generated && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)">
                   <i class="pi pi-wallet"></i>
                   Bayar Invoice
                 </button>
@@ -819,7 +821,7 @@ onMounted(async () => {
               <!-- Footer: actions -->
               <div class="card-footer">
                 <button v-if="data.invoice?.generated && canRefreshInvoice(data.invoice)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data.invoice)"><i class="pi pi-refresh"></i> Update Invoice</button>
-                <button v-else-if="data.invoice?.generated" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
+                <button v-else-if="data.invoice?.generated && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
                 <button v-else-if="data.paid_invoice_with_delta" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(buildPaidInvoiceForAmend(data))"><i class="pi pi-file-edit"></i> Amend Invoice</button>
                 <button v-else class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openGenerateDialog(data)"><i class="pi pi-file-plus"></i> Buat Invoice</button>
                 <span v-if="data.invoice?.generated" class="action-pill-group">
@@ -847,7 +849,7 @@ onMounted(async () => {
                   <i class="pi pi-refresh"></i>
                   Update Invoice
                 </button>
-                <button v-else class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)">
+                <button v-else-if="canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)">
                   <i class="pi pi-wallet"></i>
                   Bayar Invoice
                 </button>
@@ -960,7 +962,7 @@ onMounted(async () => {
               <!-- Footer: actions -->
               <div class="card-footer">
                 <button v-if="canRefreshInvoice(data)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data)"><i class="pi pi-refresh"></i> Update Invoice</button>
-                <button v-else class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
+                <button v-else-if="canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
                 <span class="action-pill-group">
                   <button class="action-btn" :disabled="actionLoading" title="Kirim invoice" @click="sendInvoice(data.id)"><i class="pi pi-send"></i></button>
                   <button class="action-btn" :disabled="!getInvoicePublicUrl(data)" title="Lihat invoice" @click="openInvoiceView(data)"><i class="pi pi-eye"></i></button>

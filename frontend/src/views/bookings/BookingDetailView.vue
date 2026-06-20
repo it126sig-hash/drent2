@@ -2106,6 +2106,7 @@ const printPayment = (payment) => {
 const bookingInvoice = computed(() => booking.value?.invoice || null);
 const hasBookingInvoice = computed(() => Boolean(bookingInvoice.value?.id));
 const canAccessInvoice = computed(() => authStore.hasPermission('finance.receivable'));
+const canPayInvoice = computed(() => authStore.hasPermission('finance.receivable.pay'));
 
 // Invoice action state
 const showGenerateInvoiceDialog = ref(false);
@@ -2975,7 +2976,7 @@ const auditUserName = (user) => user?.name || '-';
             <!-- Perbarui Invoice: invoice ada & perlu update -->
             <Button v-if="hasBookingInvoice && canRefreshBookingInvoice" label="Perbarui Invoice" icon="pi pi-refresh" size="small" class="bg-amber-500 hover:bg-amber-600 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Invoice perlu diperbarui karena ada perubahan biaya" :loading="invoiceActionLoading" @click="refreshBookingInvoice" />
             <!-- Bayar Invoice: invoice ada & tidak perlu update -->
-            <Button v-else-if="hasBookingInvoice && !['cancelled', 'batal'].includes(booking.status)" label="Bayar Invoice" icon="pi pi-wallet" size="small" :disabled="['paid', 'void'].includes(bookingInvoice?.status) || invoiceActionLoading" :loading="invoiceActionLoading" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran invoice" @click="openInvoicePaymentDialog" />
+            <Button v-else-if="hasBookingInvoice && canPayInvoice && !['cancelled', 'batal'].includes(booking.status)" label="Bayar Invoice" icon="pi pi-wallet" size="small" :disabled="['paid', 'void'].includes(bookingInvoice?.status) || invoiceActionLoading" :loading="invoiceActionLoading" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran invoice" @click="openInvoicePaymentDialog" />
           </div>
 
           <div v-if="!booking.payments?.length && !booking.cancellation?.ada_refund" class="p-6 text-center text-slate-400">

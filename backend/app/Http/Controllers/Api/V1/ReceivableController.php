@@ -147,7 +147,7 @@ class ReceivableController extends Controller
 
     public function storeInvoicePayment(StoreInvoicePaymentRequest $request, Invoice $invoice): InvoiceResource
     {
-        $this->authorize('update', $invoice);
+        $this->authorize('pay', $invoice);
 
         try {
             return new InvoiceResource($this->receivableService->storePayment($invoice, $request->validated()));

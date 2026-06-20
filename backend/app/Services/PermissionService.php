@@ -34,6 +34,7 @@ class PermissionService
         // Finance - Piutang
         'finance.receivable',
         'finance.receivable.create',
+        'finance.receivable.pay',
         'finance.receivable.update',
 
         // Finance - Rent to Rent
