@@ -16,9 +16,12 @@ import Textarea from 'primevue/textarea'
 import { useToast } from 'primevue/usetoast'
 import { usePaymentAccount } from '../../composables/usePaymentAccount'
 import { useRentToRent } from '../../composables/useRentToRent'
+import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
 const toast = useToast()
+const authStore = useAuthStore()
+const canPayR2r = computed(() => authStore.hasPermission('finance.rent_to_rent.pay'))
 const {
   debts,
   bills,
@@ -666,11 +669,11 @@ onMounted(async () => {
             <Column header="Aksi" style="min-width: 9rem">
               <template #body="{ data }">
                 <div class="table-actions">
-                  <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['cancelled', 'paid'].includes(data.status)" @click="openDirectPayment(data)">
+                  <button v-if="canPayR2r" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['cancelled', 'paid'].includes(data.status)" @click="openDirectPayment(data)">
                     <i class="pi pi-wallet"></i>
                     Bayar
                   </button>
-                  <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(data.status)" @click="submitMarkDebtPaid(data)">
+                  <button v-if="canPayR2r" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(data.status)" @click="submitMarkDebtPaid(data)">
                     <i class="pi pi-check"></i>
                     Selesai
                   </button>
@@ -780,11 +783,11 @@ onMounted(async () => {
 
               <!-- Footer: actions -->
               <div class="card-footer">
-                <button class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || debt.remaining_amount <= 0 || ['cancelled', 'paid'].includes(debt.status)" @click="openDirectPayment(debt)">
+                <button v-if="canPayR2r" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading || debt.remaining_amount <= 0 || ['cancelled', 'paid'].includes(debt.status)" @click="openDirectPayment(debt)">
                   <i class="pi pi-wallet"></i>
                   Bayar
                 </button>
-                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(debt.status)" @click="submitMarkDebtPaid(debt)">
+                <button v-if="canPayR2r" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || ['cancelled', 'paid'].includes(debt.status)" @click="submitMarkDebtPaid(debt)">
                   <i class="pi pi-check"></i>
                   Tag Paid
                 </button>
@@ -807,7 +810,7 @@ onMounted(async () => {
           <Column header="Aksi" style="min-width: 15rem">
             <template #body="{ data }">
               <div class="table-actions">
-                <button class="btn-pill btn-primary btn-pill-compact" :disabled="data.remaining_amount <= 0 || ['void', 'void_requested'].includes(data.status)" @click="openPaymentDialog(data)">
+                <button v-if="canPayR2r" class="btn-pill btn-primary btn-pill-compact" :disabled="data.remaining_amount <= 0 || ['void', 'void_requested'].includes(data.status)" @click="openPaymentDialog(data)">
                   <i class="pi pi-wallet"></i>
                   Bayar
                 </button>
@@ -815,7 +818,7 @@ onMounted(async () => {
                   <i class="pi pi-send"></i>
                   Kirim
                 </button>
-                <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['void', 'void_requested', 'paid'].includes(data.status)" @click="submitMarkBillPaid(data)">
+                <button v-if="canPayR2r" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || data.remaining_amount <= 0 || ['void', 'void_requested', 'paid'].includes(data.status)" @click="submitMarkBillPaid(data)">
                   <i class="pi pi-check"></i>
                   Selesai
                 </button>
@@ -933,11 +936,11 @@ onMounted(async () => {
                 <i class="pi pi-send"></i>
                 Kirim
               </button>
-              <button class="btn-pill btn-primary btn-pill-compact" :disabled="bill.remaining_amount <= 0 || ['void', 'void_requested'].includes(bill.status)" @click="openPaymentDialog(bill)">
+              <button v-if="canPayR2r" class="btn-pill btn-primary btn-pill-compact" :disabled="bill.remaining_amount <= 0 || ['void', 'void_requested'].includes(bill.status)" @click="openPaymentDialog(bill)">
                 <i class="pi pi-wallet"></i>
                 Bayar
               </button>
-              <button class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || bill.remaining_amount <= 0 || ['void', 'void_requested', 'paid'].includes(bill.status)" @click="submitMarkBillPaid(bill)">
+              <button v-if="canPayR2r" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading || bill.remaining_amount <= 0 || ['void', 'void_requested', 'paid'].includes(bill.status)" @click="submitMarkBillPaid(bill)">
                 <i class="pi pi-check"></i>
                 Tag Paid
               </button>

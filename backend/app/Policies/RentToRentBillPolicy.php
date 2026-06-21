@@ -32,4 +32,12 @@ class RentToRentBillPolicy
     {
         return $this->view($user, $bill);
     }
+
+    public function pay(User $user, RentToRentBill $bill): bool
+    {
+        if ($user->role === 'superadmin') return true;
+
+        return app(PermissionService::class)->hasPermission($user, 'finance.rent_to_rent.pay')
+            && $user->branch_id === $bill->branch_id;
+    }
 }

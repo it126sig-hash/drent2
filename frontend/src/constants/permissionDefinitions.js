@@ -43,7 +43,8 @@ export const permissionDefinitions = [
         name: 'Rent to Rent',
         items: [
           { key: 'finance.rent_to_rent', label: 'Lihat Rent to Rent' },
-          { key: 'finance.rent_to_rent.create', label: 'Buat Tagihan R2R / Bayar' },
+          { key: 'finance.rent_to_rent.create', label: 'Buat Tagihan R2R' },
+          { key: 'finance.rent_to_rent.pay', label: 'Bayar Rent to Rent' },
           { key: 'finance.rent_to_rent.update', label: 'Edit Rent to Rent' }
         ]
       },

@@ -16,9 +16,12 @@ import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue
 import { useCostType } from '../../composables/useCostType'
 import { useOperationalFund } from '../../composables/useOperationalFund'
 import { usePaymentAccount } from '../../composables/usePaymentAccount'
+import { useAuthStore } from '../../stores/auth'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const canDisburseFund = computed(() => authStore.hasPermission('finance.operational_cost.create'))
 const {
   bookings,
   history,

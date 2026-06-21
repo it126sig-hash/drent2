@@ -40,6 +40,7 @@ class PermissionService
         // Finance - Rent to Rent
         'finance.rent_to_rent',
         'finance.rent_to_rent.create',
+        'finance.rent_to_rent.pay',
         'finance.rent_to_rent.update',
 
         // Finance - Biaya Operasional

@@ -4,12 +4,17 @@ namespace App\Policies;
 
 use App\Models\DriverOperationalFund;
 use App\Models\User;
+use App\Services\PermissionService;
 
 class DriverOperationalFundPolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance', 'driver_tetap'], true);
+        if ($user->role === 'superadmin' || $user->role === 'driver_tetap') {
+            return true;
+        }
+
+        return app(PermissionService::class)->hasPermission($user, 'finance.operational_cost');
     }
 
     public function view(User $user, DriverOperationalFund $fund): bool
@@ -22,13 +27,17 @@ class DriverOperationalFundPolicy
             return $fund->driver?->user_id === $user->id;
         }
 
-        return in_array($user->role, ['admin_branch', 'finance'], true)
+        return app(PermissionService::class)->hasPermission($user, 'finance.operational_cost')
             && $user->branch_id === $fund->branch_id;
     }
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['superadmin', 'admin_branch', 'finance'], true);
+        if ($user->role === 'superadmin') {
+            return true;
+        }
+
+        return app(PermissionService::class)->hasPermission($user, 'finance.operational_cost.create');
     }
 
     public function accept(User $user, DriverOperationalFund $fund): bool
@@ -48,11 +57,11 @@ class DriverOperationalFundPolicy
                 return $fund->driver?->user_id === $user->id;
             }
 
-            return in_array($user->role, ['admin_branch', 'finance'], true)
+            return app(PermissionService::class)->hasPermission($user, 'finance.operational_cost.create')
                 && $user->branch_id === $fund->branch_id;
         }
 
-        return in_array($user->role, ['admin_branch', 'finance'], true);
+        return app(PermissionService::class)->hasPermission($user, 'finance.operational_cost.create');
     }
 
     public function review(User $user, ?DriverOperationalFund $fund = null): bool
@@ -62,10 +71,10 @@ class DriverOperationalFundPolicy
         }
 
         if ($fund) {
-            return in_array($user->role, ['admin_branch', 'finance'], true)
+            return app(PermissionService::class)->hasPermission($user, 'finance.operational_cost.update')
                 && $user->branch_id === $fund->branch_id;
         }
 
-        return in_array($user->role, ['admin_branch', 'finance'], true);
+        return app(PermissionService::class)->hasPermission($user, 'finance.operational_cost.update');
     }
 }
