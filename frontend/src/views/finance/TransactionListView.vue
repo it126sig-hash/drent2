@@ -52,6 +52,9 @@ const handledByLoading = ref(false)
 const formatCurrency = (value) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value || 0)
 
+const rowTypeLabel = (type) => ({ initial: 'Initial', extend: 'Extend', rolling: 'Rolling' }[type] || type)
+const rowTypeBadgeClass = (type) => ({ initial: 'neutral', extend: 'info', rolling: 'warning' }[type] || 'neutral')
+
 const formatDateTime = (value) => {
   if (!value) return '-'
   try {
@@ -79,7 +82,7 @@ const fetchTransactionList = async (page = 1) => {
   loading.value = true
   try {
     const statusesMap = {
-      semua: ['waiting_list', 'rental_unit', 'selesai', 'batal'],
+      semua: ['waiting_list', 'rental_unit', 'selesai', 'batal', 'reschedule'],
       waiting_list: ['waiting_list'],
       rental_unit: ['rental_unit'],
       selesai: ['selesai'],
@@ -341,7 +344,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
     <!-- Data Table Shell -->
     <div v-if="!isMobile" class="table-shell app-card">
-      <DataTable :value="transactions" dataKey="id" :loading="loading" scrollable scrollHeight="flex"
+      <DataTable :value="transactions" dataKey="row_id" :loading="loading" scrollable scrollHeight="flex"
         class="w-full drent-datatable">
         <!-- Columns -->
         <Column header="Kode Booking" style="min-width: 11rem" bodyClass="kode-booking-col">
@@ -351,8 +354,9 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
                 @click="openDetail(data.id)">
                 {{ data.kode_booking }}
               </button>
-              <div class="mt-1">
+              <div class="mt-1 flex items-center gap-1 flex-wrap">
                 <BookingStatusBadge :status="data.status" />
+                <span class="status-badge" :class="rowTypeBadgeClass(data.row_type)">{{ rowTypeLabel(data.row_type) }}</span>
               </div>
             </div>
           </template>
@@ -463,10 +467,10 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
           </template>
         </Column>
 
-        <Column header="Ditangani" style="min-width: 10rem">
+        <Column header="Dibuat Oleh" style="min-width: 10rem">
           <template #body="{ data }">
-            <span v-if="data.handled_by" class="text-primary text-xs font-body font-semibold">
-              {{ data.handled_by.name }}
+            <span v-if="data.dibuat_oleh" class="text-primary text-xs font-body font-semibold">
+              {{ data.dibuat_oleh.name }}
             </span>
             <span v-else class="text-secondary text-xs">-</span>
           </template>
@@ -481,13 +485,17 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
     </div>
 
     <div v-else class="mobile-card-list">
-      <article v-for="trx in transactions" :key="trx.id" class="mobile-card" @click="openDetail(trx.id)">
+      <article v-for="trx in transactions" :key="trx.row_id" class="mobile-card" @click="openDetail(trx.id)">
         <div class="card-header">
           <button class="booking-code-link font-headline font-semibold text-primary text-sm" @click.stop="openDetail(trx.id)">{{ trx.kode_booking }}</button>
-          <BookingStatusBadge :status="trx.status" />
+          <div class="flex items-center gap-1 flex-wrap">
+            <BookingStatusBadge :status="trx.status" />
+            <span class="status-badge" :class="rowTypeBadgeClass(trx.row_type)">{{ rowTypeLabel(trx.row_type) }}</span>
+          </div>
         </div>
         <div class="card-body">
           <div><span class="field-hint">Konsumen</span> {{ trx.customer?.nama || '-' }}</div>
+          <div><span class="field-hint">Dibuat Oleh</span> {{ trx.dibuat_oleh?.name || '-' }}</div>
           <div v-if="trx.unit"><span class="field-hint">Unit</span> {{ trx.unit.tipe }} · {{ trx.unit.no_polisi }}</div>
           <div>
             <span class="field-hint">{{ trx.status === 'batal' ? 'Uang Masuk' : 'Total Biaya' }}</span>

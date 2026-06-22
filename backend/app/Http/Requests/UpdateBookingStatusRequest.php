@@ -14,8 +14,9 @@ class UpdateBookingStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'string', 'in:follow_up,confirm,waiting_list,rental_unit,selesai,batal'],
-            'catatan_status' => ['nullable', 'string', 'max:500'],
+            'status' => ['required', 'string', 'in:follow_up,confirm,waiting_list,rental_unit,selesai,batal,reschedule'],
+            'catatan_status' => [$this->status === 'reschedule' ? 'required' : 'nullable', 'string', 'max:500'],
+            'reschedule_date' => ['nullable', 'date'],
             'returned_at' => ['nullable', 'date'],
         ];
     }

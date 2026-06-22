@@ -75,13 +75,14 @@ export function useReceivable() {
     }
   }
 
-  const fetchInvoices = async (page = 1) => {
+  const fetchInvoices = async (page = 1, extraFilters = {}) => {
     loading.value = true
     error.value = null
 
     try {
       const response = await receivableApi.getInvoices({
         ...invoiceFilters.value,
+        ...extraFilters,
         page,
         per_page: pagination.value.per_page,
       })
@@ -158,13 +159,32 @@ export function useReceivable() {
     }
   }
 
-  const markSent = async (invoiceId) => {
+  const merge = async (payload) => {
+    actionLoading.value = true
+    try {
+      const response = await receivableApi.mergeInvoices(payload)
+      toast.add({ severity: 'success', summary: 'Sukses', detail: 'Invoice berhasil digabungkan', life: 3000 })
+      await Promise.all([
+        fetchAll(pagination.value.current_page),
+        fetchInvoices(pagination.value.current_page),
+      ])
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menggabungkan invoice'
+      toast.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  const markSent = async (invoiceId, extraFilters = {}) => {
     actionLoading.value = true
     try {
       const response = await receivableApi.markInvoiceSent(invoiceId)
       toast.add({ severity: 'success', summary: 'Sukses', detail: 'Link publik invoice sudah siap', life: 3000 })
       // Hanya refresh invoices — receivables tidak berubah saat mark sent
-      await fetchInvoices(pagination.value.current_page)
+      await fetchInvoices(pagination.value.current_page, extraFilters)
       return response.data.data
     } catch (err) {
       error.value = err.response?.data?.message || 'Gagal memperbarui waktu kirim invoice'
@@ -175,7 +195,7 @@ export function useReceivable() {
     }
   }
 
-  const refreshInvoiceAmount = async (invoiceId, data = {}) => {
+  const refreshInvoiceAmount = async (invoiceId, data = {}, extraFilters = {}) => {
     actionLoading.value = true
     try {
       const response = await receivableApi.refreshInvoiceAmount(invoiceId, data)
@@ -183,7 +203,7 @@ export function useReceivable() {
       // Refresh kedua list paralel; nominal berubah di kedua tab
       await Promise.all([
         fetchAll(pagination.value.current_page),
-        fetchInvoices(pagination.value.current_page),
+        fetchInvoices(pagination.value.current_page, extraFilters),
       ])
       return response.data.data
     } catch (err) {
@@ -323,6 +343,7 @@ export function useReceivable() {
     fetchInvoices,
     fetchPaymentHistory,
     generate,
+    merge,
     markSent,
     refreshInvoiceAmount,
     openPdf,

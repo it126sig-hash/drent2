@@ -25,7 +25,7 @@ const canEdit = computed(() => authStore.hasPermission('master.cost_type.update'
 const canDelete = computed(() => authStore.hasPermission('master.cost_type.delete'))
 
 const showDialog = ref(false)
-const form = ref({ id: null, nama: '', kode: '', require_description: false, sort_order: 0, is_active: true })
+const form = ref({ id: null, nama: '', kode: '', kledo_code: '', require_description: false, sort_order: 0, is_active: true })
 const formErrors = ref({})
 const saving = ref(false)
 
@@ -37,13 +37,13 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 onMounted(() => fetchAll())
 
 const openNew = () => {
-  form.value = { id: null, nama: '', kode: '', require_description: false, sort_order: 0, is_active: true }
+  form.value = { id: null, nama: '', kode: '', kledo_code: '', require_description: false, sort_order: 0, is_active: true }
   formErrors.value = {}
   showDialog.value = true
 }
 
 const openEdit = (row) => {
-  form.value = { id: row.id, nama: row.nama, kode: row.kode, require_description: !!row.require_description, sort_order: row.sort_order ?? 0, is_active: !!row.is_active }
+  form.value = { id: row.id, nama: row.nama, kode: row.kode, kledo_code: row.kledo_code ?? '', require_description: !!row.require_description, sort_order: row.sort_order ?? 0, is_active: !!row.is_active }
   formErrors.value = {}
   showDialog.value = true
 }
@@ -154,6 +154,12 @@ const onPageChange = (event) => {
           </template>
         </Column>
 
+        <Column field="kledo_code" header="Kledo Code" style="min-width:130px">
+          <template #body="{ data }">
+            <span class="kode-badge mono-text">{{ data.kledo_code || '-' }}</span>
+          </template>
+        </Column>
+
         <Column field="require_description" header="Butuh Keterangan" style="min-width:140px;text-align:center">
           <template #body="{ data }">
             <span class="drent-badge" :class="data.require_description ? 'warning' : 'neutral'">
@@ -199,6 +205,7 @@ const onPageChange = (event) => {
         </div>
         <div class="card-body">
           <div><span class="field-hint">Kode</span> <span class="kode-badge">{{ ct.kode }}</span></div>
+          <div><span class="field-hint">Kledo Code</span> {{ ct.kledo_code || '-' }}</div>
           <div><span class="field-hint">Urutan</span> {{ ct.sort_order }}</div>
           <div><span class="field-hint">Butuh Keterangan</span> {{ ct.require_description ? 'Ya' : 'Tidak' }}</div>
         </div>
@@ -236,6 +243,11 @@ const onPageChange = (event) => {
           <InputText v-model="form.kode" placeholder="driver, bbm, tol..." class="w-full" :class="{ 'p-invalid': formErrors.kode }" />
           <small class="p-error" v-if="formErrors.kode">{{ formErrors.kode[0] }}</small>
           <small class="hint">Huruf kecil, tanpa spasi. Digunakan sebagai identifier.</small>
+        </div>
+        <div class="field">
+          <label>Kledo Code</label>
+          <InputText v-model="form.kledo_code" placeholder="Kode akun di Kledo..." class="w-full" :class="{ 'p-invalid': formErrors.kledo_code }" />
+          <small class="p-error" v-if="formErrors.kledo_code">{{ formErrors.kledo_code[0] }}</small>
         </div>
         <div class="field">
           <label>Urutan Tampil</label>

@@ -25,6 +25,13 @@ class BookingModificationService
         $this->validateStatus($booking);
 
         return DB::transaction(function () use ($booking, $data) {
+            $modalMobil = $this->resolveModalMobil(
+                $data['unit_id'],
+                $data['pricing_mode'],
+                $data['pricing_package_id'] ?? null,
+                $data['paket_sewa'],
+            );
+
             $detail = $booking->bookingDetails()->create([
                 'unit_id'            => $data['unit_id'],
                 'driver_id'          => $data['driver_id'] ?? null,
@@ -33,6 +40,7 @@ class BookingModificationService
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],
                 'harga_mobil'        => $data['harga_mobil'],
+                'modal_mobil'        => $modalMobil,
                 'diskon_mobil'       => $data['diskon_mobil'] ?? 0,
                 'pricing_mode'       => $data['pricing_mode'],
                 'pricing_package_id' => $data['pricing_package_id'] ?? null,
@@ -104,6 +112,12 @@ class BookingModificationService
             if (array_key_exists('harga_all_in_lama', $data)) {
                 $oldDetailUpdate['harga_all_in'] = $data['harga_all_in_lama'];
             }
+            $oldDetailUpdate['modal_mobil'] = $this->resolveModalMobil(
+                $oldDetailUpdate['unit_id'] ?? $oldDetail->unit_id,
+                $data['pricing_mode_lama'] ?? $oldDetail->pricing_mode,
+                $data['pricing_package_id_lama'] ?? $oldDetail->pricing_package_id,
+                $oldDetailUpdate['paket_sewa'] ?? $oldDetail->paket_sewa,
+            );
             $oldDetail->update($oldDetailUpdate);
 
             if (array_key_exists('costs_lama', $data)) {
@@ -123,6 +137,13 @@ class BookingModificationService
             app(RentToRentService::class)->syncDetail($oldDetail->fresh(['booking', 'unit.rentalOwner']));
 
             // Step 2: buat detail baru type=rolling dengan form lengkap
+            $newModalMobil = $this->resolveModalMobil(
+                $data['unit_id'],
+                $data['pricing_mode'],
+                $data['pricing_package_id'] ?? null,
+                $data['paket_sewa'],
+            );
+
             $newDetail = $booking->bookingDetails()->create([
                 'unit_id'            => $data['unit_id'],
                 'driver_id'          => $data['driver_id'] ?? null,
@@ -131,6 +152,7 @@ class BookingModificationService
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],
                 'harga_mobil'        => $data['harga_mobil'],
+                'modal_mobil'        => $newModalMobil,
                 'diskon_mobil'       => $data['diskon_mobil'] ?? 0,
                 'pricing_mode'       => $data['pricing_mode'],
                 'pricing_package_id' => $data['pricing_package_id'] ?? null,
@@ -226,6 +248,91 @@ class BookingModificationService
         });
     }
 
+    /**
+     * Request pembatalan transaksi Extend — butuh approval supervisor (lihat approveCancelExtend).
+     * Hanya extend terakhir yang boleh dibatalkan, sama seperti aturan edit di frontend (lastExtendDetail).
+     */
+    public function requestCancelExtend(BookingDetail $detail, string $reason): BookingDetail
+    {
+        if ($detail->detail_type !== 'extend') {
+            throw new UnprocessableEntityHttpException('Hanya transaksi Extend yang bisa diajukan pembatalan.');
+        }
+
+        if ($detail->status !== 'aktif') {
+            throw new UnprocessableEntityHttpException('Transaksi Extend ini sudah tidak aktif.');
+        }
+
+        $isLastExtend = !$detail->booking->bookingDetails()
+            ->where('detail_type', 'extend')
+            ->where('id', '>', $detail->id)
+            ->exists();
+
+        if (!$isLastExtend) {
+            throw new UnprocessableEntityHttpException('Hanya transaksi Extend terakhir yang bisa dibatalkan.');
+        }
+
+        if ($detail->cancel_extend_status === 'pending') {
+            throw new UnprocessableEntityHttpException('Request batal Extend masih menunggu approval supervisor.');
+        }
+
+        $detail->update([
+            'cancel_extend_status' => 'pending',
+            'cancel_extend_reason' => $reason,
+            'cancel_extend_requested_by' => auth()->id(),
+            'cancel_extend_requested_at' => now(),
+            'cancel_extend_approved_by' => null,
+            'cancel_extend_approved_at' => null,
+            'cancel_extend_rejected_by' => null,
+            'cancel_extend_rejected_at' => null,
+            'cancel_extend_rejection_note' => null,
+        ]);
+
+        return $detail->fresh();
+    }
+
+    public function approveCancelExtend(BookingDetail $detail): BookingDetail
+    {
+        if ($detail->cancel_extend_status !== 'pending') {
+            throw new UnprocessableEntityHttpException('Hanya request batal Extend berstatus pending yang bisa disetujui.');
+        }
+
+        if ($detail->cancel_extend_requested_by === auth()->id() && auth()->user()?->role !== 'superadmin') {
+            throw new UnprocessableEntityHttpException('Request harus di-ACC oleh supervisor lain.');
+        }
+
+        return DB::transaction(function () use ($detail) {
+            $detail->update([
+                'status' => 'batal',
+                'cancel_extend_status' => 'approved',
+                'cancel_extend_approved_by' => auth()->id(),
+                'cancel_extend_approved_at' => now(),
+            ]);
+
+            app(RentToRentService::class)->syncDetail($detail->fresh(['booking', 'unit.rentalOwner']));
+
+            $booking = $detail->booking->load(['bookingDetails.costs', 'payments']);
+            $this->billingService->updateCachedSisaTagihan($booking);
+
+            return $detail->fresh();
+        });
+    }
+
+    public function rejectCancelExtend(BookingDetail $detail, ?string $note = null): BookingDetail
+    {
+        if ($detail->cancel_extend_status !== 'pending') {
+            throw new UnprocessableEntityHttpException('Hanya request batal Extend berstatus pending yang bisa ditolak.');
+        }
+
+        $detail->update([
+            'cancel_extend_status' => 'rejected',
+            'cancel_extend_rejected_by' => auth()->id(),
+            'cancel_extend_rejected_at' => now(),
+            'cancel_extend_rejection_note' => $note,
+        ]);
+
+        return $detail->fresh();
+    }
+
     public function addAdditionalCost(Booking $booking, array $data): BookingCost
     {
         if (!in_array($booking->status, ['rental_unit', 'waiting_list'])) {
@@ -263,5 +370,38 @@ class BookingModificationService
         if ($booking->status !== 'rental_unit') {
             throw new UnprocessableEntityHttpException('Modifikasi hanya diperbolehkan untuk booking dengan status Rental Unit.');
         }
+    }
+
+    /**
+     * Aturan modal sama seperti booking initial (lihat BookingService::assignDetail()):
+     * all_in tanpa pricing package → pakai modal all-in; selain itu → modal non-all-in.
+     * Keduanya dipilih lagi berdasarkan paket_sewa (harian/mingguan/bulanan).
+     */
+    private function resolveModalMobil(?int $unitId, ?string $pricingMode, ?int $pricingPackageId, ?string $paketSewa): int
+    {
+        if (empty($unitId)) {
+            return 0;
+        }
+
+        $unit = \App\Models\Unit::find($unitId);
+        if (!$unit) {
+            return 0;
+        }
+
+        $paket = strtolower($paketSewa ?? '');
+
+        if (($pricingMode ?? 'non_all_in') === 'all_in' && empty($pricingPackageId)) {
+            return match ($paket) {
+                'mingguan' => $unit->modal_all_in_1_minggu,
+                'bulanan' => $unit->modal_all_in_1_bulan,
+                default => $unit->modal_all_in,
+            };
+        }
+
+        return match ($paket) {
+            'mingguan' => $unit->modal_1_minggu,
+            'bulanan' => $unit->modal_1_bulan,
+            default => $unit->modal_1_hari,
+        };
     }
 }

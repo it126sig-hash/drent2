@@ -403,8 +403,10 @@ class DriverOperationalFundService
                 'rejection_reason' => $expense->rejection_reason,
             ]);
 
-        $items = $funds
-            ->merge($expenses)
+        // ponytail: $funds/$expenses are Eloquent Collections mapped to plain arrays; merge() via
+        // collect() avoids Eloquent\Collection::merge() trying to call getKey() on array items
+        $items = collect($funds->all())
+            ->merge($expenses->all())
             ->sortByDesc(fn ($item) => strtotime($item['happened_at'] ?? '1970-01-01'))
             ->values();
 

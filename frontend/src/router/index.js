@@ -12,6 +12,11 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      path: "/invoice/soa/:token",
+      name: "PublicMergedInvoice",
+      component: () => import("../views/public/PublicMergedInvoiceView.vue"),
+    },
+    {
       path: "/invoice/:token",
       name: "PublicInvoice",
       component: () => import("../views/public/PublicInvoiceView.vue"),
@@ -187,6 +192,12 @@ const router = createRouter({
           name: "OperationalCostList",
           component: () => import("../views/finance/OperationalCostListView.vue"),
           meta: { permission: "finance.operational_cost", keepAlive: false },
+        },
+        {
+          path: "/finance/fleet-cards",
+          name: "FleetCardList",
+          component: () => import("../views/finance/FleetCardListView.vue"),
+          meta: { permission: "finance.fleet_card", keepAlive: false },
         },
         {
           path: "/finance/rent-to-rent",

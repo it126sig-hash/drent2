@@ -22,7 +22,9 @@ import { useAuthStore } from '../../stores/auth'
 import { printPaymentReceipt, buildReceiptFromPaymentHistory } from '../../utils/printReceipt'
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue'
 import { fetchCities } from '../../api/city'
+import { getInvoice } from '../../api/receivable'
 import GenerateInvoiceDialog from '../../components/invoices/GenerateInvoiceDialog.vue'
+import MergeInvoiceDialog from '../../components/invoices/MergeInvoiceDialog.vue'
 import InvoicePaymentDialog from '../../components/invoices/InvoicePaymentDialog.vue'
 import InvoiceHistoryDialog from '../../components/invoices/InvoiceHistoryDialog.vue'
 
@@ -60,6 +62,7 @@ const canPayInvoice = computed(() => authStore.hasPermission('finance.receivable
 const activeTab = ref('receivables')
 const selectedRows = ref([])
 const showGenerateDialog = ref(false)
+const showMergeDialog = ref(false)
 const showPaymentDialog = ref(false)
 const selectedReceivableRows = ref([])
 const selectedInvoice = ref(null)
@@ -108,7 +111,6 @@ const generatedInvoiceStatusOptions = [
   { label: 'Semua', value: null },
   { label: 'Dibuat', value: 'generated' },
   { label: 'Partial Paid', value: 'partial_paid' },
-  { label: 'Paid', value: 'paid' },
 ]
 const paymentHistoryViewOptions = [
   { label: 'Pembayaran Terakhir', value: 'latest', icon: 'pi pi-clock' },
@@ -137,6 +139,21 @@ const generateInvoiceBookings = computed(() =>
     due_date: r.rent_period?.tgl_kembali || r.due_date || null,
   }))
 )
+const mergeInvoiceCandidates = computed(() =>
+  selectedReceivableRows.value.map(r => ({
+    id: r.invoice.id,
+    invoice_number: r.invoice.number,
+    kode_booking: r.kode_booking,
+    remaining_amount: r.invoice.remaining_amount,
+    due_date: r.invoice.due_date || r.due_date || null,
+  }))
+)
+
+const invoiceTabExtraFilters = computed(() => {
+  if (activeTab.value === 'merged') return { only_merged: true, exclude_paid: true }
+  if (activeTab.value === 'paid') return { status: 'paid' }
+  return {}
+})
 
 const selectedVoidPaymentId = computed(() => selectedVoidPayment.value?.source === 'invoice'
   ? invoicePaymentId(selectedVoidPayment.value)
@@ -193,7 +210,7 @@ const rowClass = (data) => {
         return warning.severity === 'danger' ? 'row-due-overdue' : 'row-due-warning'
       }
     }
-  } else if (activeTab.value === 'invoices') {
+  } else if (activeTab.value === 'merged' || activeTab.value === 'paid') {
     const firstBooking = data.bookings?.[0]
     const customerStatus = firstBooking?.customer_status || 'normal'
     const warning = getInvoiceDueWarning(data, customerStatus)
@@ -264,7 +281,7 @@ const onPage = (event) => {
     return
   }
 
-  fetchInvoices(pagination.value.current_page)
+  fetchInvoices(pagination.value.current_page, invoiceTabExtraFilters.value)
 }
 
 const onLatestPaymentHistoryPage = (event) => {
@@ -294,7 +311,7 @@ const applyFilters = () => {
     return
   }
 
-  fetchInvoices(1)
+  fetchInvoices(1, invoiceTabExtraFilters.value)
 }
 
 const switchTab = (tab) => {
@@ -306,8 +323,8 @@ const switchTab = (tab) => {
     return
   }
 
-  if (tab === 'invoices') {
-    fetchInvoices(1)
+  if (tab === 'merged' || tab === 'paid') {
+    fetchInvoices(1, invoiceTabExtraFilters.value)
     return
   }
 
@@ -340,18 +357,70 @@ const openGenerateDialog = (row = null) => {
   showGenerateDialog.value = true
 }
 
+const openMergeDialog = () => {
+  const rows = selectedRows.value
+  if (rows.length < 2) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Pilih invoice',
+      detail: 'Pilih minimal 2 booking dengan invoice aktif untuk digabungkan.',
+      life: 4000,
+    })
+    return
+  }
+
+  const notGenerated = rows.filter(item => !item.invoice?.generated)
+  if (notGenerated.length) {
+    const codes = notGenerated.map(item => item.kode_booking).join(', ')
+    toast.add({
+      severity: 'error',
+      summary: 'Invoice belum dibuat',
+      detail: `Booking ${codes} belum memiliki invoice. Buat invoice untuk booking tersebut terlebih dahulu sebelum menggabungkan.`,
+      life: 5000,
+    })
+    return
+  }
+
+  const alreadyMerged = rows.filter(item => item.invoice?.merged_into)
+  if (alreadyMerged.length) {
+    const numbers = alreadyMerged.map(item => item.invoice.number).join(', ')
+    toast.add({
+      severity: 'error',
+      summary: 'Sudah digabung',
+      detail: `Invoice ${numbers} sudah tergabung dalam invoice lain.`,
+      life: 5000,
+    })
+    return
+  }
+
+  const ineligible = rows.filter(item => ['void', 'paid'].includes(item.invoice?.status))
+  if (ineligible.length) {
+    const numbers = ineligible.map(item => item.invoice.number).join(', ')
+    toast.add({
+      severity: 'error',
+      summary: 'Tidak bisa digabungkan',
+      detail: `Invoice ${numbers} sudah lunas atau void, tidak bisa digabungkan.`,
+      life: 5000,
+    })
+    return
+  }
+
+  selectedReceivableRows.value = rows
+  showMergeDialog.value = true
+}
+
 const onInvoiceCreated = async () => {
   selectedRows.value = []
   selectedReceivableRows.value = []
   await fetchAll(pagination.value.current_page)
-  if (activeTab.value === 'invoices') {
-    await fetchInvoices(1)
+  if (activeTab.value === 'merged' || activeTab.value === 'paid') {
+    await fetchInvoices(1, invoiceTabExtraFilters.value)
   }
 }
 
 const sendInvoice = async (invoiceId) => {
   if (!invoiceId) return
-  const invoice = await markSent(invoiceId)
+  const invoice = await markSent(invoiceId, invoiceTabExtraFilters.value)
   const publicUrl = invoice?.public_path
     ? new URL(invoice.public_path, window.location.origin).toString()
     : invoice?.public_url
@@ -367,7 +436,7 @@ const submitRefreshInvoice = async (invoice, confirmSentRevision = false) => {
 
   await refreshInvoiceAmount(invoice.id, {
     confirm_sent_revision: confirmSentRevision,
-  })
+  }, invoiceTabExtraFilters.value)
 }
 
 const openRefreshInvoiceDialog = (invoice) => {
@@ -419,6 +488,16 @@ const openInvoiceView = (invoice) => {
 const openPaymentDialog = (invoice) => {
   selectedInvoice.value = invoice
   showPaymentDialog.value = true
+}
+
+const openPaymentForMergedChild = async (mergedInto) => {
+  if (!mergedInto?.id) return
+  try {
+    const response = await getInvoice(mergedInto.id)
+    openPaymentDialog(response.data.data)
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Gagal', detail: 'Gagal memuat invoice gabungan.', life: 4000 })
+  }
 }
 
 const onInvoicePaid = async () => {
@@ -565,8 +644,11 @@ onMounted(async () => {
   const initialTab = route.query.tab
   const initialSearch = typeof route.query.search === 'string' ? route.query.search : ''
 
-  if (initialTab === 'invoices') {
-    activeTab.value = 'invoices'
+  if (initialTab === 'merged' || initialTab === 'invoices') {
+    activeTab.value = 'merged'
+    if (initialSearch) invoiceFilters.value.search = initialSearch
+  } else if (initialTab === 'paid') {
+    activeTab.value = 'paid'
     if (initialSearch) invoiceFilters.value.search = initialSearch
   } else if (initialTab === 'receivables') {
     activeTab.value = 'receivables'
@@ -576,8 +658,8 @@ onMounted(async () => {
   }
 
   const promises = [fetchPaymentAccounts({ per_page: 100 }), loadCities()]
-  if (activeTab.value === 'invoices') {
-    promises.push(fetchInvoices(1))
+  if (activeTab.value === 'merged' || activeTab.value === 'paid') {
+    promises.push(fetchInvoices(1, invoiceTabExtraFilters.value))
   } else if (activeTab.value === 'payments') {
     promises.push(fetchPaymentHistory({ view: 'all' }))
   } else {
@@ -600,19 +682,22 @@ onMounted(async () => {
         <div class="tab-toggle-container">
           <div class="pill-toggle">
             <button class="toggle-item" :class="{ active: activeTab === 'receivables' }" @click="switchTab('receivables')">
-              Piutang
-            </button>
-            <button class="toggle-item" :class="{ active: activeTab === 'invoices' }" @click="switchTab('invoices')">
               Invoice
+            </button>
+            <button class="toggle-item" :class="{ active: activeTab === 'merged' }" @click="switchTab('merged')">
+              Invoice Gabungan
+            </button>
+            <button class="toggle-item" :class="{ active: activeTab === 'paid' }" @click="switchTab('paid')">
+              Paid Invoice
             </button>
             <button class="toggle-item" :class="{ active: activeTab === 'payments' }" @click="switchTab('payments')">
               Riwayat Pembayaran
             </button>
           </div>
         </div>
-        <button class="btn-pill btn-primary" :disabled="selectedRows.length === 0 || actionLoading" @click="openGenerateDialog()">
+        <button class="btn-pill btn-primary" :disabled="selectedRows.length === 0 || actionLoading" @click="selectedRows.length > 1 ? openMergeDialog() : openGenerateDialog()">
           <i class="pi pi-file-plus"></i>
-          {{ selectedRows.length > 1 ? 'Buat Invoice Gabungan' : 'Buat Invoice' }}
+          {{ selectedRows.length > 1 ? 'Gabungkan Invoice' : 'Buat Invoice' }}
         </button>
       </div>
     </div>
@@ -638,7 +723,7 @@ onMounted(async () => {
             <label>Status Invoice</label>
             <Dropdown v-model="filters.invoice_status" :options="invoiceStatusOptions" optionLabel="label" optionValue="value" placeholder="Semua" class="w-full md:w-48" />
           </div>
-          <div class="filter-group" v-else>
+          <div class="filter-group" v-else-if="activeTab === 'merged'">
             <label>Status</label>
             <Dropdown v-model="invoiceFilters.status" :options="generatedInvoiceStatusOptions" optionLabel="label" optionValue="value" placeholder="Semua" class="w-full md:w-48" />
           </div>
@@ -672,6 +757,10 @@ onMounted(async () => {
                 <button v-if="data.invoice?.generated && canRefreshInvoice(data.invoice)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data.invoice)">
                   <i class="pi pi-refresh"></i>
                   Update Invoice
+                </button>
+                <button v-else-if="data.invoice?.generated && data.invoice?.merged_into && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentForMergedChild(data.invoice.merged_into)">
+                  <i class="pi pi-wallet"></i>
+                  Bayar via Invoice Gabungan
                 </button>
                 <button v-else-if="data.invoice?.generated && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)">
                   <i class="pi pi-wallet"></i>
@@ -713,6 +802,7 @@ onMounted(async () => {
           <Column header="Tanggal Invoice" style="min-width: 12rem">
             <template #body="{ data }">
               <BookingStatusBadge :status="(data.invoice?.number || data.paid_invoice_with_delta) ? 'generated' : 'not_generated'" :text="data.invoice?.number || data.paid_invoice_with_delta?.number || 'Belum Buat Invoice'" />
+              <Tag v-if="data.invoice?.merged_into" :value="`Digabung ke ${data.invoice.merged_into.number}`" severity="secondary" class="mt-2" />
               <Tag v-if="hasInvoiceChange(data.invoice)" :value="invoiceChangeLabel(data.invoice)" severity="warn" class="mt-2" />
               <Tag v-else-if="data.paid_invoice_with_delta" :value="changeLabel(data.paid_invoice_with_delta.reconciliation)" severity="warn" class="mt-2" />
               <div v-if="data.invoice?.generated" class="flex flex-col gap-1 mt-1">
@@ -793,7 +883,8 @@ onMounted(async () => {
               </div>
 
               <!-- Warnings: invoice change + due date -->
-              <div v-if="hasInvoiceChange(data.invoice) || data.paid_invoice_with_delta || (data.invoice?.generated && (getInvoiceDueWarning(data.invoice, data.customer?.status) || data.invoice?.due_date))" class="card-warnings">
+              <div v-if="data.invoice?.merged_into || hasInvoiceChange(data.invoice) || data.paid_invoice_with_delta || (data.invoice?.generated && (getInvoiceDueWarning(data.invoice, data.customer?.status) || data.invoice?.due_date))" class="card-warnings">
+                <Tag v-if="data.invoice?.merged_into" :value="`Digabung ke ${data.invoice.merged_into.number}`" severity="secondary" />
                 <Tag v-if="hasInvoiceChange(data.invoice)" :value="invoiceChangeLabel(data.invoice)" severity="warn" />
                 <Tag v-else-if="data.paid_invoice_with_delta" :value="changeLabel(data.paid_invoice_with_delta.reconciliation)" severity="warn" />
                 <div v-if="data.invoice?.generated" class="card-due-row">
@@ -821,6 +912,7 @@ onMounted(async () => {
               <!-- Footer: actions -->
               <div class="card-footer">
                 <button v-if="data.invoice?.generated && canRefreshInvoice(data.invoice)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data.invoice)"><i class="pi pi-refresh"></i> Update Invoice</button>
+                <button v-else-if="data.invoice?.generated && data.invoice?.merged_into && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentForMergedChild(data.invoice.merged_into)"><i class="pi pi-wallet"></i> Bayar via Invoice Gabungan</button>
                 <button v-else-if="data.invoice?.generated && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.invoice?.remaining_amount ?? 0) <= 0" @click="openPaymentFromReceivable(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
                 <button v-else-if="data.paid_invoice_with_delta" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(buildPaidInvoiceForAmend(data))"><i class="pi pi-file-edit"></i> Amend Invoice</button>
                 <button v-else class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openGenerateDialog(data)"><i class="pi pi-file-plus"></i> Buat Invoice</button>
@@ -848,6 +940,10 @@ onMounted(async () => {
                 <button v-if="canRefreshInvoice(data)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data)">
                   <i class="pi pi-refresh"></i>
                   Update Invoice
+                </button>
+                <button v-else-if="data.merged_into && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentForMergedChild(data.merged_into)">
+                  <i class="pi pi-wallet"></i>
+                  Bayar via Invoice Gabungan
                 </button>
                 <button v-else-if="canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)">
                   <i class="pi pi-wallet"></i>
@@ -878,12 +974,18 @@ onMounted(async () => {
             <template #body="{ data }">
               <div class="font-bold">{{ data.invoice_number }}</div>
               <Tag :value="data.status" :severity="invoiceSeverity(data.status)" class="mt-2" />
+              <Tag v-if="data.merged_into" :value="`Digabung ke ${data.merged_into.number}`" severity="secondary" class="mt-2" />
               <Tag v-if="hasInvoiceChange(data)" :value="invoiceChangeLabel(data)" severity="warn" class="mt-2" />
             </template>
           </Column>
           <Column header="Booking" style="min-width: 16rem">
             <template #body="{ data }">
-              <div class="booking-list">
+              <div v-if="data.merged_children?.length" class="booking-list">
+                <span v-for="child in data.merged_children" :key="child.id" class="text-xs flex">
+                  {{ child.invoice_number }} ({{ formatCurrency(child.amount_at_merge) }})
+                </span>
+              </div>
+              <div v-else class="booking-list">
                 <button v-for="booking in data.bookings" :key="booking.id" class="link-button text-xs flex" @click="router.push(`/bookings/${booking.id}`)" :title="`Buka detail booking ${booking.kode_booking}`">
                   {{ booking.kode_booking }} - {{ booking.customer_name || '-' }}
                 </button>
@@ -926,8 +1028,17 @@ onMounted(async () => {
                 <Tag :value="data.status" :severity="invoiceSeverity(data.status)" />
               </div>
 
+              <Tag v-if="data.merged_into" :value="`Digabung ke ${data.merged_into.number}`" severity="secondary" style="margin: 0 14px" />
+
               <!-- Booking links -->
-              <div class="card-bookings">
+              <div v-if="data.merged_children?.length" class="card-bookings">
+                <span v-for="child in data.merged_children" :key="child.id" class="card-booking-link">
+                  <i class="pi pi-file card-meta-icon"></i>
+                  <span class="card-booking-code">{{ child.invoice_number }}</span>
+                  <span class="card-booking-customer">{{ formatCurrency(child.amount_at_merge) }}</span>
+                </span>
+              </div>
+              <div v-else class="card-bookings">
                 <button v-for="booking in data.bookings" :key="booking.id" class="card-booking-link" @click="router.push(`/bookings/${booking.id}`)">
                   <i class="pi pi-hashtag card-meta-icon"></i>
                   <span class="card-booking-code">{{ booking.kode_booking }}</span>
@@ -962,6 +1073,7 @@ onMounted(async () => {
               <!-- Footer: actions -->
               <div class="card-footer">
                 <button v-if="canRefreshInvoice(data)" class="btn-pill btn-primary btn-pill-compact" :disabled="actionLoading" @click="openRefreshInvoiceDialog(data)"><i class="pi pi-refresh"></i> Update Invoice</button>
+                <button v-else-if="data.merged_into && canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentForMergedChild(data.merged_into)"><i class="pi pi-wallet"></i> Bayar via Invoice Gabungan</button>
                 <button v-else-if="canPayInvoice" class="btn-pill btn-primary btn-pill-compact" :disabled="(data.remaining_amount ?? 0) <= 0 || data.status === 'void'" @click="openPaymentDialog(data)"><i class="pi pi-wallet"></i> Bayar Invoice</button>
                 <span class="action-pill-group">
                   <button class="action-btn" :disabled="actionLoading" title="Kirim invoice" @click="sendInvoice(data.id)"><i class="pi pi-send"></i></button>
@@ -1146,6 +1258,12 @@ onMounted(async () => {
       v-model="showGenerateDialog"
       :bookings="generateInvoiceBookings"
       @created="onInvoiceCreated"
+    />
+
+    <MergeInvoiceDialog
+      v-model="showMergeDialog"
+      :invoices="mergeInvoiceCandidates"
+      @merged="onInvoiceCreated"
     />
 
     <InvoicePaymentDialog

@@ -8,6 +8,7 @@ class Payment extends Model
 {
     protected $fillable = [
         'invoice_id',
+        'parent_payment_id',
         'payment_account_id',
         'amount',
         'paid_at',
@@ -49,6 +50,16 @@ class Payment extends Model
     public function bookingPayments()
     {
         return $this->hasMany(BookingPayment::class, 'invoice_payment_id');
+    }
+
+    public function parentPayment()
+    {
+        return $this->belongsTo(self::class, 'parent_payment_id');
+    }
+
+    public function childPayments()
+    {
+        return $this->hasMany(self::class, 'parent_payment_id');
     }
 
     public function voidRequester()

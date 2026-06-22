@@ -2,11 +2,27 @@
 
 namespace App\Http\Resources;
 
+use App\Models\BookingDetail;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class TransactionListResource extends JsonResource
 {
+    private ?BookingDetail $rowDetail = null;
+    private $allDetails = null;
+
+    /**
+     * Render this resource for a single booking_detail row (initial/extend/rolling)
+     * instead of the whole booking, so each modification shows as its own row.
+     */
+    public function forDetail(BookingDetail $detail, $allDetails): static
+    {
+        $this->rowDetail = $detail;
+        $this->allDetails = $allDetails;
+
+        return $this;
+    }
+
     /**
      * Transform the resource into an array.
      *
@@ -14,71 +30,93 @@ class TransactionListResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $detail = $this->bookingDetails->where('status', '!=', 'batal')->first()
-            ?? $this->bookingDetails->first();
+        $detail = $this->rowDetail;
+        $allDetails = $this->allDetails;
 
-        $unitInfo = null;
-        if ($detail) {
-            $unit = $detail->unit;
-            $rentalOwner = $unit?->rentalOwner;
-            $isRentToRent = $rentalOwner ? !$rentalOwner->is_owner : false;
+        $unit = $detail->unit;
+        $rentalOwner = $unit?->rentalOwner;
+        $isRentToRent = $rentalOwner ? !$rentalOwner->is_owner : false;
 
-            $unitInfo = [
-                'tipe' => $unit?->tipe ?? $detail->unit_placeholder ?? '-',
-                'no_polisi' => $unit?->no_polisi ?? '-',
-                'pemilik' => $rentalOwner?->nama ?? 'DRENT',
-                'is_rent_to_rent' => $isRentToRent,
-            ];
-        }
+        $unitInfo = [
+            'tipe' => $unit?->tipe ?? $detail->unit_placeholder ?? '-',
+            'no_polisi' => $unit?->no_polisi ?? '-',
+            'pemilik' => $rentalOwner?->nama ?? 'DRENT',
+            'is_rent_to_rent' => $isRentToRent,
+        ];
 
-        $periodeInfo = null;
-        if ($detail) {
-            $periodeInfo = [
-                'tgl_sewa' => $detail->tgl_sewa,
-                'tgl_kembali' => $detail->tgl_kembali,
-                'paket' => $this->lama_sewa . ' x ' . ucfirst($this->paket_sewa),
-                'tujuan' => $this->tujuan,
-            ];
-        }
+        $periodeInfo = [
+            'tgl_sewa' => $detail->tgl_sewa,
+            'tgl_kembali' => $detail->tgl_kembali,
+            'paket' => $detail->lama_sewa . ' x ' . ucfirst($detail->paket_sewa),
+            'tujuan' => $this->tujuan,
+        ];
 
-        $totalBiaya         = $this->computeTotalTagihan();
-        $totalRentToRent    = (int) ($this->total_rent_to_rent ?? 0);
-        // Net operasional = dana yang diserahkan ke driver - sisa yang dikembalikan + pengeluaran langsung
-        $totalFundDisbursed = (int) ($this->total_fund_disbursed ?? 0);
-        $totalFundReturned  = (int) ($this->total_fund_returned ?? 0);
-        $totalBonApproved   = (int) ($this->total_expense_approved ?? 0);
-        $totalDirectExpense = (int) ($this->total_direct_expense ?? 0);
-        $totalOperasional   = max(0, $totalFundDisbursed - $totalFundReturned) + $totalDirectExpense;
-
-        // Modal unit internal (bukan R2R) — belum keluar kas, tapi diperhitungkan sebagai HPP
-        $totalModal = 0;
-        foreach ($this->bookingDetails->where('status', '!=', 'batal') as $d) {
-            if ($d->unit_id && $d->modal_mobil > 0) {
-                $rentalOwner = $d->unit?->rentalOwner;
-                $isRentToRent = $rentalOwner ? !$rentalOwner->is_owner : false;
-                if (!$isRentToRent) {
-                    $totalModal += $d->modal_mobil * ($d->lama_sewa > 0 ? $d->lama_sewa : 1);
-                }
-            }
-        }
+        $initialDetail = $allDetails->firstWhere('detail_type', 'initial') ?? $allDetails->first();
+        $isLastDetail = $allDetails->last()?->is($detail) ?? false;
 
         if ($this->status === 'batal') {
-            // Booking dibatalkan: kolom "Total Biaya" menampilkan total uang yang
-            // sudah masuk dari konsumen, dan "Total Pengeluaran" menampilkan nominal
-            // refund yang dikembalikan ke konsumen.
-            $totalBiaya         = (int) ($this->total_payments_in ?? 0);
+            // Cancel totals (uang masuk / refund) are booking-wide, not per-detail —
+            // show them once on the most recent row only, zero on the rest.
+            $totalBiaya         = $isLastDetail ? (int) ($this->total_payments_in ?? 0) : 0;
             $totalRentToRent    = 0;
             $totalOperasional   = 0;
+            $totalFundDisbursed = 0;
+            $totalFundReturned  = 0;
+            $totalBonApproved   = 0;
+            $totalDirectExpense = 0;
+            $totalCardTopup     = 0;
+            $totalCardReturn    = 0;
+            $totalCardBon       = 0;
             $totalModal         = 0;
-            $totalPengeluaran   = (int) ($this->cancellation?->nominal_refund ?? 0);
+            $totalPengeluaran   = $isLastDetail ? (int) ($this->cancellation?->nominal_refund ?? 0) : 0;
         } else {
-            $totalPengeluaran   = $totalRentToRent + $totalOperasional + $totalModal;
+            $totalBiaya = $this->computeDetailRevenue($detail);
+
+            $totalRentToRent = (int) $this->rentToRentDebts
+                ->where('booking_detail_id', $detail->id)
+                ->sum('cached_total_amount');
+
+            $detailFunds    = $this->operationalFunds->where('booking_detail_id', $detail->id);
+            $detailExpenses = $this->operationalExpenses->where('booking_detail_id', $detail->id);
+
+            $totalFundDisbursed = (int) $detailFunds->sum('amount');
+            $totalFundReturned  = (int) $detailExpenses->where('type', 'return')->sum('amount');
+            $totalBonApproved   = (int) $detailExpenses->where('type', 'expense')->sum('amount');
+            $totalDirectExpense = (int) $detailExpenses->where('type', 'expense')->whereNull('driver_operational_fund_id')->sum('amount');
+            // Net operasional = dana yang diserahkan ke driver - sisa yang dikembalikan + pengeluaran langsung
+            $totalOperasional = max(0, $totalFundDisbursed - $totalFundReturned) + $totalDirectExpense;
+
+            // Kartu Fleet — kolom terpisah dari deposit operasional, supaya cash vs kartu tetap bisa dibedakan per periode.
+            $detailCardFunds    = $this->fleetCardFunds->where('booking_detail_id', $detail->id);
+            $detailCardExpenses = $this->fleetCardExpenses->where('booking_detail_id', $detail->id);
+
+            $totalCardTopup  = (int) $detailCardFunds->sum('amount');
+            $totalCardReturn = (int) $detailCardExpenses->where('type', 'return')->sum('amount');
+            $totalCardBon    = (int) $detailCardExpenses->where('type', 'expense')->sum('amount');
+            $totalCardNet    = max(0, $totalCardTopup - $totalCardReturn);
+
+            // Modal unit internal (bukan R2R) — belum keluar kas, tapi diperhitungkan sebagai HPP
+            $totalModal = 0;
+            if ($detail->unit_id && $detail->modal_mobil > 0 && !$isRentToRent) {
+                $totalModal = $detail->modal_mobil * ($detail->lama_sewa > 0 ? $detail->lama_sewa : 1);
+            }
+
+            $totalPengeluaran = $totalRentToRent + $totalOperasional + $totalCardNet + $totalModal;
         }
 
         $margin = $totalBiaya - $totalPengeluaran;
 
+        // Dibuat Oleh: kalau unit detail ini sama dengan unit initial, kredit ke pembuat initial.
+        // Kalau beda (mis. extend/rolling pindah unit), kredit ke pembuat detail ini sendiri.
+        $dibuatOlehUser = $initialDetail?->createdBy;
+        if ($initialDetail && $detail->unit_id !== $initialDetail->unit_id) {
+            $dibuatOlehUser = $detail->createdBy;
+        }
+
         return [
             'id' => $this->id,
+            'row_id' => $detail->id,
+            'row_type' => $detail->detail_type,
             'kode_booking' => $this->kode_booking,
             'status' => $this->status,
             'kota' => $this->kota,
@@ -100,6 +138,10 @@ class TransactionListResource extends JsonResource
             'total_fund_returned'   => $totalFundReturned,
             'total_bon_approved'    => $totalBonApproved,
             'total_direct_expense'  => $totalDirectExpense,
+            // Kartu Fleet (terpisah dari deposit operasional)
+            'total_card_topup'      => $totalCardTopup,
+            'total_card_return'     => $totalCardReturn,
+            'total_card_bon'        => $totalCardBon,
             'total_modal'           => $totalModal,
             'total_pengeluaran'     => $totalPengeluaran,
             'margin'                => $margin,
@@ -107,35 +149,32 @@ class TransactionListResource extends JsonResource
                 'id'   => $this->handledBy->id,
                 'name' => $this->handledBy->name,
             ] : null,
+            'dibuat_oleh'           => $dibuatOlehUser ? [
+                'id'   => $dibuatOlehUser->id,
+                'name' => $dibuatOlehUser->name,
+            ] : null,
         ];
     }
 
-    private function computeTotalTagihan(): int
+    private function computeDetailRevenue(BookingDetail $d): int
     {
-        $billableDetails = $this->bookingDetails->where('status', '!=', 'batal');
-
-        if ($billableDetails->isEmpty()) {
-            return 0;
-        }
-
+        $duration = $d->lama_sewa ?? 1;
         $total = 0;
-        foreach ($billableDetails as $d) {
-            $duration = $d->lama_sewa ?? 1;
-            if ($d->pricing_mode === 'all_in') {
-                $total += (int) (($d->harga_all_in ?? 0) * $duration);
 
-                $total += $d->costs->sum(fn($cost) =>
-                    $cost->type === 'diskon'
-                        ? -((int) $cost->amount)
-                        : ((bool) $cost->is_additional ? (int) $cost->amount : 0)
-                );
-            } else {
-                $total += (int) (($d->harga_mobil - $d->diskon_mobil) * $duration);
+        if ($d->pricing_mode === 'all_in') {
+            $total += (int) (($d->harga_all_in ?? 0) * $duration);
 
-                $total += $d->costs->sum(fn($cost) =>
-                    $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount
-                );
-            }
+            $total += $d->costs->sum(fn($cost) =>
+                $cost->type === 'diskon'
+                    ? -((int) $cost->amount)
+                    : ((bool) $cost->is_additional ? (int) $cost->amount : 0)
+            );
+        } else {
+            $total += (int) (($d->harga_mobil - $d->diskon_mobil) * $duration);
+
+            $total += $d->costs->sum(fn($cost) =>
+                $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount
+            );
         }
 
         return $total;

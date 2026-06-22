@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingPayment;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
+use App\Models\InvoiceInvoice;
 use App\Models\Payment;
 use App\Models\PaymentAccount;
 use Carbon\Carbon;
@@ -35,7 +36,7 @@ class ReceivableService
                 'payments',
                 'invoices' => fn($query) => $query
                     ->where('status', '!=', 'void')
-                    ->with(['payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy'])
+                    ->with(['payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto'])
                     ->latest('generated_at'),
             ])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
@@ -56,7 +57,8 @@ class ReceivableService
                 });
             })
             ->whereNotIn('status', ['batal'])
-            // Filter utama pakai cached column — O(log n) via index, bukan full-scan
+            // Sembunyikan booking yang sudah lunas total (sisa 0) — termasuk performance
+            // pre-filter via kolom cached, accurate re-check dilakukan di PHP setelah load.
             ->when(
                 ($filters['invoice_status'] ?? null) !== 'changed',
                 fn($query) => $query->where('cached_sisa_tagihan', '>', 0)
@@ -133,11 +135,13 @@ class ReceivableService
         $perPage = (int) ($filters['per_page'] ?? 15);
 
         return Invoice::query()
-            ->with(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy'])
+            ->with(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto', 'childInvoices'])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($filters['kota'] ?? null, fn($query, $kota) => $query->whereHas('bookings', fn($q) => $q->where('kota', $kota)))
             ->when($filters['status'] ?? null, fn($query, $status) => $query->where('status', $status))
+            ->when($filters['only_merged'] ?? null, fn($query) => $query->whereHas('childInvoices'))
+            ->when($filters['exclude_paid'] ?? null, fn($query) => $query->where('status', '!=', 'paid'))
             ->when($filters['search'] ?? null, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('invoice_number', 'like', "%{$search}%")
@@ -468,6 +472,114 @@ class ReceivableService
         });
     }
 
+    public function mergeInvoices(array $invoiceIds, int $branchId, int $tenantId, ?string $dueDate = null, ?string $termsAndConditions = null): Invoice
+    {
+        return DB::transaction(function () use ($invoiceIds, $branchId, $tenantId, $dueDate, $termsAndConditions) {
+            $uniqueIds = array_values(array_unique($invoiceIds));
+
+            if (count($uniqueIds) < 2) {
+                throw new \InvalidArgumentException('Pilih minimal 2 invoice untuk digabungkan.');
+            }
+
+            $invoices = Invoice::query()
+                ->whereIn('id', $uniqueIds)
+                ->where('branch_id', $branchId)
+                ->where('tenant_id', $tenantId)
+                ->lockForUpdate()
+                ->with(['bookings.payments', 'payments'])
+                ->get();
+
+            if ($invoices->count() !== count($uniqueIds)) {
+                throw new \InvalidArgumentException('Sebagian invoice tidak ditemukan pada branch aktif.');
+            }
+
+            if (InvoiceInvoice::whereIn('parent_invoice_id', $uniqueIds)->exists()) {
+                throw new \InvalidArgumentException('Salah satu invoice yang dipilih adalah invoice gabungan dan tidak bisa digabungkan lagi.');
+            }
+
+            $remainingAmounts = [];
+            foreach ($invoices as $invoice) {
+                if (! in_array($invoice->status, ['generated', 'partial_paid'], true)) {
+                    throw new \InvalidArgumentException("Invoice {$invoice->invoice_number} berstatus {$invoice->status} dan tidak bisa digabungkan.");
+                }
+
+                if ($invoice->merged_into_id) {
+                    throw new \InvalidArgumentException("Invoice {$invoice->invoice_number} sudah tergabung dalam invoice lain.");
+                }
+
+                $remaining = max(0, (int) $invoice->total_amount - $this->invoicePaidAmount($invoice));
+                if ($remaining <= 0) {
+                    throw new \InvalidArgumentException("Invoice {$invoice->invoice_number} sudah lunas, tidak ada sisa tagihan untuk digabungkan.");
+                }
+
+                $remainingAmounts[$invoice->id] = $remaining;
+            }
+
+            $totalAmount = array_sum($remainingAmounts);
+
+            $invoiceDueDate = $dueDate
+                ? Carbon::parse($dueDate)
+                : $invoices->pluck('due_date')->filter()->map(fn($d) => Carbon::parse($d))->sortDesc()->first();
+
+            $parent = Invoice::create([
+                'tenant_id'            => $tenantId,
+                'branch_id'            => $branchId,
+                'invoice_number'       => $this->nextMergeInvoiceNumber($branchId),
+                'public_token'         => $this->newPublicToken(),
+                'status'               => 'generated',
+                'total_amount'         => $totalAmount,
+                'paid_amount'          => 0,
+                'due_date'             => $invoiceDueDate,
+                'terms_and_conditions' => $termsAndConditions,
+                'generated_at'         => now(),
+                'created_by'           => auth()->id(),
+            ]);
+
+            $items = [];
+            foreach ($uniqueIds as $id) {
+                $invoice = $invoices->firstWhere('id', $id);
+                $amount = $remainingAmounts[$id];
+
+                InvoiceInvoice::create([
+                    'parent_invoice_id' => $parent->id,
+                    'child_invoice_id'  => $id,
+                    'amount'            => $amount,
+                ]);
+
+                $invoice->update(['merged_into_id' => $parent->id]);
+
+                $items[] = [
+                    'type'           => 'invoice',
+                    'invoice_id'     => $id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'description'    => $invoice->invoice_number,
+                    'price'          => $amount,
+                    'qty'            => 1,
+                    'amount'         => $amount,
+                ];
+
+                InvoiceHistory::create([
+                    'invoice_id'  => $id,
+                    'event_type'  => 'merged_into',
+                    'description' => "Digabung ke invoice {$parent->invoice_number}",
+                    'created_by'  => auth()->id(),
+                ]);
+            }
+
+            $parent->update(['items_snapshot' => $items]);
+
+            InvoiceHistory::create([
+                'invoice_id'   => $parent->id,
+                'event_type'   => 'merged_created',
+                'description'  => 'Invoice gabungan dibuat dari: ' . $invoices->pluck('invoice_number')->implode(', '),
+                'amount_after' => $totalAmount,
+                'created_by'   => auth()->id(),
+            ]);
+
+            return $parent->load(['childInvoices', 'payments.paymentAccount', 'payments.bookingPayments']);
+        });
+    }
+
     /**
      * Sinkronkan ulang nominal invoice booking ini (kalau ada) dengan data transaksi/biaya terbaru.
      * Dipanggil otomatis setiap kali booking di-handle, supaya invoice yang dibuat dari harga
@@ -543,7 +655,12 @@ class ReceivableService
                 'transaction_at' => $payment->paid_at ?? now(),
             ]);
 
-            $this->syncInvoicePaymentToBookings($invoice, $payment);
+            $childPivots = InvoiceInvoice::where('parent_invoice_id', $invoice->id)->orderBy('id')->get();
+            if ($childPivots->isNotEmpty()) {
+                $this->syncInvoicePaymentToChildInvoices($invoice, $payment, $childPivots);
+            } else {
+                $this->syncInvoicePaymentToBookings($invoice, $payment);
+            }
 
             $invoice->refresh();
             $invoice->load(['bookings.payments.paymentAccount', 'payments.bookingPayments']);
@@ -621,6 +738,44 @@ class ReceivableService
             // supaya angka per-booking (cached_sisa_tagihan) tetap konsisten dengan invoice.paid_amount.
             BookingPayment::where('invoice_payment_id', $payment->id)->update(['status' => 'voided']);
 
+            // Kalau payment ini berasal dari invoice gabungan (parent), void juga payment hasil
+            // cascade-nya di tiap invoice anak, dan turun lagi ke BookingPayment masing-masing.
+            $childPayments = Payment::where('parent_payment_id', $payment->id)->get();
+            foreach ($childPayments as $childPayment) {
+                $childPayment->update(['status' => 'voided']);
+
+                BookingPayment::where('invoice_payment_id', $childPayment->id)->update(['status' => 'voided']);
+
+                $childInvoice = Invoice::query()
+                    ->with(['bookings.bookingDetails.costs', 'bookings.payments', 'payments'])
+                    ->lockForUpdate()
+                    ->find($childPayment->invoice_id);
+
+                if (! $childInvoice) {
+                    continue;
+                }
+
+                foreach ($childInvoice->bookings as $childBooking) {
+                    $this->billingService->updateCachedSisaTagihan($childBooking);
+                }
+
+                $childInvoice->refresh();
+                $childInvoice->load(['bookings.payments', 'payments']);
+                $childPaidAmount = $this->invoicePaidAmount($childInvoice);
+                $childInvoice->update([
+                    'paid_amount' => $childPaidAmount,
+                    'status' => $this->invoiceStatus((int) $childInvoice->total_amount, $childPaidAmount),
+                ]);
+
+                InvoiceHistory::create([
+                    'invoice_id'     => $childInvoice->id,
+                    'event_type'     => 'payment_voided',
+                    'description'    => "Pembayaran di-void mengikuti void invoice gabungan {$payment->invoice->invoice_number}: " . $payment->void_reason,
+                    'payment_amount' => (int) $childPayment->amount,
+                    'created_by'     => Auth::id(),
+                ]);
+            }
+
             $invoice = Invoice::query()
                 ->with(['bookings.bookingDetails.costs', 'bookings.payments', 'payments'])
                 ->lockForUpdate()
@@ -680,7 +835,7 @@ class ReceivableService
     public function publicInvoice(string $token): array
     {
         $invoice = Invoice::query()
-            ->with(['branch', 'creator', 'bookings.customer', 'bookings.bookingDetails.unit', 'payments.paymentAccount', 'payments.bookingPayments'])
+            ->with(['branch', 'creator', 'bookings.customer', 'bookings.bookingDetails.unit', 'payments.paymentAccount', 'payments.bookingPayments', 'childInvoices'])
             ->where('public_token', $token)
             ->where('status', '!=', 'void')
             ->firstOrFail();
@@ -745,12 +900,85 @@ class ReceivableService
         }
     }
 
+    /**
+     * Cascade pembayaran invoice gabungan (parent) ke invoice anak, lalu invoice anak
+     * di-cascade lagi ke booking lewat syncInvoicePaymentToBookings() yang sudah ada.
+     */
+    private function syncInvoicePaymentToChildInvoices(Invoice $parentInvoice, Payment $parentPayment, $childPivots): void
+    {
+        $remainingPayment = (int) $parentPayment->amount;
+        $previousParentPaymentIds = $parentInvoice->payments()
+            ->whereKeyNot($parentPayment->id)
+            ->pluck('id');
+
+        foreach ($childPivots as $pivot) {
+            if ($remainingPayment <= 0) {
+                break;
+            }
+
+            $childInvoice = Invoice::query()
+                ->with(['bookings.bookingDetails.costs', 'bookings.payments.paymentAccount', 'payments.bookingPayments'])
+                ->lockForUpdate()
+                ->find($pivot->child_invoice_id);
+
+            if (! $childInvoice) {
+                continue;
+            }
+
+            $pivotAmount = (int) $pivot->amount;
+            $alreadyAllocated = $previousParentPaymentIds->isEmpty()
+                ? 0
+                : (int) Payment::query()
+                    ->where('invoice_id', $childInvoice->id)
+                    ->whereIn('parent_payment_id', $previousParentPaymentIds)
+                    ->sum('amount');
+
+            $childAllocationDue = max(0, $pivotAmount - $alreadyAllocated);
+            $allocated = min($remainingPayment, $childAllocationDue);
+
+            if ($allocated <= 0) {
+                continue;
+            }
+
+            $childPayment = Payment::create([
+                'invoice_id' => $childInvoice->id,
+                'parent_payment_id' => $parentPayment->id,
+                'payment_account_id' => $parentPayment->payment_account_id,
+                'amount' => $allocated,
+                'paid_at' => $parentPayment->paid_at,
+                'created_by' => $parentPayment->created_by,
+            ]);
+
+            InvoiceHistory::create([
+                'invoice_id'     => $childInvoice->id,
+                'event_type'     => 'payment_received',
+                'description'    => "Alokasi pembayaran dari invoice gabungan {$parentInvoice->invoice_number}",
+                'payment_amount' => $allocated,
+                'created_by'     => $parentPayment->created_by,
+            ]);
+
+            $this->syncInvoicePaymentToBookings($childInvoice, $childPayment);
+
+            $childInvoice->refresh();
+            $childInvoice->load(['bookings.payments.paymentAccount', 'payments.bookingPayments']);
+            $childPaidAmount = $this->invoicePaidAmount($childInvoice);
+            $childInvoice->update([
+                'paid_amount' => $childPaidAmount,
+                'status' => $this->invoiceStatus((int) $childInvoice->total_amount, $childPaidAmount),
+            ]);
+
+            $remainingPayment -= $allocated;
+        }
+    }
+
     private function formatInvoicePaymentHistory(Payment $payment): array
     {
+        $isCascaded = $payment->parent_payment_id !== null;
+
         return [
             'id' => 'invoice-' . $payment->id,
-            'source' => 'invoice',
-            'source_label' => 'Pembayaran Invoice',
+            'source' => $isCascaded ? 'invoice_allocation' : 'invoice',
+            'source_label' => $isCascaded ? 'Alokasi Invoice Gabungan' : 'Pembayaran Invoice',
             'reference_number' => $payment->invoice?->invoice_number,
             'invoice_number' => $payment->invoice?->invoice_number,
             'transaction_codes' => $payment->invoice?->bookings?->pluck('kode_booking')->filter()->values() ?? collect(),
@@ -991,6 +1219,19 @@ class ReceivableService
     private function nextInvoiceNumber(int $branchId): string
     {
         $prefix = 'INV-' . date('Ym') . '-' . str_pad((string) $branchId, 2, '0', STR_PAD_LEFT) . '-';
+        $lastInvoice = Invoice::where('branch_id', $branchId)
+            ->where('invoice_number', 'like', $prefix . '%')
+            ->orderByDesc('invoice_number')
+            ->first();
+
+        $next = $lastInvoice ? ((int) substr($lastInvoice->invoice_number, -5)) + 1 : 1;
+
+        return $prefix . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+    }
+
+    private function nextMergeInvoiceNumber(int $branchId): string
+    {
+        $prefix = 'SOA-' . date('Ym') . '-' . str_pad((string) $branchId, 2, '0', STR_PAD_LEFT) . '-';
         $lastInvoice = Invoice::where('branch_id', $branchId)
             ->where('invoice_number', 'like', $prefix . '%')
             ->orderByDesc('invoice_number')

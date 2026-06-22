@@ -66,6 +66,13 @@ class PublicInvoiceResource extends JsonResource
             })),
             'items' => $this->whenLoaded('bookings', fn() => $receivableService->invoiceItems($this->resource)),
             'payments' => $this->whenLoaded('payments', fn() => $receivableService->invoicePaymentHistory($this->resource)),
+            'is_merged' => str_starts_with($this->invoice_number ?? '', 'SOA-'),
+            'merged_children' => $this->whenLoaded('childInvoices', fn() => $this->childInvoices->map(fn($child) => [
+                'invoice_number' => $child->invoice_number,
+                'status' => $child->status,
+                'amount_at_merge' => (int) $child->pivot->amount,
+                'public_path' => $child->public_token ? "/invoice/{$child->public_token}" : null,
+            ])),
             'payment_accounts' => $this->paymentAccounts->map(fn($account) => [
                 'nama_bank' => $account->nama_bank,
                 'nomor_rekening' => $account->nomor_rekening,

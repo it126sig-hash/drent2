@@ -60,11 +60,15 @@ class ReceivableResource extends JsonResource
                 'created_by_name' => $invoice?->creator?->name,
                 'sent_by_name' => $invoice?->sentBy?->name,
                 'pdf_url' => $invoice ? url("/api/v1/invoices/{$invoice->id}/pdf") : null,
-                'public_path' => $invoice?->public_token ? "/invoice/{$invoice->public_token}" : null,
-                'public_url' => $invoice?->public_token ? config('app.frontend_url', url('/')) . "/invoice/{$invoice->public_token}" : null,
+                'public_path' => $invoice?->public_token ? $this->invoicePublicPath($invoice) : null,
+                'public_url' => $invoice?->public_token ? config('app.frontend_url', url('/')) . $this->invoicePublicPath($invoice) : null,
                 'invoice_reconciliation' => $invoiceReconciliation,
                 'items' => $invoice ? $receivableService->invoiceItems($invoice) : [],
                 'payments' => $invoice ? $receivableService->invoicePaymentHistory($invoice) : [],
+                'merged_into' => $invoice?->merged_into_id ? [
+                    'id' => $invoice->mergedInto?->id,
+                    'number' => $invoice->mergedInto?->invoice_number,
+                ] : null,
             ],
             'paid_invoice_with_delta' => ($paidInvoiceReconciliation['is_changed'] ?? false)
                 && ($paidInvoiceReconciliation['difference_amount'] ?? 0) > 0
@@ -78,5 +82,12 @@ class ReceivableResource extends JsonResource
                 ]
                 : null,
         ];
+    }
+
+    private function invoicePublicPath(\App\Models\Invoice $invoice): string
+    {
+        return str_starts_with($invoice->invoice_number ?? '', 'SOA-')
+            ? "/invoice/soa/{$invoice->public_token}"
+            : "/invoice/{$invoice->public_token}";
     }
 }

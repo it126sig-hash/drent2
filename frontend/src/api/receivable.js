@@ -14,6 +14,10 @@ export const generateInvoice = (payload) => {
   return api.post(`${prefix}/invoices`, payload)
 }
 
+export const mergeInvoices = (payload) => {
+  return api.post('/v1/invoices/merge', payload)
+}
+
 export const getInvoices = (params) => {
   return api.get('/v1/invoices', { params })
 }
@@ -62,6 +66,7 @@ export default {
   getReceivables,
   getPaymentHistory,
   generateInvoice,
+  mergeInvoices,
   getInvoices,
   getInvoice,
   markInvoiceSent,

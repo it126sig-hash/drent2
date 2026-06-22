@@ -19,6 +19,7 @@ const statusMap = {
   'rental_unit':  { class: 'success', label: 'Disewa' },
   'selesai':      { class: 'completed', label: 'Selesai' },
   'batal':        { class: 'error', label: 'Batal' },
+  'reschedule':   { class: 'warning', label: 'Reschedule' },
   'Rent to Rent': { class: 'info', label: 'Rent To Rent' },
   'Member':       { class: 'success', label: 'Member' },
   'rental_lain':  { class: 'info', label: props.text  },

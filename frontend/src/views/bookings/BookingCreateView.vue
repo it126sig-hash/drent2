@@ -54,9 +54,11 @@ const unitServerSearchTerm = ref('');
 const unitCityFilter = ref(null);
 const showUnitPriceDialog = ref(false);
 const unitPriceSaving = ref(false);
+const unitPriceErrors = ref({});
 const unitPriceForm = ref({
   id: null,
   label: '',
+  city_id: null,
   harga_1_hari: 0,
   harga_1_minggu: 0,
   harga_1_bulan: 0,
@@ -86,6 +88,7 @@ const unitPriceFields = [
 ];
 const showScheduleConflictDialog = ref(false);
 const scheduleConflicts = ref([]);
+const showSubmitConfirmDialog = ref(false);
 let customerSearchTimer = null;
 let unitSearchTimer = null;
 let pricingPackageSearchTimer = null;
@@ -582,6 +585,11 @@ const handleSubmit = async () => {
     return;
   }
 
+  showSubmitConfirmDialog.value = true;
+};
+
+const confirmSubmit = async () => {
+  showSubmitConfirmDialog.value = false;
   isSubmitting.value = true;
 
   try {
@@ -989,9 +997,11 @@ const openUnitPriceDialog = () => {
 
   const unit = selectedUnit.value;
   selectedUnitCache.value = { ...unit };
+  unitPriceErrors.value = {};
   unitPriceForm.value = {
     id: unit.id,
     label: `${unit.merk || ''} ${unit.tipe || ''}`.trim() || unit.label || 'Unit',
+    city_id: unit.city_id || unit.city?.id || null,
     harga_1_hari: unit.harga_1_hari || 0,
     harga_1_minggu: unit.harga_1_minggu || 0,
     harga_1_bulan: unit.harga_1_bulan || 0,
@@ -1025,6 +1035,12 @@ const refreshSelectedUnit = async (unitId) => {
 
 const saveUnitPrice = async (data) => {
   if (!selectedUnit.value?.id) return;
+  unitPriceErrors.value = {};
+
+  if (!data?.city_id) {
+    unitPriceErrors.value.city_id = 'Kota unit wajib dipilih.';
+    return;
+  }
 
   const pricePayload = unitPriceFields.reduce((payload, field) => {
     payload[field] = data?.[field] ?? 0;
@@ -1035,6 +1051,7 @@ const saveUnitPrice = async (data) => {
   try {
     await updateUnit(selectedUnit.value.id, {
       ...selectedUnit.value,
+      city_id: data.city_id,
       ...pricePayload,
       id: selectedUnit.value.id,
     });
@@ -1042,6 +1059,10 @@ const saveUnitPrice = async (data) => {
     toast.add({ severity: 'success', summary: 'Sukses', detail: 'Harga unit berhasil diperbarui.', life: 3000 });
     showUnitPriceDialog.value = false;
   } catch (err) {
+    const cityError = err.response?.data?.errors?.city_id;
+    if (cityError) {
+      unitPriceErrors.value.city_id = Array.isArray(cityError) ? cityError[0] : cityError;
+    }
     toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || 'Gagal memperbarui harga unit.', life: 5000 });
   } finally {
     unitPriceSaving.value = false;
@@ -1868,6 +1889,44 @@ const formatDate = (value) => {
       </aside>
     </div>
 
+    <Dialog v-model:visible="showSubmitConfirmDialog" modal :closable="!isSubmitting" :style="{ width: '480px' }" :breakpoints="{ '640px': '94vw' }" class="confirm-submit-dialog">
+      <div class="confirm-submit-header">
+        <span class="confirm-submit-icon"><i class="pi pi-shield" /></span>
+        <div>
+          <h3>Konfirmasi Simpan Booking</h3>
+          <p>Pastikan data berikut sudah benar sebelum disimpan.</p>
+        </div>
+      </div>
+
+      <div class="confirm-summary-panel">
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Pelanggan</span>
+          <strong class="confirm-summary-value">{{ form.customer_mode === 'existing' ? (selectedCustomer?.nama || '-') : (form.customer_name || '-') }}</strong>
+        </div>
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Unit</span>
+          <strong class="confirm-summary-value">{{ form.unit_mode === 'existing' ? (selectedUnit?.label || '-') : (form.unit_placeholder || '-') }}</strong>
+        </div>
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Mulai sewa</span>
+          <strong class="confirm-summary-value">{{ formatDate(form.tgl_sewa) }}</strong>
+        </div>
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Selesai sewa</span>
+          <strong class="confirm-summary-value">{{ formatDate(form.tgl_kembali) }}</strong>
+        </div>
+        <div class="confirm-summary-row confirm-summary-row--highlight">
+          <span class="confirm-summary-label">{{ isDirectWaitingList ? 'Tagihan konsumen' : 'Harga dealing' }}</span>
+          <strong class="confirm-summary-value">{{ formatCurrency(isDirectWaitingList ? waitingTagihanKonsumen : form.harga_dealing) }}</strong>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button label="Batal" icon="pi pi-times" text class="button-secondary" :disabled="isSubmitting" @click="showSubmitConfirmDialog = false" />
+        <Button :label="isEditMode ? 'Ya, Simpan Perubahan' : 'Ya, Simpan Booking'" icon="pi pi-check" :loading="isSubmitting" @click="confirmSubmit" class="p-button-tosca" />
+      </template>
+    </Dialog>
+
     <!-- Dialog: Peringatan Konflik Jadwal Unit -->
     <Dialog v-model:visible="showScheduleConflictDialog" modal :closable="false" header="Peringatan Jadwal Unit" :style="{ width: '480px' }" :breakpoints="{ '640px': '94vw' }">
       <div class="conflict-dialog-body">
@@ -1900,6 +1959,12 @@ const formatDate = (value) => {
             <strong>{{ unitPriceForm.label }}</strong>
           </div>
           <Tag v-if="selectedUnit" :value="unitStatusMeta(selectedUnit.status).label" :severity="unitStatusMeta(selectedUnit.status).severity" />
+        </div>
+
+        <div class="unit-price-location form-field-vertical">
+          <label class="field-label">Kota Unit *</label>
+          <Dropdown v-model="unitPriceForm.city_id" :options="cityOptions" optionLabel="label" optionValue="id" placeholder="Pilih kota unit" filter :filterFields="['searchableLabel', 'label']" :loading="citiesLoading" class="w-full premium-input" :class="{ 'p-invalid': unitPriceErrors.city_id }" :empty-message="'Belum ada kota aktif'" @filter="onCityFilter" />
+          <small v-if="unitPriceErrors.city_id" class="p-error">{{ unitPriceErrors.city_id }}</small>
         </div>
 
         <div class="unit-price-grid">
@@ -1979,7 +2044,7 @@ const formatDate = (value) => {
 
       <template #footer>
         <Button label="Batal" icon="pi pi-times" text class="button-secondary" @click="showUnitPriceDialog = false" />
-        <Button label="Simpan Harga" icon="pi pi-save" class="p-button-tosca" :loading="unitPriceSaving" @click="saveUnitPrice(unitPriceForm)" />
+        <Button label="Simpan Harga" icon="pi pi-save" class="p-button-tosca" :loading="unitPriceSaving" :disabled="unitPriceSaving || !unitPriceForm.city_id" @click="saveUnitPrice(unitPriceForm)" />
       </template>
     </Dialog>
   </div>
@@ -2470,6 +2535,13 @@ const formatDate = (value) => {
   font-size: var(--font-size-14px);
 }
 
+.unit-price-location {
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
 .unit-price-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2849,5 +2921,80 @@ const formatDate = (value) => {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-12px);
+}
+
+.confirm-submit-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.confirm-submit-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(13, 148, 136, 0.12);
+  color: var(--color-tosca, #0d9488);
+  font-size: 18px;
+}
+
+.confirm-submit-header h3 {
+  margin: 0;
+  font-size: var(--font-size-15px, 15px);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.confirm-submit-header p {
+  margin: 2px 0 0;
+  font-size: var(--font-size-12px);
+  color: var(--text-secondary);
+}
+
+.confirm-summary-panel {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  overflow: hidden;
+}
+
+.confirm-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.confirm-summary-row:last-child {
+  border-bottom: none;
+}
+
+.confirm-summary-row--highlight {
+  background: rgba(13, 148, 136, 0.06);
+}
+
+.confirm-summary-label {
+  font-size: var(--font-size-12px);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.confirm-summary-value {
+  font-size: var(--font-size-13px, 13px);
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.confirm-summary-row--highlight .confirm-summary-value {
+  color: var(--color-tosca, #0d9488);
+  font-size: var(--font-size-14px, 14px);
 }
 </style>

@@ -30,31 +30,29 @@ class TransactionController extends Controller
         );
 
         $statuses = $this->arrayFilter($request->input('status'));
-        // If status filter is empty, default to waiting_list, rental_unit, selesai, batal to match requirements
+        // If status filter is empty, default to waiting_list, rental_unit, selesai, batal, reschedule to match requirements
         if (empty($statuses)) {
-            $statuses = ['waiting_list', 'rental_unit', 'selesai', 'batal'];
+            $statuses = ['waiting_list', 'rental_unit', 'selesai', 'batal', 'reschedule'];
         }
 
         $query = Booking::query()
             ->where('tenant_id', $user->tenant_id)
             ->when($user->role !== 'superadmin', fn($q) => $q->where('branch_id', $user->branch_id))
             ->when($user->role === 'cs', fn($q) => $q->where('handled_by', $user->id))
-            // Total dana R2R yang harus dibayarkan ke pemilik
-            ->withSum(['rentToRentDebts as total_rent_to_rent' => fn($q) => $q->where('status', '!=', 'cancelled')], 'cached_total_amount')
-            // Total dana yang diserahkan ke driver (gross disbursement)
-            ->withSum(['operationalFunds as total_fund_disbursed' => fn($q) => $q->whereIn('status', ['pending_driver_acceptance', 'accepted', 'closed'])], 'amount')
-            // Total sisa dana yang dikembalikan driver (approved/void_requested return expenses)
-            ->withSum(['operationalExpenses as total_fund_returned' => fn($q) => $q->whereIn('status', ['approved', 'void_requested'])->where('type', 'return')], 'amount')
-            // Total bon/reimburse yang disetujui (realisasi pengeluaran - untuk info)
-            ->withSum(['operationalExpenses as total_expense_approved' => fn($q) => $q->whereIn('status', ['approved', 'void_requested'])->where('type', 'expense')], 'amount')
-            // Total realisasi langsung (approved expense where driver_operational_fund_id IS NULL)
-            ->withSum(['operationalExpenses as total_direct_expense' => fn($q) => $q->whereIn('status', ['approved', 'void_requested'])->where('type', 'expense')->whereNull('driver_operational_fund_id')], 'amount')
-            // Total uang masuk dari konsumen (untuk transaksi yang dibatalkan)
+            // Total uang masuk dari konsumen (untuk transaksi yang dibatalkan) — ini selalu per-booking
+            // karena pembayaran konsumen tidak tercatat per booking_detail.
             ->withSum(['payments as total_payments_in' => fn($q) => $q->where('status', '!=', 'voided')], 'amount')
             ->with([
                 'customer:id,nama,status',
                 'bookingDetails.unit.rentalOwner:id,nama,is_owner',
+                'bookingDetails.createdBy:id,name',
                 'bookingDetails.costs.costType',
+                // Dimuat penuh (bukan withSum) supaya bisa dihitung independen per booking_detail_id.
+                'rentToRentDebts' => fn($q) => $q->where('status', '!=', 'cancelled'),
+                'operationalFunds' => fn($q) => $q->whereIn('status', ['pending_driver_acceptance', 'accepted', 'closed']),
+                'operationalExpenses' => fn($q) => $q->whereIn('status', ['approved', 'void_requested']),
+                'fleetCardFunds' => fn($q) => $q->whereIn('status', ['pending_driver_acceptance', 'accepted', 'closed']),
+                'fleetCardExpenses' => fn($q) => $q->whereIn('status', ['approved', 'void_requested']),
                 'handledBy:id,name',
                 'cancellation',
             ])
@@ -86,7 +84,25 @@ class TransactionController extends Controller
         $perPage = $request->integer('per_page', 15);
         $bookings = $query->paginate($perPage);
 
-        return TransactionListResource::collection($bookings);
+        // Setiap booking_detail (initial/extend/rolling) ditampilkan sebagai baris sendiri,
+        // dengan kode_booking yang sama, supaya histori perpanjangan/rolling terlihat di list.
+        $rows = collect();
+        foreach ($bookings as $booking) {
+            $details = $booking->bookingDetails->sortBy('created_at')->values();
+            foreach ($details as $detail) {
+                $rows->push((new TransactionListResource($booking))->forDetail($detail, $details)->resolve($request));
+            }
+        }
+
+        return response()->json([
+            'data' => $rows->values(),
+            'meta' => [
+                'current_page' => $bookings->currentPage(),
+                'last_page'    => $bookings->lastPage(),
+                'per_page'     => $bookings->perPage(),
+                'total'        => $bookings->total(),
+            ],
+        ]);
     }
 
     /**
@@ -121,6 +137,9 @@ class TransactionController extends Controller
             'operationalFunds.paymentAccount',
             'operationalExpenses.costType',
             'operationalExpenses.fund',
+            'fleetCardFunds.fleetCard',
+            'fleetCardExpenses.costType',
+            'fleetCardExpenses.fund',
             'rentToRentDebts.rentalOwner',
         ]);
 
@@ -202,6 +221,49 @@ class TransactionController extends Controller
                         'amount'      => (int) $e->amount,
                     ];
                 }
+            }
+        }
+
+        // 4b. Pengeluaran — Top-up Kartu Fleet ke Driver (FleetCardFund)
+        foreach ($booking->fleetCardFunds as $fund) {
+            if (in_array($fund->status, ['pending_driver_acceptance', 'accepted', 'closed'], true) && (int) $fund->amount > 0) {
+                $history[] = [
+                    'id'          => 'fleet-card-fund-' . $fund->id,
+                    'date'        => $fund->accepted_at?->toISOString() ?? $fund->created_at?->toISOString(),
+                    'category'    => 'kartu_fleet',
+                    'type'        => 'pengeluaran',
+                    'description' => 'Top-up Kartu Fleet ' . ($fund->fleetCard?->code ?? '')
+                        . ($fund->notes ? ': ' . $fund->notes : ''),
+                    'amount'      => -(int) $fund->amount,
+                ];
+            }
+        }
+
+        // 4c. Pemasukan kembali — Sisa Kartu Fleet Dikembalikan Driver (FleetCardExpense type='return', approved)
+        foreach ($booking->fleetCardExpenses as $e) {
+            if (in_array($e->status, ['approved', 'void_requested'], true) && $e->type === 'return') {
+                $history[] = [
+                    'id'          => 'fleet-card-return-' . $e->id,
+                    'date'        => $e->reviewed_at?->toISOString() ?? $e->created_at?->toISOString(),
+                    'category'    => 'kartu_fleet',
+                    'type'        => 'pemasukan',
+                    'description' => 'Sisa Kartu Fleet Dikembalikan' . ($e->description ? ': ' . $e->description : ''),
+                    'amount'      => (int) $e->amount,
+                ];
+            }
+        }
+
+        // 4d. Info — Bon Kartu Fleet yang disetujui (FleetCardExpense type='expense', approved)
+        foreach ($booking->fleetCardExpenses as $e) {
+            if (in_array($e->status, ['approved', 'void_requested'], true) && $e->type === 'expense') {
+                $history[] = [
+                    'id'          => 'fleet-card-bon-' . $e->id,
+                    'date'        => $e->reviewed_at?->toISOString() ?? $e->created_at?->toISOString(),
+                    'category'    => 'bon_kartu_fleet',
+                    'type'        => 'info',
+                    'description' => 'Bon Kartu Fleet: ' . ($e->costType?->nama ?? $e->description),
+                    'amount'      => (int) $e->amount,
+                ];
             }
         }
 

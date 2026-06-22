@@ -183,9 +183,10 @@ const statusOptions = [
   { label: 'Rental Unit', value: 'rental_unit' },
   { label: 'Selesai', value: 'selesai' },
   { label: 'Batal', value: 'batal' },
+  { label: 'Reschedule', value: 'reschedule' },
 ];
 
-const mainTabStatusValues = ['follow_up', 'confirm', 'waiting_list', 'rental_unit'];
+const mainTabStatusValues = ['follow_up', 'confirm', 'waiting_list', 'rental_unit', 'reschedule'];
 const closedTabStatusValues = ['selesai', 'batal'];
 const activeStatusOptions = statusOptions.filter(option => mainTabStatusValues.includes(option.value));
 const closedStatusOptions = statusOptions.filter(option => closedTabStatusValues.includes(option.value));
@@ -612,7 +613,8 @@ const getDriverInfo = (booking) => {
 };
 
 const hasPickupNotes = (booking) => {
-  return Boolean(booking?.alamat_penjemputan || booking?.catatan);
+  return Boolean(booking?.alamat_penjemputan || booking?.catatan
+    || (booking?.status === 'reschedule' && booking?.catatan_status));
 };
 
 const getPaidAmount = (booking) => {
@@ -695,6 +697,7 @@ const getLateInfo = (booking) => {
 };
 
 const rowClass = (data) => {
+  if (data?.status === 'reschedule') return 'booking-row booking-row-reschedule';
   return getLateInfo(data) ? 'booking-row booking-row-late' : 'booking-row';
 };
 
@@ -706,6 +709,7 @@ const getBookingCardClass = (booking) => {
     rental_unit: 'booking-card-success',
     selesai: 'booking-card-completed',
     batal: 'booking-card-error',
+    reschedule: 'booking-card-reschedule',
   };
 
   return statusClassMap[booking?.status] || 'booking-card-neutral';
@@ -899,6 +903,11 @@ const getBookingCardClass = (booking) => {
                 </div>
                 <div v-if="data.catatan" class="table-note-line">
                   <span class="cell-fs-12 text-secondary italic">*{{ data.catatan }}</span>
+                </div>
+                <div v-if="data.status === 'reschedule' && data.catatan_status" class="table-note-line">
+                  <span class="cell-fs-12 font-semibold" style="color: var(--warning)">
+                    <i class="pi pi-calendar-times"></i> Alasan reschedule: {{ data.catatan_status }}
+                  </span>
                 </div>
               </div>
               <span v-else class="text-secondary">-</span>
@@ -1158,6 +1167,14 @@ const getBookingCardClass = (booking) => {
 
 :deep(.booking-row-late td:first-child) {
   border-left: 3px solid var(--negative);
+}
+
+:deep(.booking-row-reschedule) {
+  background-color: rgba(247, 144, 9, 0.05) !important;
+}
+
+:deep(.booking-row-reschedule td:first-child) {
+  border-left: 3px solid var(--warning);
 }
 
 .late-note,
@@ -1664,6 +1681,11 @@ const getBookingCardClass = (booking) => {
 
   .booking-card-error {
     border-color: var(--negative);
+  }
+
+  .booking-card-reschedule {
+    border-color: var(--warning);
+    border-left-width: 3px;
   }
 
   .card-header {

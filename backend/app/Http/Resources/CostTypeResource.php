@@ -19,6 +19,7 @@ class CostTypeResource extends JsonResource
             'tenant_id'           => $this->tenant_id,
             'nama'                => $this->nama,
             'kode'                => $this->kode,
+            'kledo_code'          => $this->kledo_code,
             'require_description' => (bool) $this->require_description,
             'is_active'           => (bool) $this->is_active,
             'sort_order'          => (int) $this->sort_order,

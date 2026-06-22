@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateInvoiceRequest;
+use App\Http\Requests\MergeInvoicesRequest;
 use App\Http\Requests\RefreshInvoiceAmountRequest;
 use App\Http\Requests\RejectVoidInvoicePaymentRequest;
 use App\Http\Requests\RequestVoidInvoicePaymentRequest;
@@ -78,7 +79,30 @@ class ReceivableController extends Controller
     public function showInvoice(Invoice $invoice): InvoiceResource
     {
         $this->authorize('view', $invoice);
-        $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy']);
+        $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto', 'childInvoices']);
+
+        return new InvoiceResource($invoice);
+    }
+
+    public function mergeInvoices(MergeInvoicesRequest $request): InvoiceResource
+    {
+        $this->authorize('create', Invoice::class);
+
+        $user = auth()->user();
+        try {
+            $invoice = $this->receivableService->mergeInvoices(
+                $request->validated('invoice_ids'),
+                $user->branch_id,
+                $user->tenant_id,
+                $request->validated('due_date'),
+                $request->validated('terms_and_conditions')
+            );
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['invoice_ids' => [$exception->getMessage()]],
+            ], 422));
+        }
 
         return new InvoiceResource($invoice);
     }
@@ -87,7 +111,7 @@ class ReceivableController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $filters = $request->only(['page', 'per_page', 'status', 'search', 'kota']);
+        $filters = $request->only(['page', 'per_page', 'status', 'search', 'kota', 'only_merged', 'exclude_paid']);
         $user = auth()->user();
         $filters['tenant_id'] = $user->tenant_id;
         if ($user->role !== 'superadmin') {

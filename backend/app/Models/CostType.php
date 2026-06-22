@@ -10,6 +10,7 @@ class CostType extends Model
         'tenant_id',
         'nama',
         'kode',
+        'kledo_code',
         'require_description',
         'is_active',
         'sort_order',

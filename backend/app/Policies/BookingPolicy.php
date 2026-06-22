@@ -68,6 +68,20 @@ class BookingPolicy
             && $user->branch_id === $booking->branch_id;
     }
 
+    public function requestCancelExtend(User $user, Booking $booking): bool
+    {
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.handle')
+            && $user->branch_id === $booking->branch_id;
+    }
+
+    public function approveCancelExtend(User $user, Booking $booking): bool
+    {
+        if ($user->role === 'superadmin') return true;
+        return app(\App\Services\PermissionService::class)->hasPermission($user, 'booking.supervisor_request')
+            && $user->branch_id === $booking->branch_id;
+    }
+
     public function manageRefunds(User $user, Booking $booking): bool
     {
         if ($user->role === 'superadmin') return true;

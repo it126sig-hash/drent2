@@ -116,6 +116,9 @@ class BookingResource extends JsonResource
                     'harga_all_in'       => $d->harga_all_in ? (int) $d->harga_all_in : null,
                     'detail_type'        => $d->detail_type,
                     'status'             => $d->status,
+                    'cancel_extend_status' => $d->cancel_extend_status,
+                    'cancel_extend_reason' => $d->cancel_extend_reason,
+                    'cancel_extend_rejection_note' => $d->cancel_extend_rejection_note,
                     'unit'               => $d->unit ? [
                         'id'           => (int) $d->unit->id,
                         'no_polisi'    => $d->unit->no_polisi,

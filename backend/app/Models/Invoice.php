@@ -15,6 +15,7 @@ class Invoice extends Model
         'invoice_number',
         'public_token',
         'status',
+        'merged_into_id',
         'total_amount',
         'paid_amount',
         'items_snapshot',
@@ -69,5 +70,22 @@ class Invoice extends Model
     public function histories()
     {
         return $this->hasMany(InvoiceHistory::class)->orderBy('created_at');
+    }
+
+    public function mergedInto()
+    {
+        return $this->belongsTo(self::class, 'merged_into_id');
+    }
+
+    public function childInvoices()
+    {
+        return $this->belongsToMany(self::class, 'invoice_invoices', 'parent_invoice_id', 'child_invoice_id')
+            ->withPivot('amount')
+            ->withTimestamps();
+    }
+
+    public function childInvoicePivots()
+    {
+        return $this->hasMany(InvoiceInvoice::class, 'parent_invoice_id')->orderBy('id');
     }
 }

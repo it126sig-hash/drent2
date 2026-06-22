@@ -62,6 +62,7 @@ const menuSections = [
       { label: 'Piutang', icon: 'pi pi-wallet', route: '/finance/receivables', permission: 'finance.receivable' },
       { label: 'Rent to Rent', icon: 'pi pi-building', route: '/finance/rent-to-rent', permission: 'finance.rent_to_rent' },
       { label: 'Biaya Operasional', icon: 'pi pi-receipt', route: '/finance/operational-costs', permission: 'finance.operational_cost' },
+      { label: 'Kartu Fleet', icon: 'pi pi-credit-card', route: '/finance/fleet-cards', permission: 'finance.fleet_card' },
       { label: 'List Transaksi', icon: 'pi pi-list', route: '/finance/transactions', permission: 'finance.transaction' },
       { label: 'Mutasi Rekening', icon: 'pi pi-arrow-right-arrow-left', route: '/finance/account-mutations', permission: 'finance.account_mutation' },
       { label: 'Laporan Bulanan', icon: 'pi pi-chart-bar', route: '/reports/transactions', permission: 'finance.monthly_report' },

@@ -102,6 +102,18 @@ export const updateBookingCost = (costId, data) => {
   return api.patch(`/v1/booking-costs/${costId}`, data);
 };
 
+export const requestCancelExtend = (detailId, data) => {
+  return api.post(`/v1/booking-details/${detailId}/request-cancel-extend`, data);
+};
+
+export const approveCancelExtend = (detailId) => {
+  return api.post(`/v1/booking-details/${detailId}/approve-cancel-extend`);
+};
+
+export const rejectCancelExtend = (detailId, data = {}) => {
+  return api.post(`/v1/booking-details/${detailId}/reject-cancel-extend`, data);
+};
+
 export const approveRevertOperational = (id) => {
   return api.post(`${prefix}/${id}/operational-revert/approve`);
 };
@@ -138,4 +150,7 @@ export default {
   addAdditionalCost,
   updateBookingDetail,
   updateBookingCost,
+  requestCancelExtend,
+  approveCancelExtend,
+  rejectCancelExtend,
 };

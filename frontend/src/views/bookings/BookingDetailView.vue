@@ -45,7 +45,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize));
 const toast = useToast();
 const confirm = useConfirm();
 const authStore = useAuthStore();
-const { fetchOne, updateBooking, handle, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, requestVoidPayment, approveVoidPayment, rejectVoidPayment, loading } = useBooking();
+const { fetchOne, updateBooking, handle, reschedule, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, requestVoidPayment, approveVoidPayment, rejectVoidPayment, requestCancelExtend, approveCancelExtend, rejectCancelExtend, loading } = useBooking();
 const { units, loading: unitsLoading } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
@@ -61,9 +61,11 @@ const unitServerSearchTerm = ref('');
 const unitCityFilter = ref(null);
 const showUnitPriceDialog = ref(false);
 const unitPriceSaving = ref(false);
+const unitPriceErrors = ref({});
 const unitPriceForm = ref({
   id: null,
   label: '',
+  city_id: null,
   harga_1_hari: 0,
   harga_1_minggu: 0,
   harga_1_bulan: 0,
@@ -301,7 +303,14 @@ const onUnitFilter = (event) => {
 };
 
 const cityOptions = computed(() =>
-  cities.value.map(c => ({ id: c.id, label: c.nama, value: c.id }))
+  cities.value
+    .filter(city => city.is_active)
+    .map(city => ({
+      id: city.id,
+      label: city.provinsi ? `${city.nama} - ${city.provinsi}` : city.nama,
+      value: city.id,
+      searchableLabel: [city.nama, city.provinsi].filter(Boolean).join(' '),
+    }))
 );
 
 const onKotaChange = (selectedValue) => {
@@ -460,6 +469,8 @@ const rollingStep = ref(1);
 const showStopEarlyDialog = ref(false);
 const showAdditionalCostDialog = ref(false);
 const showBatalDialog = ref(false);
+const showRescheduleDialog = ref(false);
+const rescheduleForm = ref({ reschedule_date: null, catatan_status: '' });
 
 const detailForm = ref({
   unit_id: null,
@@ -633,8 +644,14 @@ const hasZeroReadyUnitPrice = computed(() => {
   }
   return (detail.harga_mobil || 0) <= 0;
 });
-const unitActionLabel = computed(() => (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'Edit Unit' : 'Handle Unit');
-const unitActionIcon = computed(() => (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'pi pi-pencil' : 'pi pi-plus');
+const unitActionLabel = computed(() => {
+  if (booking.value?.status === 'reschedule') return 'Jadwalkan Ulang';
+  return (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'Edit Unit' : 'Handle Unit';
+});
+const unitActionIcon = computed(() => {
+  if (booking.value?.status === 'reschedule') return 'pi pi-calendar-plus';
+  return (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'pi pi-pencil' : 'pi pi-plus';
+});
 
 const activeDetails = computed(() => {
   return validDetails.value.filter(d => d.status === 'aktif');
@@ -1121,23 +1138,40 @@ const getUnitModalByPaket = (unit, paket, pricingMode = 'non_all_in', pricingPac
 
 const unitPriceDialogUnitId = ref(null);
 
-const openUnitPriceDialog = (unit) => {
+const openUnitPriceDialog = async (unit) => {
   if (!unit) {
     toast.add({ severity: 'warn', summary: 'Pilih Unit', detail: 'Pilih unit dulu sebelum edit harga.', life: 3000 });
     return;
   }
 
-  rememberUnitOption({ ...unit });
-  unitPriceDialogUnitId.value = unit.id;
-  unitPriceForm.value = {
-    id: unit.id,
-    label: `${unit.merk || ''} ${unit.tipe || ''}`.trim() || unit.unitLabel || 'Unit',
-    ...unitPriceFields.reduce((payload, field) => {
-      payload[field] = unit[field] || 0;
-      return payload;
-    }, {}),
-  };
-  showUnitPriceDialog.value = true;
+  unitPriceErrors.value = {};
+
+  try {
+    const response = await getUnit(unit.id);
+    const fullUnit = mapUnitOption(response.data.data);
+    const existingIndex = units.value.findIndex(option => option.id === fullUnit.id);
+
+    if (existingIndex >= 0) {
+      units.value.splice(existingIndex, 1, response.data.data);
+    } else {
+      units.value.unshift(response.data.data);
+    }
+
+    selectedUnitCache.value = fullUnit;
+    unitPriceDialogUnitId.value = fullUnit.id;
+    unitPriceForm.value = {
+      id: fullUnit.id,
+      label: `${fullUnit.merk || ''} ${fullUnit.tipe || ''}`.trim() || fullUnit.unitLabel || 'Unit',
+      city_id: fullUnit.city_id || fullUnit.city?.id || null,
+      ...unitPriceFields.reduce((payload, field) => {
+        payload[field] = fullUnit[field] || 0;
+        return payload;
+      }, {}),
+    };
+    showUnitPriceDialog.value = true;
+  } catch (err) {
+    showActionError(err, 'Gagal mengambil detail unit');
+  }
 };
 
 const refreshSelectedUnit = async (unitId) => {
@@ -1159,6 +1193,12 @@ const saveUnitPrice = async (data) => {
   if (unitPriceSaving.value) return;
   const unitId = unitPriceDialogUnitId.value;
   if (!unitId) return;
+  unitPriceErrors.value = {};
+
+  if (!data?.city_id) {
+    unitPriceErrors.value.city_id = 'Kota unit wajib dipilih.';
+    return;
+  }
 
   const currentUnit = findUnitOption(unitId) || {};
   const pricePayload = unitPriceFields.reduce((payload, field) => {
@@ -1170,6 +1210,7 @@ const saveUnitPrice = async (data) => {
   try {
     await updateUnit(unitId, {
       ...currentUnit,
+      city_id: data.city_id,
       ...pricePayload,
       id: unitId,
     });
@@ -1177,6 +1218,10 @@ const saveUnitPrice = async (data) => {
     toast.add({ severity: 'success', summary: 'Sukses', detail: 'Harga unit berhasil diperbarui.', life: 3000 });
     showUnitPriceDialog.value = false;
   } catch (err) {
+    const cityError = err.response?.data?.errors?.city_id;
+    if (cityError) {
+      unitPriceErrors.value.city_id = Array.isArray(cityError) ? cityError[0] : cityError;
+    }
     showActionError(err, 'Gagal memperbarui harga unit');
   } finally {
     unitPriceSaving.value = false;
@@ -1562,8 +1607,8 @@ const openDetailDialog = async (detail = null) => {
 const openPrimaryUnitDialog = () => {
   // Tombol Handle Unit muncul saat unit belum fix ATAU harga unit ready masih 0.
   // Kondisi sama dipakai untuk menentukan apakah save akan auto-handle.
-  const triggersHandle = ['follow_up', 'confirm'].includes(booking.value?.status)
-    && (!hasFixedUnit.value || hasZeroReadyUnitPrice.value);
+  const triggersHandle = booking.value?.status === 'reschedule'
+    || (['follow_up', 'confirm'].includes(booking.value?.status) && (!hasFixedUnit.value || hasZeroReadyUnitPrice.value));
   openDetailDialog(unitActionDetail.value);
   // Set setelah openDetailDialog karena openDetailDialog mereset flag di awal.
   unitDialogTriggersHandle.value = triggersHandle;
@@ -1658,6 +1703,11 @@ const openRollingDialog = () => {
 const openBatalDialog = () => {
   batalForm.value = { ada_refund: false, nominal_refund: null, bank_refund: '', no_rek_refund: '', nama_rek_refund: '', catatan_refund: '' };
   showBatalDialog.value = true;
+};
+
+const openRescheduleDialog = () => {
+  rescheduleForm.value = { reschedule_date: null, catatan_status: '' };
+  showRescheduleDialog.value = true;
 };
 
 const openEditBookingDialog = () => {
@@ -1802,7 +1852,7 @@ const doSubmitDetail = async () => {
     // sehingga handled_by + handled_at terisi.
     const shouldAutoHandle = unitDialogTriggersHandle.value
       && detailDialogMode.value === 'detail'
-      && ['follow_up', 'confirm'].includes(booking.value?.status)
+      && ['follow_up', 'confirm', 'reschedule'].includes(booking.value?.status)
       && hasFixedUnit.value
       && !hasZeroReadyUnitPrice.value;
     unitDialogTriggersHandle.value = false;
@@ -1847,6 +1897,44 @@ const doSubmitDetail = async () => {
 
 const submitDetail = async () => {
   if (loading.value || detailSaving.value) return;
+
+  if (unitDialogTriggersHandle.value && booking.value?.status === 'reschedule') {
+    confirm.require({
+      message: 'Booking akan dipindahkan ke Waiting List dan tidak bisa dibatalkan. Lanjutkan simpan?',
+      header: 'Konfirmasi Jadwalkan Ulang',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Ya, Simpan',
+      rejectLabel: 'Batal',
+      acceptClass: 'app-dialog-button app-dialog-button-primary',
+      rejectClass: 'app-dialog-button app-dialog-button-secondary',
+      accept: () => proceedSubmitDetail(),
+    });
+    return;
+  }
+
+  if (['extend', 'edit_extend', 'edit_rolling'].includes(detailDialogMode.value)) {
+    const messages = {
+      extend: 'Proses transaksi Extend ini?',
+      edit_extend: 'Simpan perubahan transaksi Extend ini?',
+      edit_rolling: 'Simpan perubahan transaksi Rolling ini?',
+    };
+    confirm.require({
+      message: messages[detailDialogMode.value],
+      header: 'Konfirmasi Simpan',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Ya, Simpan',
+      rejectLabel: 'Batal',
+      acceptClass: 'app-dialog-button app-dialog-button-warning',
+      rejectClass: 'app-dialog-button app-dialog-button-secondary',
+      accept: () => proceedSubmitDetail(),
+    });
+    return;
+  }
+
+  await proceedSubmitDetail();
+};
+
+const proceedSubmitDetail = async () => {
   if (detailForm.value.tgl_sewa && detailForm.value.tgl_kembali && detailForm.value.tgl_kembali < detailForm.value.tgl_sewa) {
     toast.add({
       severity: 'warn',
@@ -1947,7 +2035,7 @@ const submitExtend = async () => {
   }
 };
 
-const submitRolling = async () => {
+const proceedSubmitRolling = async () => {
   if (loading.value) return;
   try {
     syncRollingOldReturnDate();
@@ -1985,11 +2073,38 @@ const submitRolling = async () => {
   }
 };
 
+const confirmSubmitRolling = () => {
+  confirm.require({
+    message: 'Proses transaksi Rolling ini? Unit lama akan ditutup dan unit baru akan aktif.',
+    header: 'Konfirmasi Rolling',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Ya, Proses',
+    rejectLabel: 'Batal',
+    acceptClass: 'app-dialog-button app-dialog-button-warning',
+    rejectClass: 'app-dialog-button app-dialog-button-secondary',
+    accept: () => proceedSubmitRolling(),
+  });
+};
+
 const submitBatal = async () => {
   if (loading.value) return;
   try {
     await cancel(booking.value.id, batalForm.value);
     showBatalDialog.value = false;
+    loadBooking();
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+const submitReschedule = async () => {
+  if (loading.value || !rescheduleForm.value.catatan_status.trim()) return;
+  try {
+    await reschedule(booking.value.id, {
+      reschedule_date: rescheduleForm.value.reschedule_date?.toISOString() || null,
+      catatan_status: rescheduleForm.value.catatan_status.trim(),
+    });
+    showRescheduleDialog.value = false;
     loadBooking();
   } catch (err) {
     console.error(err);
@@ -2344,6 +2459,62 @@ const paymentStatusLabel = (status) => {
   return map[status || 'active'] || status;
 };
 
+// Batal Extend (request → supervisor approve/reject), mirip flow void pembayaran di atas.
+const showCancelExtendDialog = ref(false);
+const showRejectCancelExtendDialog = ref(false);
+const selectedCancelExtendDetail = ref(null);
+const cancelExtendForm = ref({ reason: '' });
+const rejectCancelExtendForm = ref({ rejection_note: '' });
+const cancelExtendFormErrors = ref({});
+
+const openCancelExtendDialog = (detail) => {
+  selectedCancelExtendDetail.value = detail;
+  cancelExtendForm.value = { reason: '' };
+  cancelExtendFormErrors.value = {};
+  showCancelExtendDialog.value = true;
+};
+
+const submitCancelExtendRequest = async () => {
+  if (loading.value) return;
+  cancelExtendFormErrors.value = {};
+  try {
+    await requestCancelExtend(selectedCancelExtendDetail.value.id, cancelExtendForm.value.reason);
+    showCancelExtendDialog.value = false;
+    await loadBooking();
+  } catch (err) {
+    if (err.response?.data?.errors) cancelExtendFormErrors.value = err.response.data.errors;
+    console.error(err);
+  }
+};
+
+const approveCancelExtendRequest = (detail) => {
+  confirm.require({
+    message: 'Setujui pembatalan transaksi Extend ini? Tagihan akan dikoreksi sesuai durasi sebelum extend.',
+    header: 'ACC Batal Extend',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'ACC Batal',
+    rejectLabel: 'Batal',
+    acceptClass: 'p-button-danger',
+    accept: async () => {
+      await approveCancelExtend(detail.id);
+      await loadBooking();
+    },
+  });
+};
+
+const openRejectCancelExtendDialog = (detail) => {
+  selectedCancelExtendDetail.value = detail;
+  rejectCancelExtendForm.value = { rejection_note: '' };
+  showRejectCancelExtendDialog.value = true;
+};
+
+const submitRejectCancelExtend = async () => {
+  if (loading.value) return;
+  await rejectCancelExtend(selectedCancelExtendDetail.value.id, rejectCancelExtendForm.value);
+  showRejectCancelExtendDialog.value = false;
+  await loadBooking();
+};
+
 // E4: Checkout & Complete dialogs
 const showCheckoutDialog = ref(false);
 const showCompleteDialog = ref(false);
@@ -2495,10 +2666,13 @@ const getDialogStateMap = () => ({
   showRollingDialog,
   showStopEarlyDialog,
   showBatalDialog,
+  showRescheduleDialog,
   showPaymentDialog,
   showVoidPaymentDialog,
   showRejectVoidDialog,
   showAdditionalCostDialog,
+  showCancelExtendDialog,
+  showRejectCancelExtendDialog,
 });
 
 const dialogTitles = {
@@ -2512,10 +2686,13 @@ const dialogTitles = {
   showRollingDialog: 'Ganti Unit',
   showStopEarlyDialog: 'Stop Early',
   showBatalDialog: 'Batalkan Booking',
+  showRescheduleDialog: 'Reschedule Booking',
   showPaymentDialog: 'Tambah Pembayaran',
   showVoidPaymentDialog: 'Request Void Pembayaran',
   showRejectVoidDialog: 'Tolak Void Pembayaran',
   showAdditionalCostDialog: 'Tambah Biaya/Diskon Tambahan',
+  showCancelExtendDialog: 'Request Batal Extend',
+  showRejectCancelExtendDialog: 'Tolak Batal Extend',
 };
 
 const closeDialogSilently = (dialogKey) => {
@@ -2592,6 +2769,7 @@ const auditUserName = (user) => user?.name || '-';
         <Button v-if="booking && ['follow_up', 'confirm'].includes(booking.status)" label="Waiting List" icon="pi pi-check-circle" class="detail-primary-action" @click="onHandle" :loading="loading" :disabled="!canHandleBooking" :title="canHandleBooking ? 'Pindahkan ke Waiting List' : 'Isi unit kendaraan terlebih dahulu'" />
         <Button v-if="booking && booking.status === 'waiting_list'" label="Checkout" icon="pi pi-sign-out" class="detail-primary-action" @click="openCheckoutDialog" :loading="loading" />
         <Button v-if="booking && booking.status === 'rental_unit'" label="Selesai" icon="pi pi-flag-fill" class="detail-primary-action" @click="openCompleteDialog" :loading="loading" />
+        <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list'].includes(booking.status)" label="Reschedule" icon="pi pi-calendar-times" severity="warning" outlined class="detail-secondary-action" @click="openRescheduleDialog" :loading="loading" />
         <Button v-if="booking && !['selesai', 'batal', 'cancelled'].includes(booking.status)" label="Batalkan" icon="pi pi-ban" severity="danger" outlined class="detail-secondary-action" @click="openBatalDialog" :loading="loading" />
         <!-- Buat Invoice: unit sudah handled, belum ada invoice, punya akses finance -->
         <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list', 'rental_unit'].includes(booking.status) && !hasBookingInvoice && canAccessInvoice" label="Buat Invoice" icon="pi pi-file-plus" severity="secondary" outlined class="detail-secondary-action" @click="showGenerateInvoiceDialog = true" />
@@ -2740,7 +2918,7 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h2 class="text-base font-bold text-slate-800">Unit Kendaraan & Driver</h2>
             </div>
-            <Button :label="unitActionLabel" :icon="unitActionIcon" size="small" class="bg-emerald-600 hover:bg-emerald-700 border-none font-semibold rounded-lg px-3.5 py-2 text-white text-xs shadow-sm transition-all" @click="openPrimaryUnitDialog" v-if="['follow_up', 'confirm', 'waiting_list'].includes(booking.status)" />
+            <Button :label="unitActionLabel" :icon="unitActionIcon" size="small" class="bg-emerald-600 hover:bg-emerald-700 border-none font-semibold rounded-lg px-3.5 py-2 text-white text-xs shadow-sm transition-all" @click="openPrimaryUnitDialog" v-if="['follow_up', 'confirm', 'waiting_list', 'reschedule'].includes(booking.status)" />
           </div>
 
           <div class="p-6">
@@ -2838,6 +3016,20 @@ const auditUserName = (user) => user?.name || '-';
                         formatCurrency(detailBillableCostTotal(detail)) }}
                     </div>
                     <Button v-if="canEditDetailTransaction(detail)" :label="detail.detail_type === 'rolling' ? 'Edit Rolling' : (detail.detail_type === 'extend' ? 'Edit Extend' : 'Edit Transaksi Awal')" icon="pi pi-pencil" size="small" outlined :severity="detail.detail_type === 'rolling' ? 'info' : (detail.detail_type === 'extend' ? 'warning' : 'success')" class="mt-3 rounded-lg font-semibold text-xs px-3 py-1.5" @click="openDetailDialog(detail)" />
+
+                    <template v-if="detail.detail_type === 'extend' && detail.id === lastExtendDetail?.id && detail.status === 'aktif'">
+                      <Button v-if="detail.cancel_extend_status !== 'pending'" label="Batal Extend" icon="pi pi-ban" size="small" outlined severity="danger" class="mt-2 rounded-lg font-semibold text-xs px-3 py-1.5" @click="openCancelExtendDialog(detail)" />
+                      <template v-else>
+                        <Tag value="Menunggu ACC Batal Extend" severity="warning" class="mt-2 text-[10px]" />
+                        <div v-if="canApprovePaymentVoid" class="flex gap-1 mt-1.5">
+                          <Button label="" icon="pi pi-check" size="small" severity="success" text class="text-xs px-2 py-1" @click="approveCancelExtendRequest(detail)" />
+                          <Button label="" icon="pi pi-times" size="small" severity="danger" text class="text-xs px-2 py-1" @click="openRejectCancelExtendDialog(detail)" />
+                        </div>
+                      </template>
+                      <p v-if="detail.cancel_extend_status === 'rejected' && detail.cancel_extend_rejection_note" class="text-[10px] text-rose-500 mt-1 max-w-[180px]">
+                        Ditolak: {{ detail.cancel_extend_rejection_note }}
+                      </p>
+                    </template>
                   </div>
                 </div>
 
@@ -3499,6 +3691,12 @@ const auditUserName = (user) => user?.name || '-';
           <Tag v-if="selectedDetailUnit" :value="unitStatusMeta(selectedDetailUnit.status).label" :severity="unitStatusMeta(selectedDetailUnit.status).severity" />
         </div>
 
+        <div class="unit-price-location">
+          <label class="text-xs font-semibold text-slate-600">Kota Unit *</label>
+          <Dropdown v-model="unitPriceForm.city_id" :options="cityOptions" optionLabel="label" optionValue="id" placeholder="Pilih kota unit" filter :filterFields="['searchableLabel', 'label']" :loading="citiesLoading" class="w-full" :class="{ 'p-invalid': unitPriceErrors.city_id }" :empty-message="'Belum ada kota aktif'" @filter="onCityFilter" />
+          <small v-if="unitPriceErrors.city_id" class="p-error">{{ unitPriceErrors.city_id }}</small>
+        </div>
+
         <div class="unit-price-grid">
           <section class="unit-price-section">
             <h3>Harga Lepas Kunci</h3>
@@ -3577,7 +3775,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showUnitPriceDialog = false" />
-          <Button label="Simpan Harga" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" :loading="unitPriceSaving" :disabled="unitPriceSaving" @click="saveUnitPrice(unitPriceForm)" />
+          <Button label="Simpan Harga" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" :loading="unitPriceSaving" :disabled="unitPriceSaving || !unitPriceForm.city_id" @click="saveUnitPrice(unitPriceForm)" />
         </div>
       </template>
     </Dialog>
@@ -4038,9 +4236,9 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showRollingDialog')" />
-          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="app-dialog-button app-dialog-button-info" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
+          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="app-dialog-button app-dialog-button-warning" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
           <Button v-if="rollingStep === 2" label="Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
-          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-info" @click="submitRolling" :loading="loading" :disabled="loading" />
+          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-warning" @click="confirmSubmitRolling" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -4113,6 +4311,36 @@ const auditUserName = (user) => user?.name || '-';
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showBatalDialog')" />
           <Button label="Ya, Batalkan Booking" icon="pi pi-ban" class="app-dialog-button app-dialog-button-danger" @click="submitBatal" :loading="loading" :disabled="loading || (batalForm.ada_refund && !batalForm.nominal_refund)" />
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- ======= DIALOG: Reschedule Booking ======= -->
+    <Dialog :visible="showRescheduleDialog" @update:visible="onDialogVisibleChange('showRescheduleDialog', $event)" header="Reschedule Booking" :style="{ width: '440px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-xl">
+          <div class="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
+            <i class="pi pi-calendar-times"></i>
+          </div>
+          <div>
+            <p class="font-bold text-slate-800 mb-0.5">Booking akan dijadwalkan ulang</p>
+            <p class="text-sm text-slate-500">Status berubah ke <strong>Reschedule</strong>. Gunakan tombol "Jadwalkan
+              Ulang" pada detail booking untuk memindahkannya kembali ke Waiting List.</p>
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Tanggal Reschedule <span class="text-slate-400 font-normal">(opsional)</span></label>
+          <Calendar v-model="rescheduleForm.reschedule_date" dateFormat="dd M yy" showIcon class="w-full" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Alasan Reschedule <span class="text-rose-500">*</span></label>
+          <Textarea v-model="rescheduleForm.catatan_status" rows="3" placeholder="Alasan booking dijadwalkan ulang..." class="w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRescheduleDialog')" />
+          <Button label="Ya, Reschedule" icon="pi pi-calendar-times" class="app-dialog-button app-dialog-button-primary" @click="submitReschedule" :loading="loading" :disabled="loading || !rescheduleForm.catatan_status.trim()" />
         </div>
       </template>
     </Dialog>
@@ -4208,6 +4436,40 @@ const auditUserName = (user) => user?.name || '-';
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRejectVoidDialog')" />
           <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger" @click="submitRejectVoid" :loading="loading" :disabled="loading" />
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- ======= DIALOG: Request Batal Extend ======= -->
+    <Dialog :visible="showCancelExtendDialog" @update:visible="onDialogVisibleChange('showCancelExtendDialog', $event)" header="Request Batal Extend" :style="{ width: '460px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Alasan Batal Extend *</label>
+          <Textarea v-model="cancelExtendForm.reason" rows="3" placeholder="Jelaskan kenapa transaksi Extend ini perlu dibatalkan..." class="w-full" :class="{ 'p-invalid': cancelExtendFormErrors.reason }" />
+          <small class="p-error" v-if="cancelExtendFormErrors.reason">{{ cancelExtendFormErrors.reason[0] }}</small>
+        </div>
+        <p class="text-xs text-slate-400">Request akan dikirim ke supervisor untuk di-ACC. Tagihan baru terkoreksi setelah disetujui.</p>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCancelExtendDialog')" />
+          <Button label="Kirim Request" icon="pi pi-send" class="app-dialog-button app-dialog-button-danger" @click="submitCancelExtendRequest" :loading="loading" :disabled="loading" />
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- ======= DIALOG: Tolak Batal Extend ======= -->
+    <Dialog :visible="showRejectCancelExtendDialog" @update:visible="onDialogVisibleChange('showRejectCancelExtendDialog', $event)" header="Tolak Batal Extend" :style="{ width: '440px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Catatan Penolakan</label>
+          <Textarea v-model="rejectCancelExtendForm.rejection_note" rows="3" placeholder="Opsional..." class="w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRejectCancelExtendDialog')" />
+          <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger" @click="submitRejectCancelExtend" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -4498,6 +4760,16 @@ const auditUserName = (user) => user?.name || '-';
 .unit-price-heading strong {
   color: var(--text-primary);
   font-size: var(--font-size-14px);
+}
+
+.unit-price-location {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
 }
 
 .unit-price-grid {

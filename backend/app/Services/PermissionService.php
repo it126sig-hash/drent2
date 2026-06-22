@@ -48,6 +48,11 @@ class PermissionService
         'finance.operational_cost.create',
         'finance.operational_cost.update',
 
+        // Finance - Kartu Fleet
+        'finance.fleet_card',
+        'finance.fleet_card.create',
+        'finance.fleet_card.update',
+
         // Finance - Mutasi Rekening
         'finance.account_mutation',
         'finance.account_mutation.create',

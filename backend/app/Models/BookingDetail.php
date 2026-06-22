@@ -27,6 +27,15 @@ class BookingDetail extends Model
         'detail_type',
         'status',
         'created_by',
+        'cancel_extend_status',
+        'cancel_extend_reason',
+        'cancel_extend_requested_by',
+        'cancel_extend_requested_at',
+        'cancel_extend_approved_by',
+        'cancel_extend_approved_at',
+        'cancel_extend_rejected_by',
+        'cancel_extend_rejected_at',
+        'cancel_extend_rejection_note',
     ];
 
     protected $casts = [
@@ -80,8 +89,33 @@ class BookingDetail extends Model
         return $this->hasMany(DriverOperationalExpense::class);
     }
 
+    public function fleetCardFunds()
+    {
+        return $this->hasMany(FleetCardFund::class);
+    }
+
+    public function fleetCardExpenses()
+    {
+        return $this->hasMany(FleetCardExpense::class);
+    }
+
     public function rentToRentDebt()
     {
         return $this->hasOne(RentToRentDebt::class);
+    }
+
+    public function cancelExtendRequester()
+    {
+        return $this->belongsTo(User::class, 'cancel_extend_requested_by');
+    }
+
+    public function cancelExtendApprover()
+    {
+        return $this->belongsTo(User::class, 'cancel_extend_approved_by');
+    }
+
+    public function cancelExtendRejecter()
+    {
+        return $this->belongsTo(User::class, 'cancel_extend_rejected_by');
     }
 }

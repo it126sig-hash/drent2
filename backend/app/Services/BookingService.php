@@ -241,9 +241,9 @@ class BookingService
      */
     public function handleBooking(Booking $booking, array $data): Booking
     {
-        if (!in_array($booking->status, ['follow_up', 'confirm'])) {
+        if (!in_array($booking->status, ['follow_up', 'confirm', 'reschedule'])) {
             throw new \InvalidArgumentException(
-                "Handle hanya diperbolehkan untuk booking dengan status follow_up atau confirm."
+                "Handle hanya diperbolehkan untuk booking dengan status follow_up, confirm, atau reschedule."
             );
         }
 
@@ -581,6 +581,10 @@ class BookingService
             $updates['completed_at'] = now();
         }
 
+        if ($data['status'] === 'reschedule') {
+            $updates['reschedule_date'] = $data['reschedule_date'] ?? null;
+        }
+
         $booking->update($updates);
 
         if ($data['status'] === 'waiting_list') {
@@ -609,10 +613,11 @@ class BookingService
     private function getAllowedTransitions(string $current): array
     {
         return match ($current) {
-            'follow_up'    => ['confirm', 'waiting_list', 'batal'],
-            'confirm'      => ['waiting_list', 'batal'],
-            'waiting_list' => ['rental_unit', 'batal'],
+            'follow_up'    => ['confirm', 'waiting_list', 'batal', 'reschedule'],
+            'confirm'      => ['waiting_list', 'batal', 'reschedule'],
+            'waiting_list' => ['rental_unit', 'batal', 'reschedule'],
             'rental_unit'  => ['selesai', 'batal'],
+            'reschedule'   => ['batal'],
             default        => [],
         };
     }
