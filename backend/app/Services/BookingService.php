@@ -165,28 +165,7 @@ class BookingService
     public function assignDetail(Booking $booking, array $data): BookingDetail
     {
         return DB::transaction(function () use ($booking, $data) {
-            $modalMobil = 0;
-            if (!empty($data['unit_id'])) {
-                $unit = \App\Models\Unit::find($data['unit_id']);
-                if ($unit) {
-                    $pricingMode = $data['pricing_mode'] ?? 'non_all_in';
-                    $paket = strtolower($data['paket_sewa'] ?? $booking->paket_sewa ?? '');
-                    
-                    if ($pricingMode === 'all_in' && empty($data['pricing_package_id'])) {
-                        $modalMobil = match($paket) {
-                            'mingguan' => $unit->modal_all_in_1_minggu,
-                            'bulanan' => $unit->modal_all_in_1_bulan,
-                            default => $unit->modal_all_in,
-                        };
-                    } else {
-                        $modalMobil = match($paket) {
-                            'mingguan' => $unit->modal_1_minggu,
-                            'bulanan' => $unit->modal_1_bulan,
-                            default => $unit->modal_1_hari,
-                        };
-                    }
-                }
-            }
+            $modalMobil = app(BookingModalService::class)->resolve($data, $booking->paket_sewa);
 
             $detail = $booking->bookingDetails()->create([
                 'unit_id' => $data['unit_id'],
@@ -273,28 +252,7 @@ class BookingService
                 ]);
             }
 
-            $modalMobil = 0;
-            if (!empty($data['unit_id'])) {
-                $unit = \App\Models\Unit::find($data['unit_id']);
-                if ($unit) {
-                    $pricingMode = $data['pricing_mode'] ?? 'non_all_in';
-                    $paket = strtolower($data['paket_sewa'] ?? '');
-                    
-                    if ($pricingMode === 'all_in' && empty($data['pricing_package_id'])) {
-                        $modalMobil = match($paket) {
-                            'mingguan' => $unit->modal_all_in_1_minggu,
-                            'bulanan' => $unit->modal_all_in_1_bulan,
-                            default => $unit->modal_all_in,
-                        };
-                    } else {
-                        $modalMobil = match($paket) {
-                            'mingguan' => $unit->modal_1_minggu,
-                            'bulanan' => $unit->modal_1_bulan,
-                            default => $unit->modal_1_hari,
-                        };
-                    }
-                }
-            }
+            $modalMobil = app(BookingModalService::class)->resolve($data, $booking->paket_sewa);
 
             $detail->update([
                 'unit_id'            => $data['unit_id'],

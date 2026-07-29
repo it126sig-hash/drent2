@@ -21,6 +21,7 @@ class ExtendBookingRequest extends FormRequest
             'lama_sewa'             => ['required', 'integer', 'min:1'],
             'paket_sewa'            => ['required', 'string', 'in:harian,mingguan,bulanan'],
             'harga_mobil'           => ['required', 'integer', 'min:0'],
+            'modal_mobil'           => ['nullable', 'integer', 'min:0'],
             'diskon_mobil'          => ['nullable', 'integer', 'min:0'],
             'pricing_mode'          => ['required', 'string', 'in:all_in,non_all_in'],
             'pricing_package_id'    => ['nullable', 'exists:pricing_packages,id'],

@@ -11,7 +11,8 @@ import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCity } from '../../composables/useCity';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
-import { getUnits, getUnit, updateUnit, checkUnitSchedule } from '../../api/unit';
+import { getUnits, checkUnitSchedule } from '../../api/unit';
+import { calcRentalSubtotal } from '../../utils/bookingPricing';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Dialog from 'primevue/dialog';
@@ -52,38 +53,9 @@ const isSubmitting = ref(false);
 const unitSearchLoading = ref(false);
 const unitServerSearchTerm = ref('');
 const unitCityFilter = ref(null);
-const showUnitPriceDialog = ref(false);
-const unitPriceSaving = ref(false);
-const unitPriceForm = ref({
-  id: null,
-  label: '',
-  harga_1_hari: 0,
-  harga_1_minggu: 0,
-  harga_1_bulan: 0,
-  harga_all_in: 0,
-  harga_all_in_1_minggu: 0,
-  harga_all_in_1_bulan: 0,
-  modal_1_hari: 0,
-  modal_1_minggu: 0,
-  modal_1_bulan: 0,
-  modal_all_in: 0,
-  modal_all_in_1_minggu: 0,
-  modal_all_in_1_bulan: 0,
-});
-const unitPriceFields = [
-  'harga_1_hari',
-  'harga_1_minggu',
-  'harga_1_bulan',
-  'harga_all_in',
-  'harga_all_in_1_minggu',
-  'harga_all_in_1_bulan',
-  'modal_1_hari',
-  'modal_1_minggu',
-  'modal_1_bulan',
-  'modal_all_in',
-  'modal_all_in_1_minggu',
-  'modal_all_in_1_bulan',
-];
+const waitingHargaTouched = ref(false);
+const waitingModalTouched = ref(false);
+let lastPrefilledUnitId = null;
 const showScheduleConflictDialog = ref(false);
 const scheduleConflicts = ref([]);
 let customerSearchTimer = null;
@@ -161,6 +133,7 @@ const form = ref({
 const waitingListForm = ref({
   driver_id: null,
   harga_mobil: 0,
+  modal_mobil: 0,
   diskon_mobil: 0,
   pricing_mode: 'non_all_in',
   pricing_package_id: null,
@@ -247,25 +220,18 @@ const getBillableCostTotal = (pricingMode, costs = []) => {
   return sumCosts(costs, { discountsOnly: pricingMode === 'all_in' });
 };
 
-const waitingHargaSewa = computed(() => {
-  const { harga_mobil, diskon_mobil } = waitingListForm.value;
-  return Math.max(0, ((harga_mobil || 0) - (diskon_mobil || 0)) * (form.value.lama_sewa || 0));
-});
+const waitingHargaSewa = computed(() => calcRentalSubtotal({
+  harga_mobil: waitingListForm.value.harga_mobil,
+  diskon_mobil: waitingListForm.value.diskon_mobil,
+  lama_sewa: form.value.lama_sewa,
+}));
 
 const waitingTotalBiayaOps = computed(() =>
   getBillableCostTotal(waitingListForm.value.pricing_mode, waitingListForm.value.costs)
 );
 
-const waitingModalMobil = computed(() =>
-  getUnitModalByPaket(
-    selectedUnit.value,
-    form.value.paket_sewa,
-    waitingListForm.value.pricing_mode,
-    waitingListForm.value.pricing_package_id
-  )
-);
 const waitingModalMobilTotal = computed(() =>
-  (waitingModalMobil.value || 0) * (form.value.lama_sewa || 0)
+  (waitingListForm.value.modal_mobil || 0) * (form.value.lama_sewa || 0)
 );
 const isWaitingManualAllIn = computed(() =>
   waitingListForm.value.pricing_mode === 'all_in' && !waitingListForm.value.pricing_package_id
@@ -278,11 +244,11 @@ const waitingPriceInputLabel = computed(() => {
   return 'Harga mobil / periode *';
 });
 const waitingPriceInputHint = computed(() => {
-  if (isWaitingManualAllIn.value) return 'Isi harga All In manual atau edit harga unit.';
+  if (isWaitingManualAllIn.value) return 'Isi harga All In manual atau muat dari unit.';
   if (waitingListForm.value.pricing_mode === 'all_in' && waitingListForm.value.pricing_package_id) {
     return 'Harga lepas kunci harian dari unit; tagihan konsumen memakai pricing package.';
   }
-  return 'Diisi otomatis berdasarkan unit & paket sewa.';
+  return 'Prefill dari unit & paket sewa, bisa diubah manual tanpa mengubah master unit.';
 });
 const waitingPriceInputValue = computed({
   get() {
@@ -352,7 +318,8 @@ const selectCreateMode = (mode) => {
   if (mode === 'waiting_list') {
     form.value.unit_mode = 'existing';
     if (selectedUnit.value) {
-      waitingListForm.value.harga_mobil = selectedUnit.value.harga_1_hari || 0;
+      prefillPricingFromUnit();
+      lastPrefilledUnitId = selectedUnit.value.id;
     }
   }
 };
@@ -726,8 +693,8 @@ const validateWaitingListForm = () => {
     waitingListErrors.value.pricing_package_id = 'Harga pricing package harus lebih dari Rp 1.';
   }
 
-  if (isInvalidBookingMoney(waitingModalMobil.value)) {
-    waitingListErrors.value.modal_mobil = 'Harga modal unit harus lebih dari Rp 1. Edit harga unit dulu.';
+  if (isInvalidBookingMoney(waitingListForm.value.modal_mobil)) {
+    waitingListErrors.value.modal_mobil = 'Harga modal unit harus lebih dari Rp 1.';
   }
 
   const invalidCost = waitingListForm.value.costs.some(cost => !cost.label || cost.amount == null);
@@ -761,6 +728,7 @@ const buildWaitingListPayload = () => {
     lama_sewa: form.value.lama_sewa,
     paket_sewa: form.value.paket_sewa,
     harga_mobil: waitingListForm.value.harga_mobil || 0,
+    modal_mobil: waitingListForm.value.modal_mobil || 0,
     diskon_mobil: waitingListForm.value.diskon_mobil || 0,
     pricing_mode: waitingListForm.value.pricing_mode,
     pricing_package_id: waitingListForm.value.pricing_package_id,
@@ -981,71 +949,42 @@ const getUnitModalByPaket = (unit, paket, pricingMode = 'non_all_in', pricingPac
   }
 };
 
-const openUnitPriceDialog = () => {
+// Prefill harga & modal dari master unit. Tidak menyentuh data master —
+// nilai hasil prefill tetap bisa diubah manual dan hanya tersimpan di booking.
+const prefillPricingFromUnit = ({ hargaOnly = false, modalOnly = false } = {}) => {
+  const unit = selectedUnit.value;
+  if (!unit) return;
+
+  const paket = form.value.paket_sewa;
+  const { pricing_mode: pricingMode, pricing_package_id: packageId } = waitingListForm.value;
+
+  if (!modalOnly) {
+    if (pricingMode === 'all_in') {
+      // Komponen harga mobil tetap memakai harga harian lepas kunci
+      waitingListForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
+      if (!packageId) {
+        waitingListForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
+      }
+    } else {
+      waitingListForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
+    }
+  }
+
+  if (!hargaOnly) {
+    waitingListForm.value.modal_mobil = getUnitModalByPaket(unit, paket, pricingMode, packageId);
+  }
+};
+
+const loadPricingFromUnit = () => {
   if (!selectedUnit.value) {
-    toast.add({ severity: 'warn', summary: 'Pilih Unit', detail: 'Pilih unit dulu sebelum edit harga.', life: 3000 });
+    toast.add({ severity: 'warn', summary: 'Pilih Unit', detail: 'Pilih unit dulu sebelum memuat harga.', life: 3000 });
     return;
   }
 
-  const unit = selectedUnit.value;
-  selectedUnitCache.value = { ...unit };
-  unitPriceForm.value = {
-    id: unit.id,
-    label: `${unit.merk || ''} ${unit.tipe || ''}`.trim() || unit.label || 'Unit',
-    harga_1_hari: unit.harga_1_hari || 0,
-    harga_1_minggu: unit.harga_1_minggu || 0,
-    harga_1_bulan: unit.harga_1_bulan || 0,
-    harga_all_in: unit.harga_all_in || 0,
-    harga_all_in_1_minggu: unit.harga_all_in_1_minggu || 0,
-    harga_all_in_1_bulan: unit.harga_all_in_1_bulan || 0,
-    modal_1_hari: unit.modal_1_hari || 0,
-    modal_1_minggu: unit.modal_1_minggu || 0,
-    modal_1_bulan: unit.modal_1_bulan || 0,
-    modal_all_in: unit.modal_all_in || 0,
-    modal_all_in_1_minggu: unit.modal_all_in_1_minggu || 0,
-    modal_all_in_1_bulan: unit.modal_all_in_1_bulan || 0,
-  };
-  showUnitPriceDialog.value = true;
-};
-
-const refreshSelectedUnit = async (unitId) => {
-  const response = await getUnit(unitId);
-  const updatedUnit = response.data.data;
-  const mappedUnit = mapUnitOption(updatedUnit);
-  const existingIndex = units.value.findIndex(unit => unit.id === updatedUnit.id);
-
-  if (existingIndex >= 0) {
-    units.value.splice(existingIndex, 1, updatedUnit);
-  } else {
-    units.value.unshift(updatedUnit);
-  }
-
-  selectedUnitCache.value = mappedUnit;
-};
-
-const saveUnitPrice = async (data) => {
-  if (!selectedUnit.value?.id) return;
-
-  const pricePayload = unitPriceFields.reduce((payload, field) => {
-    payload[field] = data?.[field] ?? 0;
-    return payload;
-  }, {});
-
-  unitPriceSaving.value = true;
-  try {
-    await updateUnit(selectedUnit.value.id, {
-      ...selectedUnit.value,
-      ...pricePayload,
-      id: selectedUnit.value.id,
-    });
-    await refreshSelectedUnit(selectedUnit.value.id);
-    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Harga unit berhasil diperbarui.', life: 3000 });
-    showUnitPriceDialog.value = false;
-  } catch (err) {
-    toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || 'Gagal memperbarui harga unit.', life: 5000 });
-  } finally {
-    unitPriceSaving.value = false;
-  }
+  prefillPricingFromUnit();
+  waitingHargaTouched.value = false;
+  waitingModalTouched.value = false;
+  toast.add({ severity: 'success', summary: 'Harga dimuat', detail: 'Harga & modal diambil dari master unit.', life: 2500 });
 };
 
 watch(selectedCustomer, (customer) => {
@@ -1062,7 +1001,7 @@ watch(
     waitingListForm.value.pricing_mode,
     waitingListForm.value.pricing_package_id,
   ],
-  ([unit, paket, pricingMode, packageId]) => {
+  ([unit]) => {
     // Selalu update cache untuk summary panel
     if (unit && selectedUnitCache.value?.id !== unit.id) {
       selectedUnitCache.value = unit;
@@ -1070,16 +1009,19 @@ watch(
 
     if (!isDirectWaitingList.value || !unit) return;
 
-    if (pricingMode === 'non_all_in') {
-      waitingListForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
-    } else if (pricingMode === 'all_in') {
-      // Harga mobil (non-all-in component) tetap menggunakan harga harian
-      waitingListForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
-      // Auto-fill harga all-in dari unit hanya jika package belum dipilih
-      if (!packageId) {
-        waitingListForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
-      }
+    // Ganti unit mengembalikan harga & modal ke nilai master unit
+    if (unit.id !== lastPrefilledUnitId) {
+      lastPrefilledUnitId = unit.id;
+      waitingHargaTouched.value = false;
+      waitingModalTouched.value = false;
     }
+
+    // Prefill hanya untuk field yang belum diubah manual
+    if (waitingHargaTouched.value && waitingModalTouched.value) return;
+    prefillPricingFromUnit({
+      hargaOnly: waitingModalTouched.value,
+      modalOnly: waitingHargaTouched.value,
+    });
   }
 );
 
@@ -1154,12 +1096,16 @@ const resetForm = () => {
   waitingListForm.value = {
     driver_id: null,
     harga_mobil: 0,
+    modal_mobil: 0,
     diskon_mobil: 0,
     pricing_mode: 'non_all_in',
     pricing_package_id: null,
     harga_all_in: null,
     costs: [],
   };
+  waitingHargaTouched.value = false;
+  waitingModalTouched.value = false;
+  lastPrefilledUnitId = null;
   waitingListErrors.value = {};
   formErrors.value = {};
   selectedStartDateKey.value = null;
@@ -1700,23 +1646,24 @@ const formatDate = (value) => {
                 <div class="form-field-vertical">
                   <div class="field-label-row">
                     <label class="field-label">{{ waitingPriceInputLabel }}</label>
-                    <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="field-action-button" :disabled="!selectedUnit" @click="openUnitPriceDialog" />
+                    <Button label="Muat dari Unit" icon="pi pi-download" text size="small" class="field-action-button" :disabled="!selectedUnit" @click="loadPricingFromUnit" />
                   </div>
-                  <InputNumber v-model="waitingPriceInputValue" mode="currency" currency="IDR" locale="id-ID" :disabled="!isWaitingManualAllIn" class="w-full premium-input" :class="{ 'p-invalid': waitingListErrors.harga_utama }" />
+                  <InputNumber v-model="waitingPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full premium-input" :class="{ 'p-invalid': waitingListErrors.harga_utama }" @update:modelValue="waitingHargaTouched = true" />
                   <small class="field-hint">{{ waitingPriceInputHint }}</small>
                   <small class="p-error" v-if="waitingListErrors.harga_utama">{{ waitingListErrors.harga_utama }}</small>
                 </div>
 
                 <div class="form-field-vertical">
                   <label class="field-label">Harga modal / periode</label>
-                  <InputNumber :modelValue="waitingModalMobil" mode="currency" currency="IDR" locale="id-ID" :disabled="true" class="w-full premium-input" :class="{ 'p-invalid': waitingListErrors.modal_mobil }" />
-                  <small class="field-hint">Modal mengikuti unit, paket sewa, dan mode pricing</small>
+                  <InputNumber v-model="waitingListForm.modal_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full premium-input" :class="{ 'p-invalid': waitingListErrors.modal_mobil }" @update:modelValue="waitingModalTouched = true" />
+                  <small class="field-hint">Prefill dari unit, bisa diubah manual tanpa mengubah master unit</small>
                   <small class="p-error" v-if="waitingListErrors.modal_mobil">{{ waitingListErrors.modal_mobil }}</small>
                 </div>
 
                 <div class="form-field-vertical">
                   <label class="field-label">Diskon mobil</label>
                   <InputNumber v-model="waitingListForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full premium-input" />
+                  <small class="field-hint">Total diskon untuk periode sewa (tidak dikali hari)</small>
                 </div>
 
                 <div v-if="waitingListForm.pricing_mode === 'all_in'" class="form-field-vertical md:col-span-2 all-in-panel">
@@ -1889,97 +1836,6 @@ const formatDate = (value) => {
       </div>
       <template #footer>
         <Button label="OK, Tetap Lanjutkan" icon="pi pi-check" @click="showScheduleConflictDialog = false" class="p-button-tosca w-full justify-center" />
-      </template>
-    </Dialog>
-
-    <Dialog v-model:visible="showUnitPriceDialog" modal header="Edit Harga Unit" class="custom-dialog" :style="{ width: '760px' }" :breakpoints="{ '820px': '95vw' }">
-      <div class="unit-price-dialog">
-        <div class="unit-price-heading">
-          <div>
-            <span>Unit</span>
-            <strong>{{ unitPriceForm.label }}</strong>
-          </div>
-          <Tag v-if="selectedUnit" :value="unitStatusMeta(selectedUnit.status).label" :severity="unitStatusMeta(selectedUnit.status).severity" />
-        </div>
-
-        <div class="unit-price-grid">
-          <section class="unit-price-section">
-            <h3>Harga Lepas Kunci</h3>
-            <div class="unit-price-fields">
-              <div class="form-field-vertical">
-                <label class="field-label">1 Hari</label>
-                <InputNumber v-model="unitPriceForm.harga_1_hari" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Minggu</label>
-                <InputNumber v-model="unitPriceForm.harga_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Bulan</label>
-                <InputNumber v-model="unitPriceForm.harga_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-            </div>
-          </section>
-
-          <section class="unit-price-section">
-            <h3>Harga All In</h3>
-            <div class="unit-price-fields">
-              <div class="form-field-vertical">
-                <label class="field-label">1 Hari</label>
-                <InputNumber v-model="unitPriceForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Minggu</label>
-                <InputNumber v-model="unitPriceForm.harga_all_in_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Bulan</label>
-                <InputNumber v-model="unitPriceForm.harga_all_in_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-            </div>
-          </section>
-
-          <section class="unit-price-section">
-            <h3>Modal Lepas Kunci</h3>
-            <div class="unit-price-fields">
-              <div class="form-field-vertical">
-                <label class="field-label">1 Hari</label>
-                <InputNumber v-model="unitPriceForm.modal_1_hari" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Minggu</label>
-                <InputNumber v-model="unitPriceForm.modal_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Bulan</label>
-                <InputNumber v-model="unitPriceForm.modal_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-            </div>
-          </section>
-
-          <section class="unit-price-section">
-            <h3>Modal All In</h3>
-            <div class="unit-price-fields">
-              <div class="form-field-vertical">
-                <label class="field-label">1 Hari</label>
-                <InputNumber v-model="unitPriceForm.modal_all_in" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Minggu</label>
-                <InputNumber v-model="unitPriceForm.modal_all_in_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-              <div class="form-field-vertical">
-                <label class="field-label">1 Bulan</label>
-                <InputNumber v-model="unitPriceForm.modal_all_in_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <template #footer>
-        <Button label="Batal" icon="pi pi-times" text class="button-secondary" @click="showUnitPriceDialog = false" />
-        <Button label="Simpan Harga" icon="pi pi-save" class="p-button-tosca" :loading="unitPriceSaving" @click="saveUnitPrice(unitPriceForm)" />
       </template>
     </Dialog>
   </div>
@@ -2441,64 +2297,6 @@ const formatDate = (value) => {
   font-weight: 700;
 }
 
-.unit-price-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-}
-
-.unit-price-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  padding: var(--space-md);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-default);
-  background: var(--surface-default);
-}
-
-.unit-price-heading span {
-  display: block;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.unit-price-heading strong {
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.unit-price-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-md);
-}
-
-.unit-price-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-md);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-default);
-  background: var(--card-bg);
-}
-
-.unit-price-section h3 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.unit-price-fields {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-sm);
-}
-
 .summary-panel {
   position: sticky;
   top: var(--space-lg);
@@ -2692,10 +2490,6 @@ const formatDate = (value) => {
     grid-template-columns: 1fr;
   }
 
-  .unit-price-grid {
-    grid-template-columns: 1fr;
-  }
-
   .summary-panel {
     position: static;
     max-height: none;
@@ -2709,8 +2503,7 @@ const formatDate = (value) => {
   }
 
   .create-mode-grid,
-  .cost-row,
-  .unit-price-fields {
+  .cost-row {
     grid-template-columns: 1fr;
   }
 
