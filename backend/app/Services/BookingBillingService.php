@@ -3,10 +3,22 @@
 namespace App\Services;
 
 use App\Models\Booking;
+use App\Models\BookingDetail;
 use Carbon\Carbon;
 
 class BookingBillingService
 {
+    /**
+     * Subtotal sewa mobil untuk satu detail (mode non all-in).
+     * `harga_mobil` per periode, `diskon_mobil` adalah total diskon baris ini.
+     */
+    public function detailRentalSubtotal(BookingDetail $detail): int
+    {
+        $duration = max(1, (int) ($detail->lama_sewa ?? 1));
+
+        return max(0, ((int) $detail->harga_mobil * $duration) - (int) $detail->diskon_mobil);
+    }
+
     public function totalTagihan(Booking $booking): int
     {
         if (! $booking->relationLoaded('bookingDetails')) {
@@ -30,7 +42,7 @@ class BookingBillingService
                 return ((int) ($detail->harga_all_in ?? 0) * $duration) + $additional;
             }
 
-            $rental = ((int) $detail->harga_mobil - (int) $detail->diskon_mobil) * $duration;
+            $rental = $this->detailRentalSubtotal($detail);
             $costs = $detail->relationLoaded('costs')
                 ? $detail->costs->sum(fn($cost) => $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount)
                 : 0;

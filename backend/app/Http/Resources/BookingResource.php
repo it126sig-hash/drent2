@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\BookingBillingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -108,6 +109,7 @@ class BookingResource extends JsonResource
                     'tgl_sewa'           => $d->tgl_sewa,
                     'tgl_kembali'        => $d->tgl_kembali,
                     'harga_mobil'        => (int) $d->harga_mobil,
+                    'modal_mobil'        => (int) $d->modal_mobil,
                     'diskon_mobil'       => (int) $d->diskon_mobil,
                     'lama_sewa'          => $d->lama_sewa,
                     'paket_sewa'         => $d->paket_sewa,
@@ -305,7 +307,7 @@ class BookingResource extends JsonResource
                     );
                 }
             } else {
-                $total += (int) (($d->harga_mobil - $d->diskon_mobil) * $duration);
+                $total += app(BookingBillingService::class)->detailRentalSubtotal($d);
 
                 if ($d->relationLoaded('costs')) {
                     $total += $d->costs->sum(fn($cost) =>

@@ -13,6 +13,7 @@ import { getUnits, getUnit, updateUnit, checkUnitSchedule } from '../../api/unit
 import { useAuthStore } from '../../stores/auth';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import { printPaymentReceipt, buildReceiptFromBookingPayment } from '../../utils/printReceipt';
+import { calcRentalSubtotal } from '../../utils/bookingPricing';
 import { markInvoiceSent, downloadInvoicePdf, getInvoice, refreshInvoiceAmount } from '../../api/receivable';
 import GenerateInvoiceDialog from '../../components/invoices/GenerateInvoiceDialog.vue';
 import InvoicePaymentDialog from '../../components/invoices/InvoicePaymentDialog.vue';
@@ -457,6 +458,7 @@ const detailForm = ref({
   tgl_sewa: null,
   tgl_kembali: null,
   harga_mobil: 0,
+  modal_mobil: 0,
   diskon_mobil: 0,
   lama_sewa: 1,
   paket_sewa: 'harian',
@@ -483,6 +485,7 @@ const extendForm = ref({
   lama_sewa: null,
   paket_sewa: 'harian',
   harga_mobil: 0,
+  modal_mobil: 0,
   diskon_mobil: 0,
   pricing_mode: 'non_all_in',
   pricing_package_id: null,
@@ -501,6 +504,7 @@ const rollingForm = ref({
   lama_sewa_lama: null,
   paket_sewa_lama: 'harian',
   harga_mobil_lama: 0,
+  modal_mobil_lama: 0,
   diskon_mobil_lama: 0,
   pricing_mode_lama: 'non_all_in',
   pricing_package_id_lama: null,
@@ -513,6 +517,7 @@ const rollingForm = ref({
   lama_sewa: null,
   paket_sewa: 'harian',
   harga_mobil: 0,
+  modal_mobil: 0,
   diskon_mobil: 0,
   pricing_mode: 'non_all_in',
   pricing_package_id: null,
@@ -557,7 +562,7 @@ const costTypes = [
   { label: 'Lainnya', value: 'lainnya' },
 ];
 
-const extendHargaSewa = computed(() => Math.max(0, ((extendForm.value.harga_mobil || 0) - (extendForm.value.diskon_mobil || 0)) * (extendForm.value.lama_sewa || 0)));
+const extendHargaSewa = computed(() => calcRentalSubtotal(extendForm.value));
 const extendTotalBiaya = computed(() => getBillableCostTotal(extendForm.value.pricing_mode, extendForm.value.costs));
 const extendGrandTotal = computed(() => extendHargaSewa.value + extendTotalBiaya.value);
 const extendTagihan = computed(() => {
@@ -573,7 +578,7 @@ const extendTagihan = computed(() => {
 });
 
 // Rolling computed
-const rollingHargaSewa = computed(() => Math.max(0, ((rollingForm.value.harga_mobil || 0) - (rollingForm.value.diskon_mobil || 0)) * (rollingForm.value.lama_sewa || 0)));
+const rollingHargaSewa = computed(() => calcRentalSubtotal(rollingForm.value));
 const rollingTotalBiaya = computed(() => getBillableCostTotal(rollingForm.value.pricing_mode, rollingForm.value.costs));
 const rollingGrandTotal = computed(() => rollingHargaSewa.value + rollingTotalBiaya.value);
 const rollingTagihan = computed(() => {
@@ -588,7 +593,11 @@ const rollingTagihan = computed(() => {
   return rollingGrandTotal.value;
 });
 
-const rollingOldHargaSewa = computed(() => Math.max(0, ((rollingForm.value.harga_mobil_lama || 0) - (rollingForm.value.diskon_mobil_lama || 0)) * (rollingForm.value.lama_sewa_lama || 0)));
+const rollingOldHargaSewa = computed(() => calcRentalSubtotal({
+  harga_mobil: rollingForm.value.harga_mobil_lama,
+  diskon_mobil: rollingForm.value.diskon_mobil_lama,
+  lama_sewa: rollingForm.value.lama_sewa_lama,
+}));
 const rollingOldTotalBiaya = computed(() => getBillableCostTotal(rollingForm.value.pricing_mode_lama, rollingForm.value.costs_lama));
 const rollingOldGrandTotal = computed(() => rollingOldHargaSewa.value + rollingOldTotalBiaya.value);
 const rollingOldTagihan = computed(() => {
@@ -678,9 +687,10 @@ const canApprovePaymentVoid = computed(() => ['superadmin', 'supervisor'].includ
 
 const selectedDetailUnit = computed(() => findUnitOption(detailForm.value.unit_id));
 const selectedDetailDriver = computed(() => drivers.value.find(driver => driver.id === detailForm.value.driver_id));
-const detailHargaSewa = computed(() => Math.max(0, ((detailForm.value.harga_mobil || 0) - (detailForm.value.diskon_mobil || 0)) * (detailForm.value.lama_sewa || 0)));
+const detailHargaSewa = computed(() => calcRentalSubtotal(detailForm.value));
 const detailTotalBiayaOps = computed(() => getBillableCostTotal(detailForm.value.pricing_mode, detailForm.value.costs));
-const detailModalMobil = computed(() =>
+// Nilai modal dari master unit, dipakai hanya sebagai prefill.
+const detailModalFromUnit = computed(() =>
   getUnitModalByPaket(
     selectedDetailUnit.value,
     detailForm.value.paket_sewa,
@@ -699,11 +709,11 @@ const detailPriceInputLabel = computed(() => {
   return 'Harga Mobil';
 });
 const detailPriceInputHint = computed(() => {
-  if (isDetailManualAllIn.value) return 'Diisi otomatis dari unit. Klik Edit Harga Unit untuk mengubah.';
+  if (isDetailManualAllIn.value) return 'Prefill dari unit, bisa diubah manual untuk booking ini.';
   if (detailForm.value.pricing_mode === 'all_in' && detailForm.value.pricing_package_id) {
     return 'Harga lepas kunci harian dari unit; tagihan konsumen memakai pricing package.';
   }
-  return 'Diisi otomatis dari unit dan paket sewa.';
+  return 'Prefill dari unit & paket sewa, bisa diubah manual tanpa mengubah master unit.';
 });
 const detailPriceInputValue = computed({
   get() {
@@ -768,9 +778,11 @@ const extendMinStartDate = computed(() => {
   return getExtendStartDate(validDetails.value[validDetails.value.length - 1]);
 });
 
-const detailRentalSubtotal = (detail) => {
-  return Math.max(0, ((detail.harga_mobil || 0) - (detail.diskon_mobil || 0)) * (detail.lama_sewa || booking.value?.lama_sewa || 1));
-};
+const detailRentalSubtotal = (detail) => calcRentalSubtotal({
+  harga_mobil: detail.harga_mobil,
+  diskon_mobil: detail.diskon_mobil,
+  lama_sewa: detail.lama_sewa || booking.value?.lama_sewa || 1,
+});
 
 const detailCostTotal = (detail) => {
   return sumCosts(detail.costs || []);
@@ -803,11 +815,15 @@ const detailUnitTotalWithCosts = (detail) => {
 
 const detailUnitPriceDescription = (detail) => {
   const lama = detail.lama_sewa || booking.value?.lama_sewa || 1;
-  const price = detail.pricing_mode === 'all_in'
-    ? (detail.harga_all_in || 0)
-    : Math.max(0, (detail.harga_mobil || 0) - (detail.diskon_mobil || 0));
 
-  return `${detailPricingModeLabel(detail)} - ${formatCurrency(price)} x ${lama}`;
+  if (detail.pricing_mode === 'all_in') {
+    return `${detailPricingModeLabel(detail)} - ${formatCurrency(detail.harga_all_in || 0)} x ${lama}`;
+  }
+
+  const base = `${detailPricingModeLabel(detail)} - ${formatCurrency(detail.harga_mobil || 0)} x ${lama}`;
+  const diskon = detail.diskon_mobil || 0;
+
+  return diskon > 0 ? `${base} - diskon ${formatCurrency(diskon)}` : base;
 };
 
 const detailTransactionLabel = (detail) => {
@@ -951,6 +967,7 @@ const applyRollingOldDetail = (detail) => {
   rollingForm.value.lama_sewa_original = oldDuration;
   rollingForm.value.paket_sewa_lama = detail?.paket_sewa || booking.value?.paket_sewa || 'harian';
   rollingForm.value.harga_mobil_lama = detail?.harga_mobil || 0;
+  rollingForm.value.modal_mobil_lama = detail?.modal_mobil || 0;
   rollingForm.value.diskon_mobil_lama = detail?.diskon_mobil || 0;
   rollingForm.value.pricing_mode_lama = detail?.pricing_mode || 'non_all_in';
   rollingForm.value.pricing_package_id_lama = detail?.pricing_package_id || null;
@@ -1161,6 +1178,12 @@ watch(
       : userTriggeredRefill
         ? true
         : currentHargaAllIn <= 1;
+
+    // Modal mengikuti aturan yang sama: prefill dari unit selama belum diisi manual.
+    const currentModal = detailForm.value.modal_mobil || 0;
+    if (userTriggeredRefill || currentModal <= 1) {
+      detailForm.value.modal_mobil = getUnitModalByPaket(unit, paket, pricingMode, packageId);
+    }
 
     if (pricingMode === 'non_all_in') {
       if (shouldFillMobil) {
@@ -1391,6 +1414,7 @@ const openDetailDialog = async (detail = null) => {
       tgl_sewa: detail.tgl_sewa ? new Date(detail.tgl_sewa) : null,
       tgl_kembali: detail.tgl_kembali ? new Date(detail.tgl_kembali) : null,
       harga_mobil: hargaMobilVal,
+      modal_mobil: detail.modal_mobil || 0,
       diskon_mobil: detail.diskon_mobil,
       lama_sewa: detail.lama_sewa || booking.value?.lama_sewa || 1,
       paket_sewa: detail.paket_sewa || booking.value?.paket_sewa || 'harian',
@@ -1408,6 +1432,7 @@ const openDetailDialog = async (detail = null) => {
       tgl_sewa: initial?.tgl_sewa ? applyDefaultTime(initial.tgl_sewa, 7, 0) : null,
       tgl_kembali: initial?.tgl_kembali ? applyDefaultTime(initial.tgl_kembali, 23, 59) : null,
       harga_mobil: 0,
+      modal_mobil: 0,
       diskon_mobil: 0,
       lama_sewa: booking.value?.lama_sewa || initial?.lama_sewa || 1,
       paket_sewa: booking.value?.paket_sewa || initial?.paket_sewa || 'harian',
@@ -1423,6 +1448,12 @@ const openDetailDialog = async (detail = null) => {
     isInitializingDetailDialog.value = false;
 
     const form = detailForm.value;
+    if (form.unit_id && (form.modal_mobil || 0) <= 1) {
+      const unitObj = findUnitOption(form.unit_id);
+      if (unitObj) {
+        form.modal_mobil = getUnitModalByPaket(unitObj, form.paket_sewa, form.pricing_mode, form.pricing_package_id);
+      }
+    }
     if (form.unit_id && (form.harga_mobil || 0) <= 1) {
       const unitObj = findUnitOption(form.unit_id);
       if (unitObj) {
@@ -1487,6 +1518,7 @@ const openExtendDialog = () => {
     lama_sewa: last?.lama_sewa || booking.value?.lama_sewa || 1,
     paket_sewa: last?.paket_sewa || 'harian',
     harga_mobil: last?.harga_mobil || 0,
+    modal_mobil: last?.modal_mobil || 0,
     diskon_mobil: last?.diskon_mobil || 0,
     pricing_mode: last?.pricing_mode || 'non_all_in',
     pricing_package_id: last?.pricing_package_id || null,
@@ -1511,6 +1543,7 @@ const openRollingDialog = () => {
     lama_sewa_original: null,
     paket_sewa_lama: booking.value?.paket_sewa || 'harian',
     harga_mobil_lama: 0,
+    modal_mobil_lama: 0,
     diskon_mobil_lama: 0,
     pricing_mode_lama: 'non_all_in',
     pricing_package_id_lama: null,
@@ -1523,6 +1556,7 @@ const openRollingDialog = () => {
     lama_sewa: null,
     paket_sewa: active?.paket_sewa || booking.value?.paket_sewa || 'harian',
     harga_mobil: 0,
+    modal_mobil: 0,
     diskon_mobil: 0,
     pricing_mode: 'non_all_in',
     pricing_package_id: null,
@@ -1571,6 +1605,12 @@ const onAdditionalCostTypeChange = (costTypeId) => {
 const onUnitChange = (e) => {
   onUnitSelect(e.value, (unit) => {
     detailForm.value.harga_mobil = unit.harga_1_hari || 0;
+    detailForm.value.modal_mobil = getUnitModalByPaket(
+      unit,
+      detailForm.value.paket_sewa,
+      detailForm.value.pricing_mode,
+      detailForm.value.pricing_package_id
+    );
   });
 };
 
@@ -1588,6 +1628,46 @@ const onRollingOldUnitChange = (e) => {
   onUnitSelect(e.value, (unit) => {
     if ((rollingForm.value.harga_mobil_lama || 0) <= 1) {
       rollingForm.value.harga_mobil_lama = unit.harga_1_hari || 0;
+    }
+    if ((rollingForm.value.modal_mobil_lama || 0) <= 1) {
+      rollingForm.value.modal_mobil_lama = getUnitModalByPaket(
+        unit,
+        rollingForm.value.paket_sewa_lama,
+        rollingForm.value.pricing_mode_lama,
+        rollingForm.value.pricing_package_id_lama
+      );
+    }
+  });
+};
+
+const onRollingNewUnitChange = (e) => {
+  onUnitSelect(e.value, (unit) => {
+    if ((rollingForm.value.harga_mobil || 0) <= 1) {
+      rollingForm.value.harga_mobil = unit.harga_1_hari || 0;
+    }
+    if ((rollingForm.value.modal_mobil || 0) <= 1) {
+      rollingForm.value.modal_mobil = getUnitModalByPaket(
+        unit,
+        rollingForm.value.paket_sewa,
+        rollingForm.value.pricing_mode,
+        rollingForm.value.pricing_package_id
+      );
+    }
+  });
+};
+
+const onExtendUnitChange = (e) => {
+  onUnitSelect(e.value, (unit) => {
+    if ((extendForm.value.harga_mobil || 0) <= 1) {
+      extendForm.value.harga_mobil = unit.harga_1_hari || 0;
+    }
+    if ((extendForm.value.modal_mobil || 0) <= 1) {
+      extendForm.value.modal_mobil = getUnitModalByPaket(
+        unit,
+        extendForm.value.paket_sewa,
+        extendForm.value.pricing_mode,
+        extendForm.value.pricing_package_id
+      );
     }
   });
 };
@@ -1692,6 +1772,7 @@ const doSubmitDetail = async () => {
           lama_sewa: primaryDetail.lama_sewa || booking.value?.lama_sewa || 1,
           paket_sewa: primaryDetail.paket_sewa || booking.value?.paket_sewa || 'harian',
           harga_mobil: primaryDetail.harga_mobil || 0,
+          modal_mobil: primaryDetail.modal_mobil || 0,
           diskon_mobil: primaryDetail.diskon_mobil || 0,
           pricing_mode: primaryDetail.pricing_mode || 'non_all_in',
           pricing_package_id: primaryDetail.pricing_package_id || null,
@@ -1743,14 +1824,14 @@ const submitDetail = async () => {
   }
 
   // Validasi harga modal: hanya saat assign unit (mode detail) + unit sudah dipilih.
-  // Modal read-only, ngikut data unit. Kalau 0/1, user harus edit harga unit dulu.
+  // Modal disimpan sebagai snapshot booking, boleh berbeda dari master unit.
   detailFormErrors.value = {};
   if (
     detailDialogMode.value === 'detail'
     && detailForm.value.unit_id
-    && (Number(detailModalMobil.value) || 0) <= 1
+    && (Number(detailForm.value.modal_mobil) || 0) <= 1
   ) {
-    detailFormErrors.value.modal_mobil = 'Harga modal unit harus lebih dari Rp 1. Edit harga unit dulu.';
+    detailFormErrors.value.modal_mobil = 'Harga modal harus lebih dari Rp 1.';
     toast.add({
       severity: 'warn',
       summary: 'Validasi',
@@ -1939,6 +2020,7 @@ const submitHandle = async () => {
       lama_sewa: primaryDetail.lama_sewa || booking.value?.lama_sewa || 1,
       paket_sewa: primaryDetail.paket_sewa || booking.value?.paket_sewa || 'harian',
       harga_mobil: primaryDetail.harga_mobil || 0,
+      modal_mobil: primaryDetail.modal_mobil || 0,
       diskon_mobil: primaryDetail.diskon_mobil || 0,
       pricing_mode: primaryDetail.pricing_mode || 'non_all_in',
       pricing_package_id: primaryDetail.pricing_package_id || null,
@@ -3271,7 +3353,7 @@ const auditUserName = (user) => user?.name || '-';
                 </label>
                 <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedDetailUnit" @click="openUnitPriceDialog" />
               </div>
-              <InputNumber v-model="detailPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
+              <InputNumber v-model="detailPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
               <small class="text-xs text-slate-400">{{ detailPriceInputHint }}</small>
             </div>
             <div class="flex flex-col gap-1.5">
@@ -3279,13 +3361,14 @@ const auditUserName = (user) => user?.name || '-';
                 <i class="pi pi-percentage text-orange-500 text-[11px]"></i> Diskon
               </label>
               <InputNumber v-model="detailForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <small class="text-xs text-slate-400">Total diskon untuk periode sewa (tidak dikali hari).</small>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 <i class="pi pi-database text-blue-500 text-[11px]"></i> Harga Modal / periode
               </label>
-              <InputNumber :modelValue="detailModalMobil" mode="currency" currency="IDR" locale="id-ID" disabled class="w-full" :class="{ 'p-invalid': detailFormErrors.modal_mobil }" />
-              <small class="text-xs text-slate-400">Modal mengikuti unit, paket sewa, dan mode pricing.</small>
+              <InputNumber v-model="detailForm.modal_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" :class="{ 'p-invalid': detailFormErrors.modal_mobil }" />
+              <small class="text-xs text-slate-400">Prefill dari unit, bisa diubah manual tanpa mengubah master unit.</small>
               <small class="p-error text-xs" v-if="detailFormErrors.modal_mobil">{{ detailFormErrors.modal_mobil }}</small>
             </div>
           </div>
@@ -3504,7 +3587,7 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Kendaraan *</label>
-              <Dropdown v-model="extendForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { if ((extendForm.harga_mobil || 0) <= 1) { extendForm.harga_mobil = unit.harga_1_hari || 0; } })" class="w-full" />
+              <Dropdown v-model="extendForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onExtendUnitChange" class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver <span class="text-slate-400 font-normal">(opsional)</span></label>
@@ -3540,12 +3623,18 @@ const auditUserName = (user) => user?.name || '-';
             <div class="grid grid-cols-2 gap-3">
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-                <InputNumber v-model="extendForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
-                <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
+                <InputNumber v-model="extendForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <small class="text-xs text-slate-400">Prefill dari unit & paket sewa, bisa diubah manual.</small>
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Diskon</label>
                 <InputNumber v-model="extendForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <small class="text-xs text-slate-400">Total diskon untuk periode sewa (tidak dikali hari).</small>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">Harga Modal / periode</label>
+                <InputNumber v-model="extendForm.modal_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <small class="text-xs text-slate-400">Prefill dari unit, disimpan sebagai snapshot booking.</small>
               </div>
             </div>
             <SelectButton v-model="extendForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
@@ -3661,12 +3750,18 @@ const auditUserName = (user) => user?.name || '-';
             <div class="grid grid-cols-2 gap-3">
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-                <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
-                <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
+                <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <small class="text-xs text-slate-400">Prefill dari unit & paket sewa, bisa diubah manual.</small>
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-slate-600">Diskon</label>
                 <InputNumber v-model="rollingForm.diskon_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <small class="text-xs text-slate-400">Total diskon untuk periode sewa (tidak dikali hari).</small>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-slate-600">Harga Modal / periode</label>
+                <InputNumber v-model="rollingForm.modal_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <small class="text-xs text-slate-400">Prefill dari unit, disimpan sebagai snapshot booking.</small>
               </div>
             </div>
             <SelectButton v-model="rollingForm.pricing_mode_lama" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
@@ -3723,7 +3818,7 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-2 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Baru *</label>
-              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="e => onUnitSelect(e.value, unit => { if ((rollingForm.harga_mobil || 0) <= 1) { rollingForm.harga_mobil = unit.harga_1_hari || 0; } })" class="w-full" />
+              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onRollingNewUnitChange" class="w-full" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
@@ -3755,12 +3850,18 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-              <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full bg-slate-50" readonly />
-              <small class="text-xs text-slate-400">Diisi otomatis dari unit dan paket sewa.</small>
+              <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <small class="text-xs text-slate-400">Prefill dari unit & paket sewa, bisa diubah manual.</small>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Diskon</label>
               <InputNumber v-model="rollingForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <small class="text-xs text-slate-400">Total diskon untuk periode sewa (tidak dikali hari).</small>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-slate-600">Harga Modal / periode</label>
+              <InputNumber v-model="rollingForm.modal_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <small class="text-xs text-slate-400">Prefill dari unit, disimpan sebagai snapshot booking.</small>
             </div>
           </div>
           <div class="mt-3">

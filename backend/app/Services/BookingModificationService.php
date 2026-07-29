@@ -14,7 +14,8 @@ class BookingModificationService
 {
     public function __construct(
         private BookingBillingService $billingService,
-        private BookingCancellationService $cancellationService
+        private BookingCancellationService $cancellationService,
+        private BookingModalService $modalService
     ) {
     }
     /**
@@ -33,6 +34,7 @@ class BookingModificationService
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],
                 'harga_mobil'        => $data['harga_mobil'],
+                'modal_mobil'        => $this->modalService->resolve($data, $booking->paket_sewa),
                 'diskon_mobil'       => $data['diskon_mobil'] ?? 0,
                 'pricing_mode'       => $data['pricing_mode'],
                 'pricing_package_id' => $data['pricing_package_id'] ?? null,
@@ -91,6 +93,9 @@ class BookingModificationService
             if (isset($data['diskon_mobil_lama'])) {
                 $oldDetailUpdate['diskon_mobil'] = $data['diskon_mobil_lama'];
             }
+            if (array_key_exists('modal_mobil_lama', $data) && $data['modal_mobil_lama'] !== null) {
+                $oldDetailUpdate['modal_mobil'] = max(0, (int) $data['modal_mobil_lama']);
+            }
             if (isset($data['paket_sewa_lama'])) {
                 $oldDetailUpdate['paket_sewa'] = $data['paket_sewa_lama'];
             }
@@ -130,6 +135,7 @@ class BookingModificationService
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],
                 'harga_mobil'        => $data['harga_mobil'],
+                'modal_mobil'        => $this->modalService->resolve($data, $booking->paket_sewa),
                 'diskon_mobil'       => $data['diskon_mobil'] ?? 0,
                 'pricing_mode'       => $data['pricing_mode'],
                 'pricing_package_id' => $data['pricing_package_id'] ?? null,

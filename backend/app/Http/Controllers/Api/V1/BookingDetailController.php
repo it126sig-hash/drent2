@@ -7,6 +7,7 @@ use App\Http\Requests\StoreBookingDetailRequest;
 use App\Http\Resources\BookingResource;
 use App\Models\Booking;
 use App\Services\BookingBillingService;
+use App\Services\BookingModalService;
 use App\Services\BookingService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
@@ -21,6 +22,7 @@ class BookingDetailController extends Controller
     public function __construct(
         protected BookingService $bookingService,
         protected BookingBillingService $billingService,
+        protected BookingModalService $modalService,
     ) {}
 
     public function store(StoreBookingDetailRequest $request, Booking $booking)
@@ -57,6 +59,7 @@ class BookingDetailController extends Controller
             'tgl_sewa' => \Carbon\Carbon::parse($request->tgl_sewa)->format('Y-m-d H:i:s'),
             'tgl_kembali' => \Carbon\Carbon::parse($request->tgl_kembali)->format('Y-m-d H:i:s'),
             'harga_mobil' => $request->harga_mobil,
+            'modal_mobil' => $this->modalService->resolve($request->validated(), $bookingDetail->paket_sewa),
             'diskon_mobil' => $request->diskon_mobil ?? 0,
             'lama_sewa' => $request->lama_sewa,
             'paket_sewa' => $request->paket_sewa,

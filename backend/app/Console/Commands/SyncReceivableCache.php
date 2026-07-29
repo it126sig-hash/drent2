@@ -17,7 +17,7 @@ class SyncReceivableCache extends Command
      * SQL chunk UPDATE — formula sesuai BookingBillingService:
      *
      * totalTagihan per detail:
-     *   mode normal  : (harga_mobil - diskon_mobil) * lama_sewa + SUM(costs biaya) - SUM(costs diskon)
+     *   mode normal  : MAX(0, harga_mobil * lama_sewa - diskon_mobil) + SUM(costs biaya) - SUM(costs diskon)
      *   mode all_in  : harga_all_in * lama_sewa + SUM(costs is_additional biaya) - SUM(costs diskon)
      *
      * paidAmount: SUM(payments.amount) WHERE status != 'voided'
@@ -50,7 +50,10 @@ class SyncReceivableCache extends Command
                                 WHERE bc.booking_detail_id = bd.id
                             ), 0)
                         ELSE
-                            ((COALESCE(bd.harga_mobil, 0) - COALESCE(bd.diskon_mobil, 0)) * COALESCE(bd.lama_sewa, 1))
+                            GREATEST(0,
+                                (CAST(COALESCE(bd.harga_mobil, 0) AS SIGNED) * GREATEST(1, CAST(COALESCE(bd.lama_sewa, 1) AS SIGNED)))
+                                - CAST(COALESCE(bd.diskon_mobil, 0) AS SIGNED)
+                            )
                             + COALESCE((
                                 SELECT SUM(
                                     CASE
