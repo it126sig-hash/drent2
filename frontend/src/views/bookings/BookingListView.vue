@@ -6,6 +6,7 @@ import { getRentalOwners } from '../../api/rentalOwner';
 import { useCity } from '../../composables/useCity';
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue';
 import BookingCalendar from '../../components/bookings/BookingCalendar.vue';
+import { calcRentalSubtotal } from '../../utils/bookingPricing';
 import { format, addMonths, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
@@ -636,10 +637,11 @@ const getDetailCostTotal = (detail, options = {}) => {
   return filteredCosts.reduce((sum, cost) => sum + getSignedCostAmount(cost), 0);
 };
 
-const getDetailRentalSubtotal = (detail, booking) => {
-  const duration = detail?.lama_sewa || booking?.lama_sewa || 1;
-  return Math.max(0, ((detail?.harga_mobil || 0) - (detail?.diskon_mobil || 0)) * duration);
-};
+const getDetailRentalSubtotal = (detail, booking) => calcRentalSubtotal({
+  harga_mobil: detail?.harga_mobil,
+  diskon_mobil: detail?.diskon_mobil,
+  lama_sewa: detail?.lama_sewa || booking?.lama_sewa || 1,
+});
 
 const getDetailTotalSewa = (detail, booking) => {
   const duration = detail?.lama_sewa || booking?.lama_sewa || 1;

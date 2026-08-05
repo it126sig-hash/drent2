@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\BookingDetail;
+use App\Services\BookingBillingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -170,7 +171,7 @@ class TransactionListResource extends JsonResource
                     : ((bool) $cost->is_additional ? (int) $cost->amount : 0)
             );
         } else {
-            $total += (int) (($d->harga_mobil - $d->diskon_mobil) * $duration);
+            $total += app(BookingBillingService::class)->detailRentalSubtotal($d);
 
             $total += $d->costs->sum(fn($cost) =>
                 $cost->type === 'diskon' ? -((int) $cost->amount) : (int) $cost->amount

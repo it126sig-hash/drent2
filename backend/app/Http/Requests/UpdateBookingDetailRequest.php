@@ -28,6 +28,7 @@ class UpdateBookingDetailRequest extends FormRequest
             'tgl_sewa' => 'required|date',
             'tgl_kembali' => 'required|date|after_or_equal:tgl_sewa',
             'harga_mobil' => 'required|numeric|min:0',
+            'modal_mobil' => 'nullable|integer|min:0',
             'diskon_mobil' => 'nullable|numeric|min:0',
             'lama_sewa' => 'required|integer|min:1',
             'paket_sewa' => 'required|string|in:harian,mingguan,bulanan',

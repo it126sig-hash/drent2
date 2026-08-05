@@ -9,7 +9,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE bookings MODIFY COLUMN status ENUM('follow_up', 'confirm', 'waiting_list', 'rental_unit', 'selesai', 'batal', 'reschedule') NOT NULL DEFAULT 'follow_up'");
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE bookings MODIFY COLUMN status ENUM('follow_up', 'confirm', 'waiting_list', 'rental_unit', 'selesai', 'batal', 'reschedule') NOT NULL DEFAULT 'follow_up'");
+        }
 
         Schema::table('bookings', function (Blueprint $table) {
             $table->date('reschedule_date')->nullable()->after('catatan_status');
@@ -22,6 +24,8 @@ return new class extends Migration
             $table->dropColumn('reschedule_date');
         });
 
-        DB::statement("ALTER TABLE bookings MODIFY COLUMN status ENUM('follow_up', 'confirm', 'waiting_list', 'rental_unit', 'selesai', 'batal') NOT NULL DEFAULT 'follow_up'");
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE bookings MODIFY COLUMN status ENUM('follow_up', 'confirm', 'waiting_list', 'rental_unit', 'selesai', 'batal') NOT NULL DEFAULT 'follow_up'");
+        }
     }
 };

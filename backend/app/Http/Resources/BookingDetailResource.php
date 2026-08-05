@@ -22,6 +22,7 @@ class BookingDetailResource extends JsonResource
             'tgl_sewa' => $this->tgl_sewa,
             'tgl_kembali' => $this->tgl_kembali,
             'harga_mobil' => (int) $this->harga_mobil,
+            'modal_mobil' => (int) $this->modal_mobil,
             'diskon_mobil' => (int) $this->diskon_mobil,
             'detail_type' => $this->detail_type,
             'status' => $this->status,

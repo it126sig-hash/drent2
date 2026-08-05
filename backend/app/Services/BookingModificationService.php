@@ -14,7 +14,8 @@ class BookingModificationService
 {
     public function __construct(
         private BookingBillingService $billingService,
-        private BookingCancellationService $cancellationService
+        private BookingCancellationService $cancellationService,
+        private BookingModalService $modalService
     ) {
     }
     /**
@@ -25,13 +26,6 @@ class BookingModificationService
         $this->validateStatus($booking);
 
         return DB::transaction(function () use ($booking, $data) {
-            $modalMobil = $this->resolveModalMobil(
-                $data['unit_id'],
-                $data['pricing_mode'],
-                $data['pricing_package_id'] ?? null,
-                $data['paket_sewa'],
-            );
-
             $detail = $booking->bookingDetails()->create([
                 'unit_id'            => $data['unit_id'],
                 'driver_id'          => $data['driver_id'] ?? null,
@@ -40,7 +34,7 @@ class BookingModificationService
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],
                 'harga_mobil'        => $data['harga_mobil'],
-                'modal_mobil'        => $modalMobil,
+                'modal_mobil'        => $this->modalService->resolve($data, $booking->paket_sewa),
                 'diskon_mobil'       => $data['diskon_mobil'] ?? 0,
                 'pricing_mode'       => $data['pricing_mode'],
                 'pricing_package_id' => $data['pricing_package_id'] ?? null,
@@ -100,6 +94,9 @@ class BookingModificationService
             if (isset($data['diskon_mobil_lama'])) {
                 $oldDetailUpdate['diskon_mobil'] = $data['diskon_mobil_lama'];
             }
+            if (array_key_exists('modal_mobil_lama', $data) && $data['modal_mobil_lama'] !== null) {
+                $oldDetailUpdate['modal_mobil'] = max(0, (int) $data['modal_mobil_lama']);
+            }
             if (isset($data['paket_sewa_lama'])) {
                 $oldDetailUpdate['paket_sewa'] = $data['paket_sewa_lama'];
             }
@@ -112,12 +109,6 @@ class BookingModificationService
             if (array_key_exists('harga_all_in_lama', $data)) {
                 $oldDetailUpdate['harga_all_in'] = $data['harga_all_in_lama'];
             }
-            $oldDetailUpdate['modal_mobil'] = $this->resolveModalMobil(
-                $oldDetailUpdate['unit_id'] ?? $oldDetail->unit_id,
-                $data['pricing_mode_lama'] ?? $oldDetail->pricing_mode,
-                $data['pricing_package_id_lama'] ?? $oldDetail->pricing_package_id,
-                $oldDetailUpdate['paket_sewa'] ?? $oldDetail->paket_sewa,
-            );
             $oldDetail->update($oldDetailUpdate);
 
             if (array_key_exists('costs_lama', $data)) {
@@ -137,13 +128,6 @@ class BookingModificationService
             app(RentToRentService::class)->syncDetail($oldDetail->fresh(['booking', 'unit.rentalOwner']));
 
             // Step 2: buat detail baru type=rolling dengan form lengkap
-            $newModalMobil = $this->resolveModalMobil(
-                $data['unit_id'],
-                $data['pricing_mode'],
-                $data['pricing_package_id'] ?? null,
-                $data['paket_sewa'],
-            );
-
             $newDetail = $booking->bookingDetails()->create([
                 'unit_id'            => $data['unit_id'],
                 'driver_id'          => $data['driver_id'] ?? null,
@@ -152,7 +136,7 @@ class BookingModificationService
                 'lama_sewa'          => $data['lama_sewa'],
                 'paket_sewa'         => $data['paket_sewa'],
                 'harga_mobil'        => $data['harga_mobil'],
-                'modal_mobil'        => $newModalMobil,
+                'modal_mobil'        => $this->modalService->resolve($data, $booking->paket_sewa),
                 'diskon_mobil'       => $data['diskon_mobil'] ?? 0,
                 'pricing_mode'       => $data['pricing_mode'],
                 'pricing_package_id' => $data['pricing_package_id'] ?? null,
@@ -370,38 +354,5 @@ class BookingModificationService
         if ($booking->status !== 'rental_unit') {
             throw new UnprocessableEntityHttpException('Modifikasi hanya diperbolehkan untuk booking dengan status Rental Unit.');
         }
-    }
-
-    /**
-     * Aturan modal sama seperti booking initial (lihat BookingService::assignDetail()):
-     * all_in tanpa pricing package → pakai modal all-in; selain itu → modal non-all-in.
-     * Keduanya dipilih lagi berdasarkan paket_sewa (harian/mingguan/bulanan).
-     */
-    private function resolveModalMobil(?int $unitId, ?string $pricingMode, ?int $pricingPackageId, ?string $paketSewa): int
-    {
-        if (empty($unitId)) {
-            return 0;
-        }
-
-        $unit = \App\Models\Unit::find($unitId);
-        if (!$unit) {
-            return 0;
-        }
-
-        $paket = strtolower($paketSewa ?? '');
-
-        if (($pricingMode ?? 'non_all_in') === 'all_in' && empty($pricingPackageId)) {
-            return match ($paket) {
-                'mingguan' => $unit->modal_all_in_1_minggu,
-                'bulanan' => $unit->modal_all_in_1_bulan,
-                default => $unit->modal_all_in,
-            };
-        }
-
-        return match ($paket) {
-            'mingguan' => $unit->modal_1_minggu,
-            'bulanan' => $unit->modal_1_bulan,
-            default => $unit->modal_1_hari,
-        };
     }
 }

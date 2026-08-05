@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Booking;
+use App\Models\BookingDetail;
 use App\Models\BookingPayment;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
@@ -1196,7 +1197,7 @@ class ReceivableService
         return $paidAmount > 0 ? 'partial_paid' : 'generated';
     }
 
-    private function detailBaseAmount($detail): int
+    private function detailBaseAmount(BookingDetail $detail): int
     {
         $duration = $detail->lama_sewa ?? 1;
         $costs = $detail->relationLoaded('costs') ? $detail->costs : collect();
@@ -1213,7 +1214,7 @@ class ReceivableService
             return ((int) ($detail->harga_all_in ?? 0) * $duration) + $regularCosts;
         }
 
-        return (((int) $detail->harga_mobil - (int) $detail->diskon_mobil) * $duration) + $regularCosts;
+        return $this->billingService->detailRentalSubtotal($detail) + $regularCosts;
     }
 
     private function nextInvoiceNumber(int $branchId): string
