@@ -481,7 +481,8 @@ class DriverOperationalFundService
                 'cost_type_id' => $data['type'] === 'return' ? null : ($data['cost_type_id'] ?? null),
                 'type' => $data['type'],
                 'amount' => $data['amount'],
-                'description' => $data['description'],
+                'description' => $data['description'] ?? '',
+                'payment_date' => $data['payment_date'] ?? null,
                 'photo_path' => $photoPath,
                 'status' => $isFinanceSource ? 'approved' : 'submitted',
                 'source' => $isFinanceSource ? 'finance' : 'driver',
@@ -524,7 +525,8 @@ class DriverOperationalFundService
                 'cost_type_id' => $data['type'] === 'return' ? null : ($data['cost_type_id'] ?? null),
                 'type' => $data['type'],
                 'amount' => $data['amount'],
-                'description' => $data['description'],
+                'description' => $data['description'] ?? '',
+                'payment_date' => $data['payment_date'] ?? null,
                 'photo_path' => $photoPath,
                 'status' => 'approved', // Direct realization from finance without driver is auto-approved
                 'source' => 'finance',
@@ -542,7 +544,7 @@ class DriverOperationalFundService
                     'amount' => (int) $expense->amount,
                     'description' => "Pengeluaran operasional langsung booking #{$booking->kode_booking}: " . $expense->description,
                     'created_by' => Auth::id(),
-                    'transaction_at' => now(),
+                    'transaction_at' => $expense->payment_date ?? now(),
                 ]);
             }
 

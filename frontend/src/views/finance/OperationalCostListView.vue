@@ -448,12 +448,17 @@ const detailBudgetBreakdown = (detail) => {
   const operationalCosts = (detail?.costs || []).filter(cost => cost.type === 'biaya')
   if (operationalCosts.length > 0) {
     return operationalCosts.map(c => ({
+      cost_type_id: c.cost_type_id,
       label: c.cost_type?.kode === 'driver' ? 'Gaji Driver' : (c.label || c.cost_type?.nama || 'Biaya'),
       keterangan: c.keterangan || '',
       amount: c.amount,
     }))
   }
   return []
+}
+
+const onExpenseCostTypeChange = () => {
+  // Sesuai request, nominal tidak langsung terisi otomatis saat memilih cost type
 }
 
 const expenseDialogDetail = computed(() => {
@@ -888,7 +893,8 @@ const openExpenseDialog = (fund, type = 'expense') => {
     fund_id: fund.id,
     cost_type_id: null,
     type,
-    amount: null,
+    amount: 0,
+    payment_date: null,
     description: '',
     photo: null,
   }
@@ -904,7 +910,8 @@ const openBookingExpenseDialog = (booking, detail) => {
     cost_type_id: null,
     payment_account_id: paymentAccountOptions.value[0]?.id || null,
     type: 'expense',
-    amount: null,
+    amount: 0,
+    payment_date: null,
     description: '',
     photo: null,
   }
@@ -1156,6 +1163,9 @@ onUnmounted(() => {
                       <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openFundDialog(data.booking, 'salary', data.detail?.id)">
                         <i class="pi pi-money-bill"></i> Bayar Gaji Driver
                       </button>
+                      <button v-if="activeTab !== 'completed' && !detailDisbursedTotal(data.booking, data.detail)" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openBookingExpenseDialog(data.booking, data.detail)">
+                        <i class="pi pi-credit-card"></i> Input Realisasi
+                      </button>
                     </template>
                     <!-- If no driver exists -->
                     <template v-else>
@@ -1288,7 +1298,7 @@ onUnmounted(() => {
                   <i class="pi pi-money-bill"></i>
                   Gaji
                 </button>
-                <button v-if="activeTab !== 'completed' && !booking.booking_details?.[0]?.driver && !detailDisbursedTotal(booking, booking.booking_details?.[0])" class="btn-pill btn-secondary btn-pill-compact" @click="openBookingExpenseDialog(booking, booking.booking_details?.[0])">
+                <button v-if="activeTab !== 'completed' && !detailDisbursedTotal(booking, booking.booking_details?.[0])" class="btn-pill btn-secondary btn-pill-compact" @click="openBookingExpenseDialog(booking, booking.booking_details?.[0])">
                   <i class="pi pi-credit-card"></i>
                   Realisasi
                 </button>
@@ -1368,9 +1378,16 @@ onUnmounted(() => {
             </div>
           </div>
           <fieldset class="form-fieldset">
-            <label>Detail & Driver</label>
-            <Dropdown v-model="fundForm.booking_detail_id" :options="fundDetailOptions" optionLabel="label" optionValue="value" class="w-full" @change="onFundDetailChange" />
-          </fieldset>
+              <label>Detail & Driver</label>
+              <Dropdown v-model="fundForm.booking_detail_id" :options="fundDetailOptions" optionLabel="label" optionValue="value" class="w-full" @change="onFundDetailChange" />
+            </fieldset>
+            <div v-if="selectedFundDetail" class="app-muted-panel mb-2">
+              <div class="summary-row"><span>Status</span><strong>{{ detailTypeLabel(selectedFundDetail.detail_type) }}</strong></div>
+              <div class="summary-row"><span>Supir</span><strong>{{ selectedFundDetail.driver?.nama || '-' }}</strong></div>
+              <div class="summary-row"><span>Mobil</span><strong>{{ selectedFundDetail.unit?.no_polisi || '-' }}</strong></div>
+              <div class="summary-row"><span>Tujuan</span><strong>{{ selectedBooking?.tujuan || '-' }}</strong></div>
+              <div class="summary-row"><span>Tanggal Sewa</span><strong>{{ formatDateTime(selectedFundDetail.tgl_sewa) }} - {{ formatDateTime(selectedFundDetail.tgl_kembali) }}</strong></div>
+            </div>
           <fieldset class="form-fieldset">
             <label>Rekening Sumber Biaya</label>
             <Dropdown v-model="fundForm.payment_account_id" :options="paymentAccountOptions" optionLabel="label" optionValue="id" placeholder="Pilih rekening sumber" class="w-full" />
@@ -1652,6 +1669,13 @@ onUnmounted(() => {
 
     <Dialog v-model:visible="showExpenseDialog" :header="expenseForm.type === 'return' ? 'Input Pengembalian' : 'Input Bon Finance'" modal :style="{ width: '480px' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog']">
       <div class="dialog-stack">
+        <div v-if="expenseDialogDetail" class="app-muted-panel mb-2">
+          <div class="summary-row"><span>Status</span><strong>{{ detailTypeLabel(expenseDialogDetail.detail_type) }}</strong></div>
+          <div class="summary-row"><span>Supir</span><strong>{{ expenseDialogDetail.driver?.nama || '-' }}</strong></div>
+          <div class="summary-row"><span>Mobil</span><strong>{{ expenseDialogDetail.unit?.no_polisi || '-' }}</strong></div>
+          <div class="summary-row"><span>Tujuan</span><strong>{{ selectedBooking?.tujuan || '-' }}</strong></div>
+          <div class="summary-row"><span>Tanggal Sewa</span><strong>{{ formatDateTime(expenseDialogDetail.tgl_sewa) }} - {{ formatDateTime(expenseDialogDetail.tgl_kembali) }}</strong></div>
+        </div>
         <div v-if="expenseDialogBudgetBreakdown.length" class="app-muted-panel expense-budget-reference">
           <div class="summary-row">
             <span>Anggaran Biaya Operasional</span>
@@ -1664,9 +1688,13 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <fieldset class="form-fieldset">
+          <label>Tanggal Pembayaran</label>
+          <DatePicker v-model="expenseForm.payment_date" dateFormat="dd M yy" showTime hourFormat="24" showIcon class="w-full" />
+        </fieldset>
         <fieldset v-if="expenseForm.type === 'expense'" class="form-fieldset">
           <label>Cost Type</label>
-          <Dropdown v-model="expenseForm.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" showClear class="w-full" />
+          <Dropdown v-model="expenseForm.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" showClear class="w-full" @change="onExpenseCostTypeChange" />
         </fieldset>
         <fieldset v-if="expenseForm.type === 'expense' && !expenseForm.fund_id" class="form-fieldset">
           <label>Rekening Sumber Biaya</label>
@@ -1687,7 +1715,7 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <button class="app-dialog-button app-dialog-button-secondary" @click="showExpenseDialog = false">Batal</button>
-        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !expenseForm.amount || expenseForm.description.length < 3" @click="submitFinanceExpense">
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !expenseForm.payment_date || (expenseForm.type === 'expense' && !expenseForm.cost_type_id) || !expenseForm.amount || expenseForm.amount <= 0" @click="submitFinanceExpense">
           Simpan
         </button>
       </template>
@@ -2571,7 +2599,10 @@ onUnmounted(() => {
 }
 
 .tab-content-wrapper {
+  flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .list-tab-fill.operational-list-tab {
