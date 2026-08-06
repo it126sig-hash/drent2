@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\V1\PaymentAccountTransactionController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\InvoiceTermsTemplateController;
 use App\Http\Controllers\Api\V1\BookingCancellationController;
+use App\Http\Controllers\Api\V1\BookingPublicController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -52,6 +53,8 @@ Route::prefix('v1')->group(function () {
     Route::post('public/physical-checks/{token}/otp', [PhysicalCheckController::class, 'publicRequestOtp']);
     Route::post('public/physical-checks/{token}/activities', [PhysicalCheckController::class, 'publicActivity']);
     Route::post('public/physical-checks/{token}/submit', [PhysicalCheckController::class, 'publicStore']);
+    Route::get('public/bookings/{token}', [BookingPublicController::class, 'progress']);
+    Route::get('public/bookings/{token}/invoices', [BookingPublicController::class, 'invoices']);
 
     Route::middleware(['auth:sanctum', 'branch.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
@@ -167,9 +170,13 @@ Route::prefix('v1')->group(function () {
         Route::post('invoices/{invoice}/refresh-amount', [ReceivableController::class, 'refreshInvoiceAmount']);
         Route::post('invoices/{invoice}/payments', [ReceivableController::class, 'storeInvoicePayment']);
         Route::get('invoices/{invoice}/histories', [ReceivableController::class, 'invoiceHistories']);
+        Route::get('bookings/{booking}/invoice-histories', [ReceivableController::class, 'bookingInvoiceHistories']);
         Route::post('invoice-payments/{payment}/request-void', [ReceivableController::class, 'requestVoidInvoicePayment']);
         Route::post('invoice-payments/{payment}/approve-void', [ReceivableController::class, 'approveVoidInvoicePayment']);
         Route::post('invoice-payments/{payment}/reject-void', [ReceivableController::class, 'rejectVoidInvoicePayment']);
+        Route::post('invoices/{invoice}/request-void', [ReceivableController::class, 'requestVoidInvoice']);
+        Route::post('invoices/{invoice}/approve-void', [ReceivableController::class, 'approveVoidInvoice']);
+        Route::post('invoices/{invoice}/reject-void', [ReceivableController::class, 'rejectVoidInvoice']);
         Route::apiResource('invoice-terms-templates', InvoiceTermsTemplateController::class)->except(['show']);
 
         // Transactions

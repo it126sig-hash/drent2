@@ -15,6 +15,7 @@ class Booking extends Model
         'customer_id',
         'created_by',
         'kode_booking',
+        'public_token',
         'status',
         'lama_sewa',
         'paket_sewa',

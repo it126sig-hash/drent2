@@ -22,7 +22,7 @@ import { useAuthStore } from '../../stores/auth'
 import { printPaymentReceipt, buildReceiptFromPaymentHistory } from '../../utils/printReceipt'
 import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue'
 import { fetchCities } from '../../api/city'
-import { getInvoice } from '../../api/receivable'
+import { getInvoice, getInvoices, requestVoidInvoice } from '../../api/receivable'
 import GenerateInvoiceDialog from '../../components/invoices/GenerateInvoiceDialog.vue'
 import MergeInvoiceDialog from '../../components/invoices/MergeInvoiceDialog.vue'
 import InvoicePaymentDialog from '../../components/invoices/InvoicePaymentDialog.vue'
@@ -69,11 +69,19 @@ const selectedInvoice = ref(null)
 const paymentConfirming = ref(false)
 const paymentSubmitting = ref(false)
 const expandedPaymentGroups = ref({})
+const expandedReceivableRows = ref({})
+const bookingInvoicesMap = ref({})
+const bookingInvoicesLoading = ref({})
 const paymentHistoryView = ref('latest')
 const showVoidPaymentDialog = ref(false)
 const selectedVoidPayment = ref(null)
 const voidPaymentForm = ref({ void_reason: '' })
 const voidPaymentFormErrors = ref({})
+
+const showVoidInvoiceDialog = ref(false)
+const selectedVoidInvoice = ref(null)
+const voidInvoiceForm = ref({ void_reason: '' })
+const voidInvoiceFormErrors = ref({})
 
 const showHistoryDialog = ref(false)
 const historyDialogInvoiceId = ref(null)
@@ -136,7 +144,22 @@ const generateInvoiceBookings = computed(() =>
     id: r.id,
     kode_booking: r.kode_booking,
     total: r.total_biaya?.total || 0,
+    invoiceable_balance: r.invoiceable_balance ?? (r.total_biaya?.total || 0),
+    has_active_invoice: Boolean(r.invoice?.generated),
+    active_invoice_number: r.invoice?.number || null,
     due_date: r.rent_period?.tgl_kembali || r.due_date || null,
+    status: r.status,
+    customer_name: r.customer?.nama || null,
+    vehicle_name: r.vehicle?.jenis || null,
+    vehicle_plate: r.vehicle?.no_polisi || null,
+    driver_name: r.driver_name || null,
+    tgl_sewa: r.rent_period?.tgl_sewa || null,
+    tgl_kembali: r.rent_period?.tgl_kembali || null,
+    total_biaya: {
+      total: r.total_biaya?.total || 0,
+      sudah_bayar: r.total_biaya?.sudah_bayar || 0,
+      sisa: r.total_biaya?.sisa || 0,
+    },
   }))
 )
 const mergeInvoiceCandidates = computed(() =>
@@ -345,12 +368,11 @@ const openGenerateDialog = (row = null) => {
   if (generatedRows.length) {
     const codes = generatedRows.map(item => item.kode_booking).join(', ')
     toast.add({
-      severity: 'error',
-      summary: 'Invoice aktif tersedia',
-      detail: `Booking ${codes} sudah memiliki invoice aktif. Proses buat invoice dibatalkan.`,
+      severity: 'info',
+      summary: 'Sudah ada invoice aktif',
+      detail: `Booking ${codes} sudah memiliki invoice aktif. Invoice baru akan dibuat sebagai tambahan, bukan pengganti.`,
       life: 5000,
     })
-    return
   }
 
   selectedReceivableRows.value = rows
@@ -467,6 +489,28 @@ const getInvoicePublicUrl = (invoice) => {
   return invoice.public_path
     ? new URL(invoice.public_path, window.location.origin).toString()
     : invoice.public_url
+}
+
+const onReceivableRowExpand = async (event) => {
+  const bookingId = event.data.id
+  bookingInvoicesLoading.value = { ...bookingInvoicesLoading.value, [bookingId]: true }
+  try {
+    const response = await getInvoices({ booking_id: bookingId, per_page: 50 })
+    bookingInvoicesMap.value = { ...bookingInvoicesMap.value, [bookingId]: response.data.data }
+  } catch {
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Gagal mengambil daftar invoice booking', life: 5000 })
+  } finally {
+    bookingInvoicesLoading.value = { ...bookingInvoicesLoading.value, [bookingId]: false }
+  }
+}
+
+const copyBookingLink = async (row) => {
+  if (!row.public_path) return
+  const url = new URL(row.public_path, window.location.origin).toString()
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(url)
+    toast.add({ severity: 'info', summary: 'Link disalin', detail: url, life: 5000 })
+  }
 }
 
 const openInvoiceView = (invoice) => {
@@ -603,6 +647,47 @@ const submitVoidPaymentRequest = async () => {
   } catch (err) {
     if (err.response?.data?.errors) voidPaymentFormErrors.value = err.response.data.errors
   }
+}
+
+const canRequestVoidInvoice = (invoice) =>
+  invoice?.id && !['void', 'void_requested'].includes(invoice.status)
+
+const openVoidInvoiceDialog = (invoice) => {
+  if (!canRequestVoidInvoice(invoice)) return
+
+  selectedVoidInvoice.value = invoice
+  voidInvoiceForm.value = { void_reason: '' }
+  voidInvoiceFormErrors.value = {}
+  showVoidInvoiceDialog.value = true
+}
+
+const submitVoidInvoiceRequest = async () => {
+  voidInvoiceFormErrors.value = {}
+  if (!selectedVoidInvoice.value?.id) return
+
+  try {
+    await requestVoidInvoice(selectedVoidInvoice.value.id, voidInvoiceForm.value)
+    showVoidInvoiceDialog.value = false
+    selectedVoidInvoice.value = null
+    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Request void invoice dikirim ke supervisor', life: 3000 })
+    await fetchAll(pagination.value.current_page)
+    if (activeTab.value === 'merged' || activeTab.value === 'paid') {
+      await fetchInvoices(pagination.value.current_page, invoiceTabExtraFilters.value)
+    }
+    for (const id of Object.keys(bookingInvoicesMap.value)) {
+      const response = await getInvoices({ booking_id: id, per_page: 50 })
+      bookingInvoicesMap.value = { ...bookingInvoicesMap.value, [id]: response.data.data }
+    }
+  } catch (err) {
+    if (err.response?.data?.errors) voidInvoiceFormErrors.value = err.response.data.errors
+    else toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || 'Gagal mengirim request void invoice', life: 5000 })
+  }
+}
+
+const voidStatusLabel = (status) => {
+  if (status === 'void_requested') return 'Menunggu ACC Void'
+  if (status === 'void') return 'Void'
+  return null
 }
 
 const invoiceSeverity = (status) => {
@@ -749,7 +834,8 @@ onMounted(async () => {
       </div>
 
       <div v-if="activeTab === 'receivables'" class="table-shell">
-        <DataTable v-if="!isMobile" v-model:selection="selectedRows" :value="receivables" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
+        <DataTable v-if="!isMobile" v-model:selection="selectedRows" v-model:expandedRows="expandedReceivableRows" :value="receivables" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" @row-expand="onReceivableRowExpand" responsiveLayout="scroll" class="drent-datatable" :rowClass="rowClass">
+          <Column expander style="width: 3rem" />
           <Column selectionMode="multiple" headerStyle="width: 3rem" />
           <Column header="Aksi" style="min-width: 15rem">
             <template #body="{ data }">
@@ -784,10 +870,17 @@ onMounted(async () => {
                   <button class="action-btn" title="Lihat history perubahan" @click="openHistoryDialog(data.invoice.id, data.invoice.number)">
                     <i class="pi pi-history"></i>
                   </button>
+                  <button v-if="canRequestVoidInvoice(data.invoice)" class="action-btn" :disabled="actionLoading" title="Request void invoice" @click="openVoidInvoiceDialog(data.invoice)">
+                    <i class="pi pi-ban"></i>
+                  </button>
                 </span>
+                <Tag v-if="voidStatusLabel(data.invoice?.status)" :value="voidStatusLabel(data.invoice.status)" severity="danger" class="mt-1" />
                 <span v-if="data.invoice?.sent_at" class="text-xs mt-1 text-secondary">{{
                   formatDateTime(data.invoice?.sent_at) }} <span v-if="data.invoice?.sent_by_name">({{
                     data.invoice.sent_by_name }})</span></span>
+                <button class="action-btn mt-1" :disabled="!data.public_path" title="Copy link booking untuk pelanggan" @click="copyBookingLink(data)">
+                  <i class="pi pi-link"></i>
+                </button>
               </div>
             </template>
           </Column>
@@ -847,6 +940,45 @@ onMounted(async () => {
               </div>
             </template>
           </Column>
+          <template #expansion="{ data }">
+            <DataTable :value="bookingInvoicesMap[data.id] || []" :loading="bookingInvoicesLoading[data.id]" dataKey="id" responsiveLayout="scroll" class="nested-datatable">
+              <Column header="No. Invoice" style="min-width: 10rem">
+                <template #body="{ data: invoice }">{{ invoice.invoice_number || invoice.number }}</template>
+              </Column>
+              <Column header="Status" style="min-width: 8rem">
+                <template #body="{ data: invoice }">
+                  <Tag :value="invoice.status" :severity="invoiceSeverity(invoice.status)" />
+                  <div v-if="invoice.payment_classification" class="text-xs text-secondary mt-1 uppercase">{{ invoice.payment_classification }}</div>
+                </template>
+              </Column>
+              <Column header="Nominal" style="min-width: 11rem">
+                <template #body="{ data: invoice }">
+                  <div class="amount-stack">
+                    <span>{{ formatCurrency(invoice.total_amount) }}</span>
+                    <span class="text-positive">{{ formatCurrency(invoice.paid_amount) }}</span>
+                    <span class="text-info">{{ formatCurrency(invoice.remaining_amount) }}</span>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Jatuh Tempo" style="min-width: 10rem">
+                <template #body="{ data: invoice }">{{ formatDate(invoice.due_date) }}</template>
+              </Column>
+              <Column header="Dibuat" style="min-width: 10rem">
+                <template #body="{ data: invoice }">{{ formatDateTime(invoice.generated_at) }}</template>
+              </Column>
+              <Column header="Aksi" style="min-width: 11rem">
+                <template #body="{ data: invoice }">
+                  <span class="action-pill-group">
+                    <button v-if="canPayInvoice" class="action-btn" :disabled="(invoice.remaining_amount ?? 0) <= 0 || invoice.status === 'void'" title="Bayar invoice" @click="openPaymentDialog(invoice)"><i class="pi pi-wallet"></i></button>
+                    <button class="action-btn" :disabled="actionLoading" title="Kirim invoice" @click="sendInvoice(invoice.id)"><i class="pi pi-send"></i></button>
+                    <button class="action-btn" :disabled="!getInvoicePublicUrl(invoice)" title="Lihat invoice" @click="openInvoiceView(invoice)"><i class="pi pi-eye"></i></button>
+                    <button class="action-btn" :disabled="actionLoading" title="Unduh PDF" @click="openInvoicePdf(invoice)"><i class="pi pi-file-pdf"></i></button>
+                    <button v-if="canRequestVoidInvoice(invoice)" class="action-btn" :disabled="actionLoading" title="Request void invoice" @click="openVoidInvoiceDialog(invoice)"><i class="pi pi-ban"></i></button>
+                  </span>
+                </template>
+              </Column>
+            </DataTable>
+          </template>
         </DataTable>
         <template v-else>
           <div class="mobile-card-list">
@@ -1300,6 +1432,37 @@ onMounted(async () => {
           Batal
         </button>
         <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !selectedVoidPaymentId || !voidPaymentForm.void_reason || voidPaymentForm.void_reason.trim().length < 5" @click="submitVoidPaymentRequest">
+          <i class="pi pi-send"></i>
+          Kirim Request
+        </button>
+      </template>
+    </Dialog>
+    <Dialog v-model:visible="showVoidInvoiceDialog" header="Request Void Invoice" modal :style="{ width: '460px' }" class="custom-dialog">
+      <div class="dialog-stack">
+        <div class="app-muted-panel">
+          <div class="summary-row"><span>No. Invoice</span><strong>{{ selectedVoidInvoice?.invoice_number || selectedVoidInvoice?.number || '-' }}</strong></div>
+          <div class="summary-row"><span>Status</span><strong>{{ selectedVoidInvoice?.status || '-' }}</strong></div>
+          <div class="summary-row"><span>Total Invoice</span><strong>{{ formatCurrency(selectedVoidInvoice?.total_amount) }}</strong></div>
+        </div>
+        <div v-if="selectedVoidInvoice?.paid_amount > 0" class="warning-panel">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>Invoice ini sudah ada pembayaran ({{ formatCurrency(selectedVoidInvoice?.paid_amount) }}). Kalau di-ACC, pembayaran tersebut akan ikut di-void dan dana akan dikembalikan ke saldo akun pembayaran.</span>
+        </div>
+        <fieldset class="form-fieldset">
+          <label>Alasan void</label>
+          <Textarea v-model="voidInvoiceForm.void_reason" rows="4" class="w-full" placeholder="Tuliskan alasan untuk ACC supervisor" />
+          <span v-if="voidInvoiceFormErrors.void_reason?.length" class="field-error">{{
+            voidInvoiceFormErrors.void_reason[0]
+          }}</span>
+          <span v-else class="field-hint">Request ini akan masuk ke supervisor untuk approval.</span>
+        </fieldset>
+      </div>
+      <template #footer>
+        <button class="app-dialog-button app-dialog-button-secondary" @click="showVoidInvoiceDialog = false">
+          <i class="pi pi-times"></i>
+          Batal
+        </button>
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !selectedVoidInvoice?.id || !voidInvoiceForm.void_reason || voidInvoiceForm.void_reason.trim().length < 5" @click="submitVoidInvoiceRequest">
           <i class="pi pi-send"></i>
           Kirim Request
         </button>

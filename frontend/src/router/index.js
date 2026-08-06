@@ -27,6 +27,16 @@ const router = createRouter({
       component: () => import("../views/public/PublicRentToRentBillView.vue"),
     },
     {
+      path: "/booking/:token",
+      name: "PublicBookingProgress",
+      component: () => import("../views/public/PublicBookingProgressView.vue"),
+    },
+    {
+      path: "/booking/:token/invoices",
+      name: "PublicBookingInvoiceList",
+      component: () => import("../views/public/PublicBookingInvoiceListView.vue"),
+    },
+    {
       path: "/physical-checks/public/:token",
       name: "PublicPhysicalCheckForm",
       component: () =>

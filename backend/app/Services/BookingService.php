@@ -12,6 +12,7 @@ use App\Models\RentalOwner;
 use App\Traits\PhoneNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class BookingService
 {
@@ -104,6 +105,7 @@ class BookingService
                 'customer_id' => $customerId,
                 'created_by' => auth()->id(),
                 'kode_booking' => $kodeBooking,
+                'public_token' => $this->newPublicToken(),
                 'status' => $status,
                 'lama_sewa' => $data['lama_sewa'] ?? null,
                 'paket_sewa' => $data['paket_sewa'] ?? null,
@@ -583,5 +585,14 @@ class BookingService
     private function normalizeCustomerStatus(string $status): string
     {
         return strtolower($status) === 'corporate' ? 'Corporate' : 'Normal';
+    }
+
+    private function newPublicToken(): string
+    {
+        do {
+            $token = Str::random(48);
+        } while (Booking::where('public_token', $token)->exists());
+
+        return $token;
     }
 }

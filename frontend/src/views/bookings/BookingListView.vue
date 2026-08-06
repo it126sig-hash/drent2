@@ -353,6 +353,16 @@ const resetFilters = () => {
   applyFilters();
 };
 
+const onSort = (event) => {
+  const field = event.sortField;
+  if (!field) return;
+  const order = event.sortOrder === 1 ? 'asc' : 'desc';
+  if (field === 'tgl_sewa') {
+    selectedSort.value = `tgl_sewa:${order}`;
+    applyFilters();
+  }
+};
+
 const openStatusDialog = (booking) => {
   selectedBooking.value = booking;
   newStatus.value = '';
@@ -698,8 +708,49 @@ const getLateInfo = (booking) => {
   };
 };
 
+const getConfirmationWarningInfo = (booking) => {
+  if (!['confirm', 'follow_up'].includes(booking?.status)) return null;
+
+  const tglSewa = getPeriodStartDate(booking);
+  if (!tglSewa) return null;
+
+  const startDate = new Date(tglSewa);
+  startDate.setHours(0, 0, 0, 0);
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  const diffMs = startDate.getTime() - now.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays >= 4 && diffDays <= 7) {
+    return {
+      severity: 'warning',
+      note: `Sisa ${diffDays} hari, segera konfirmasi bookingan`,
+      rowClass: 'booking-row-warning-confirm'
+    };
+  } else if (diffDays >= 0 && diffDays <= 3) {
+    return {
+      severity: 'danger',
+      note: `Sisa ${diffDays} hari, segera konfirmasi bookingan`,
+      rowClass: 'booking-row-danger-confirm'
+    };
+  } else if (diffDays < 0) {
+    return {
+      severity: 'danger',
+      note: `Terlambat ${Math.abs(diffDays)} hari, segera konfirmasi bookingan`,
+      rowClass: 'booking-row-danger-confirm'
+    };
+  }
+  return null;
+};
+
 const rowClass = (data) => {
   if (data?.status === 'reschedule') return 'booking-row booking-row-reschedule';
+  
+  const confirmWarning = getConfirmationWarningInfo(data);
+  if (confirmWarning) return `booking-row ${confirmWarning.rowClass}`;
+  
   return getLateInfo(data) ? 'booking-row booking-row-late' : 'booking-row';
 };
 
@@ -819,7 +870,7 @@ const getBookingCardClass = (booking) => {
 
       <!-- Desktop DataTable -->
       <div v-if="!isMobile" class="table-shell booking-table-shell">
-        <DataTable :value="bookings" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" @page="onPage" :loading="loading" class="drent-datatable" responsiveLayout="scroll" :rowClass="rowClass" v-model:contextMenuSelection="contextMenuSelection" contextMenu @row-dblclick="onRowDoubleClick" @row-contextmenu="onRowContextMenu">
+        <DataTable :value="bookings" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" @page="onPage" @sort="onSort" :loading="loading" class="drent-datatable" responsiveLayout="scroll" :rowClass="rowClass" v-model:contextMenuSelection="contextMenuSelection" contextMenu @row-dblclick="onRowDoubleClick" @row-contextmenu="onRowContextMenu">
           <Column header="Aksi" class="text-center">
             <template #body="{ data }">
               <div class="action-pill-group">
@@ -859,7 +910,7 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-          <Column header="Periode" :style="{ minWidth: 'var(--col-w-md)' }">
+          <Column header="Periode" sortable sortField="tgl_sewa" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
                 <span class="font-medium cell-fs-12">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
@@ -871,6 +922,10 @@ const getBookingCardClass = (booking) => {
                 <span v-if="getLateInfo(data)" class="late-note">
                   <i class="pi pi-clock"></i>
                   {{ getLateInfo(data).note }}
+                </span>
+                <span v-if="getConfirmationWarningInfo(data)" class="confirm-warning-note" :class="getConfirmationWarningInfo(data).severity">
+                  <i class="pi pi-exclamation-triangle"></i>
+                  {{ getConfirmationWarningInfo(data).note }}
                 </span>
               </div>
             </template>
@@ -1001,6 +1056,9 @@ const getBookingCardClass = (booking) => {
 
               <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
                 <i class="pi pi-clock"></i> {{ getLateInfo(booking).note }}
+              </div>
+              <div v-if="getConfirmationWarningInfo(booking)" class="confirm-warning-banner-mini mt-2" :class="getConfirmationWarningInfo(booking).severity">
+                <i class="pi pi-exclamation-triangle"></i> {{ getConfirmationWarningInfo(booking).note }}
               </div>
             </div>
             <div class="booking-card-footer">
@@ -1179,27 +1237,63 @@ const getBookingCardClass = (booking) => {
   border-left: 3px solid var(--warning);
 }
 
+:deep(.booking-row-warning-confirm) {
+  background-color: rgba(247, 144, 9, 0.05) !important;
+}
+
+:deep(.booking-row-warning-confirm td:first-child) {
+  border-left: 3px solid var(--warning);
+}
+
+:deep(.booking-row-danger-confirm) {
+  background-color: rgba(229, 83, 75, 0.04) !important;
+}
+
+:deep(.booking-row-danger-confirm td:first-child) {
+  border-left: 3px solid var(--negative);
+}
+
 .late-note,
-.late-banner-mini {
+.late-banner-mini,
+.confirm-warning-note,
+.confirm-warning-banner-mini {
   display: inline-flex;
   align-items: center;
   width: fit-content;
   max-width: 100%;
   border-radius: var(--radius-xs);
-  background: rgba(229, 83, 75, 0.08);
-  color: var(--negative);
   font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1.2;
 }
 
-.late-note {
+.late-note,
+.late-banner-mini {
+  background: rgba(229, 83, 75, 0.08);
+  color: var(--negative);
+}
+
+.confirm-warning-note.warning,
+.confirm-warning-banner-mini.warning {
+  background: rgba(247, 144, 9, 0.08);
+  color: var(--warning);
+}
+
+.confirm-warning-note.danger,
+.confirm-warning-banner-mini.danger {
+  background: rgba(229, 83, 75, 0.08);
+  color: var(--negative);
+}
+
+.late-note,
+.confirm-warning-note {
   gap: 5px;
   margin-top: 2px;
   padding: 4px 8px;
 }
 
-.late-note i {
+.late-note i,
+.confirm-warning-note i {
   font-size: var(--font-size-10px);
 }
 
@@ -1266,7 +1360,8 @@ const getBookingCardClass = (booking) => {
   font-weight: 600;
 }
 
-.late-banner-mini {
+.late-banner-mini,
+.confirm-warning-banner-mini {
   gap: 6px;
   padding: 4px 8px;
 }

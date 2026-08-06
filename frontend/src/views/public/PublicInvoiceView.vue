@@ -38,6 +38,12 @@ const customerName = computed(() => {
   return primaryBooking.value?.customer_name || 'Pelanggan'
 })
 
+const bookingCodes = computed(() => {
+  return (invoice.value?.bookings || []).map(b => b.kode_booking).filter(Boolean).join(', ') || '-'
+})
+
+const contractInfo = computed(() => invoice.value?.contract_info || [])
+
 const customerAddressLines = computed(() => {
   const booking = primaryBooking.value
   return [booking?.customer_address, booking?.customer_city].filter(Boolean)
@@ -251,6 +257,10 @@ onBeforeUnmount(() => {
               <span>{{ invoice.invoice_number }}</span>
             </div>
             <div class="detail-row">
+              <span>Booking#</span>
+              <span>{{ bookingCodes }}</span>
+            </div>
+            <div class="detail-row">
               <span>Date:</span>
               <span>{{ formatDate(invoice.generated_at || invoice.created_at) }}</span>
             </div>
@@ -333,6 +343,8 @@ onBeforeUnmount(() => {
               <div v-if="hasTermsAndConditions" class="terms-content" v-html="termsAndConditions"></div>
               <p v-else>Harap lakukan pembayaran sebelum tanggal jatuh tempo. Keterlambatan dapat dikenakan denda sesuai dengan ketentuan penyewaan. Terima kasih telah mempercayai DRENT.</p>
             </div>
+
+
           </div>
 
           <div class="bottom-right">
@@ -342,18 +354,30 @@ onBeforeUnmount(() => {
                 <span>{{ formatCurrency(invoice.total_amount) }}</span>
               </div>
               <div class="total-row">
-                <span>Paid:</span>
-                <span>{{ formatCurrency(invoice.paid_amount) }}</span>
-              </div>
-              <div class="total-row" style="align-items: center;">
-                <span>Status:</span>
-                <span>
-                  <Tag :value="invoice.status" :severity="statusSeverity(invoice.status)" class="status-badge" />
-                </span>
+                <span>Biaya Layanan/Admin:</span>
+                <span>{{ formatCurrency(0) }}</span>
               </div>
               <div class="total-row grand-total">
-                <span>Remaining:</span>
-                <span>{{ formatCurrency(remainingAmount) }}</span>
+                <span>Total Tagihan Ini:</span>
+                <span>{{ formatCurrency(invoice.total_amount) }}</span>
+              </div>
+              <div v-if="contractInfo.length" class="contract-info">
+                <div class="terms-title">Informasi Transaksi</div>
+                <div v-for="info in contractInfo" :key="info.kode_booking" class="contract-info-card">
+                  <div class="contract-info-title">Booking #{{ info.kode_booking }}</div>
+                  <div class="history-row">
+                    <span>Total Nilai Sewa</span>
+                    <span class="mono">{{ formatCurrency(info.total_nilai_sewa) }}</span>
+                  </div>
+                  <div class="history-row">
+                    <span>Telah Dibayar</span>
+                    <span class="mono">{{ formatCurrency(info.telah_dibayar) }}</span>
+                  </div>
+                  <div class="history-row">
+                    <span>Sisa Pembayaran Selanjutnya</span>
+                    <span class="mono">{{ formatCurrency(info.sisa_pembayaran_selanjutnya) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -791,6 +815,29 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   line-height: 1.5;
   margin: 0;
+}
+
+.contract-info {
+  margin-top: 18px;
+}
+
+.contract-info-card {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.contract-info-card .history-row {
+  padding: 4px 0;
+  font-size: var(--font-size-11px);
+}
+
+.contract-info-title {
+  font-size: var(--font-size-11px);
+  font-weight: 800;
+  margin-bottom: 4px;
 }
 
 .terms-content {

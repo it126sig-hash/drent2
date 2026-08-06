@@ -14,6 +14,7 @@ class ReceivableResource extends JsonResource
         $detail = $this->display_detail;
         $unit = $detail?->unit;
         $receivableService = app(\App\Services\ReceivableService::class);
+        $billingService = app(\App\Services\BookingBillingService::class);
         $invoiceReconciliation = $invoice
             ? ($this->invoice_reconciliation ?? $receivableService->invoiceReconciliation($invoice))
             : null;
@@ -41,11 +42,15 @@ class ReceivableResource extends JsonResource
                 'no_polisi' => $unit?->no_polisi,
                 'pemilik' => $unit?->rentalOwner?->nama ?? 'Internal',
             ],
+            'driver_name' => $detail?->driver?->nama,
             'total_biaya' => [
                 'total' => (int) $this->total_tagihan,
                 'sudah_bayar' => (int) $this->total_payments,
                 'sisa' => (int) $this->sisa_tagihan,
             ],
+            'invoiceable_balance' => $billingService->invoiceableBalance($this->resource),
+            'public_path' => $this->public_token ? "/booking/{$this->public_token}" : null,
+            'public_url' => $this->public_token ? config('app.frontend_url', url('/')) . "/booking/{$this->public_token}" : null,
             'invoice' => [
                 'generated' => (bool) $invoice,
                 'id' => $invoice?->id,
@@ -59,6 +64,11 @@ class ReceivableResource extends JsonResource
                 'sent_at' => $invoice?->sent_at?->toISOString(),
                 'created_by_name' => $invoice?->creator?->name,
                 'sent_by_name' => $invoice?->sentBy?->name,
+                'is_manual_amount' => $invoice ? (bool) $invoice->is_manual_amount : false,
+                'payment_classification' => $invoice?->payment_classification,
+                'void_reason' => $invoice?->void_reason,
+                'void_requested_at' => $invoice?->void_requested_at?->toISOString(),
+                'void_requested_by_name' => $invoice?->voidRequester?->name,
                 'pdf_url' => $invoice ? url("/api/v1/invoices/{$invoice->id}/pdf") : null,
                 'public_path' => $invoice?->public_token ? $this->invoicePublicPath($invoice) : null,
                 'public_url' => $invoice?->public_token ? config('app.frontend_url', url('/')) . $this->invoicePublicPath($invoice) : null,

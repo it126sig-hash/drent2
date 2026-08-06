@@ -2295,6 +2295,7 @@ const printPayment = (payment) => {
 
 const bookingInvoice = computed(() => booking.value?.invoice || null);
 const hasBookingInvoice = computed(() => Boolean(bookingInvoice.value?.id));
+const isBookingInvoicePaidOff = computed(() => bookingInvoice.value?.status === 'paid');
 const canAccessInvoice = computed(() => authStore.hasPermission('finance.receivable'));
 const canPayInvoice = computed(() => authStore.hasPermission('finance.receivable.pay'));
 
@@ -2322,12 +2323,31 @@ const canRefreshBookingInvoice = computed(() => {
 const invoiceForPayment = ref(null);
 
 // Booking payload for GenerateInvoiceDialog
-const invoiceBookingPayload = computed(() => [{
-  id: booking.value?.id,
-  kode_booking: booking.value?.kode_booking,
-  total: bookingTotalTagihan.value || 0,
-  due_date: primaryUnitDetail.value?.tgl_kembali || null,
-}]);
+const invoiceBookingPayload = computed(() => {
+  const detail = primaryUnitDetail.value;
+  const unit = detail?.unit;
+  const vehicleName = unit ? `${unit.merk} ${unit.tipe}` : (detail?.unit_placeholder || null);
+  const total = bookingTotalTagihan.value || 0;
+  const sudahBayar = bookingTotalPayments.value || 0;
+  const sisa = bookingSisaTagihan.value || 0;
+
+  return [{
+    id: booking.value?.id,
+    kode_booking: booking.value?.kode_booking,
+    total,
+    invoiceable_balance: sisa,
+    has_active_invoice: hasBookingInvoice.value,
+    status: booking.value?.status,
+    customer_name: booking.value?.customer?.nama || null,
+    vehicle_name: vehicleName,
+    vehicle_plate: unit?.no_polisi || null,
+    driver_name: detail?.driver?.nama || null,
+    tgl_sewa: detail?.tgl_sewa || null,
+    tgl_kembali: detail?.tgl_kembali || null,
+    due_date: detail?.tgl_kembali || null,
+    total_biaya: { total, sudah_bayar: sudahBayar, sisa },
+  }];
+});
 
 const onAddPaymentClick = () => {
   if (hasBookingInvoice.value) {
@@ -2846,8 +2866,8 @@ const auditUserName = (user) => user?.name || '-';
         <Button v-if="booking && booking.status === 'rental_unit'" label="Selesai" icon="pi pi-flag-fill" class="detail-primary-action" @click="openCompleteDialog" :loading="loading" />
         <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list'].includes(booking.status)" label="Reschedule" icon="pi pi-calendar-times" severity="warning" outlined class="detail-secondary-action" @click="openRescheduleDialog" :loading="loading" />
         <Button v-if="booking && !['selesai', 'batal', 'cancelled'].includes(booking.status)" label="Batalkan" icon="pi pi-ban" severity="danger" outlined class="detail-secondary-action" @click="openBatalDialog" :loading="loading" />
-        <!-- Buat Invoice: unit sudah handled, belum ada invoice, punya akses finance -->
-        <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list', 'rental_unit'].includes(booking.status) && !hasBookingInvoice && canAccessInvoice" label="Buat Invoice" icon="pi pi-file-plus" severity="secondary" outlined class="detail-secondary-action" @click="showGenerateInvoiceDialog = true" />
+        <!-- Buat Invoice: unit sudah handled, belum ada invoice (atau invoice sebelumnya sudah lunas), punya akses finance -->
+        <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list', 'rental_unit'].includes(booking.status) && (!hasBookingInvoice || isBookingInvoicePaidOff) && canAccessInvoice" label="Buat Invoice" icon="pi pi-file-plus" severity="success" outlined class="detail-secondary-action" @click="showGenerateInvoiceDialog = true" />
         <!-- Kirim Invoice + Print PDF: invoice sudah ada -->
         <template v-if="booking && hasBookingInvoice && canAccessInvoice">
           <Button label="Kirim Invoice" icon="pi pi-send" severity="secondary" outlined class="detail-secondary-action" :loading="invoiceActionLoading" @click="sendInvoice" />
@@ -3336,7 +3356,7 @@ const auditUserName = (user) => user?.name || '-';
           </div>
         </div>
 
-        <!-- Invoice History Card -->
+        <!-- Invoice Activity Card -->
         <div v-if="hasBookingInvoice && canAccessInvoice" class="app-card overflow-hidden">
           <div class="app-section-header px-5 py-4 flex justify-between items-center">
             <div class="flex items-center gap-2.5">
@@ -3344,14 +3364,14 @@ const auditUserName = (user) => user?.name || '-';
                 <i class="pi pi-history text-sm"></i>
               </div>
               <div>
-                <h3 class="text-sm font-bold text-slate-800">History Invoice</h3>
+                <h3 class="text-sm font-bold text-slate-800">Riwayat Aktivitas</h3>
                 <p class="text-xs text-slate-400 mt-0.5">
-                  {{ bookingInvoice?.number || bookingInvoice?.invoice_number || '-' }}
+                  Seluruh invoice booking ini
                   <span v-if="hasBookingInvoiceChange" class="ml-1 text-amber-500 font-semibold">(Ada perubahan)</span>
                 </p>
               </div>
             </div>
-            <Button label="Lihat History" icon="pi pi-external-link" size="small" text class="text-indigo-600 font-semibold text-xs" @click="showInvoiceHistoryDialog = true" />
+            <Button label="Lihat Riwayat" icon="pi pi-external-link" size="small" text class="text-indigo-600 font-semibold text-xs" @click="showInvoiceHistoryDialog = true" />
           </div>
         </div>
       </div>
@@ -4597,7 +4617,7 @@ const auditUserName = (user) => user?.name || '-';
     <InvoicePaymentDialog v-model="showInvoicePaymentDialog" :invoice="invoiceForPayment" @paid="onInvoicePaid" />
 
     <!-- ======= DIALOG: History Invoice ======= -->
-    <InvoiceHistoryDialog v-model="showInvoiceHistoryDialog" :invoiceId="bookingInvoice?.id" :invoiceNumber="bookingInvoice?.number || bookingInvoice?.invoice_number" />
+    <InvoiceHistoryDialog v-model="showInvoiceHistoryDialog" :bookingId="booking?.id" />
   </div>
 </template>
 

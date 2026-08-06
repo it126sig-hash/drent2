@@ -17,6 +17,8 @@ class Invoice extends Model
         'status',
         'merged_into_id',
         'total_amount',
+        'is_manual_amount',
+        'payment_classification',
         'paid_amount',
         'items_snapshot',
         'due_date',
@@ -24,18 +26,30 @@ class Invoice extends Model
         'generated_at',
         'sent_at',
         'voided_at',
+        'void_reason',
+        'void_requested_by',
+        'void_requested_at',
+        'void_approved_by',
+        'void_approved_at',
+        'void_rejected_by',
+        'void_rejected_at',
+        'void_rejection_note',
         'created_by',
         'sent_by',
     ];
 
     protected $casts = [
         'total_amount' => 'integer',
+        'is_manual_amount' => 'boolean',
         'paid_amount' => 'integer',
         'items_snapshot' => 'array',
         'due_date' => 'datetime',
         'generated_at' => 'datetime',
         'sent_at' => 'datetime',
         'voided_at' => 'datetime',
+        'void_requested_at' => 'datetime',
+        'void_approved_at' => 'datetime',
+        'void_rejected_at' => 'datetime',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
@@ -87,5 +101,20 @@ class Invoice extends Model
     public function childInvoicePivots()
     {
         return $this->hasMany(InvoiceInvoice::class, 'parent_invoice_id')->orderBy('id');
+    }
+
+    public function voidRequester()
+    {
+        return $this->belongsTo(User::class, 'void_requested_by');
+    }
+
+    public function voidApprover()
+    {
+        return $this->belongsTo(User::class, 'void_approved_by');
+    }
+
+    public function voidRejecter()
+    {
+        return $this->belongsTo(User::class, 'void_rejected_by');
     }
 }

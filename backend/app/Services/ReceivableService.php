@@ -33,11 +33,12 @@ class ReceivableService
             ->with([
                 'customer.member',
                 'bookingDetails.unit.rentalOwner',
+                'bookingDetails.driver',
                 'bookingDetails.costs',
                 'payments',
                 'invoices' => fn($query) => $query
                     ->where('status', '!=', 'void')
-                    ->with(['payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto'])
+                    ->with(['payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto', 'voidRequester'])
                     ->latest('generated_at'),
             ])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
@@ -136,10 +137,11 @@ class ReceivableService
         $perPage = (int) ($filters['per_page'] ?? 15);
 
         return Invoice::query()
-            ->with(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto', 'childInvoices'])
+            ->with(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto', 'childInvoices', 'voidRequester', 'voidApprover'])
             ->when($filters['tenant_id'] ?? null, fn($query, $tenantId) => $query->where('tenant_id', $tenantId))
             ->when($filters['branch_id'] ?? null, fn($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($filters['kota'] ?? null, fn($query, $kota) => $query->whereHas('bookings', fn($q) => $q->where('kota', $kota)))
+            ->when($filters['booking_id'] ?? null, fn($query, $bookingId) => $query->whereHas('bookings', fn($q) => $q->where('bookings.id', $bookingId)))
             ->when($filters['status'] ?? null, fn($query, $status) => $query->where('status', $status))
             ->when($filters['only_merged'] ?? null, fn($query) => $query->whereHas('childInvoices'))
             ->when($filters['exclude_paid'] ?? null, fn($query) => $query->where('status', '!=', 'paid'))
@@ -156,6 +158,16 @@ class ReceivableService
 
     public function invoiceReconciliation(Invoice $invoice): array
     {
+        if ($invoice->is_manual_amount) {
+            return [
+                'current_total_amount' => (int) $invoice->total_amount,
+                'difference_amount' => 0,
+                'is_changed' => false,
+                'change_type' => 'none',
+                'requires_sent_confirmation' => false,
+            ];
+        }
+
         $amounts = $this->currentInvoiceBookingAmounts($invoice);
         $currentTotalAmount = (int) $amounts->sum();
         $differenceAmount = $currentTotalAmount - (int) $invoice->total_amount;
@@ -179,6 +191,10 @@ class ReceivableService
 
             if (! in_array($invoice->status, ['generated', 'partial_paid', 'paid'], true)) {
                 throw new \InvalidArgumentException('Hanya invoice aktif atau lunas (dengan penambahan biaya) yang bisa diperbarui.');
+            }
+
+            if ($invoice->is_manual_amount) {
+                throw new \InvalidArgumentException('Invoice dengan nominal manual tidak bisa di-refresh otomatis. Void dan buat invoice baru kalau nominalnya perlu diubah.');
             }
 
             if ($invoice->status === 'paid') {
@@ -398,9 +414,9 @@ class ReceivableService
         ];
     }
 
-    public function generateInvoice(array $bookingIds, int $branchId, int $tenantId, ?string $dueDate = null, ?string $termsAndConditions = null): Invoice
+    public function generateInvoice(array $bookingIds, int $branchId, int $tenantId, ?string $dueDate = null, ?string $termsAndConditions = null, array $amounts = [], ?string $paymentClassification = null): Invoice
     {
-        return DB::transaction(function () use ($bookingIds, $branchId, $tenantId, $dueDate, $termsAndConditions) {
+        return DB::transaction(function () use ($bookingIds, $branchId, $tenantId, $dueDate, $termsAndConditions, $amounts, $paymentClassification) {
             $bookings = Booking::query()
                 ->with(['customer.member', 'bookingDetails.costs', 'payments', 'invoices'])
                 ->whereIn('id', $bookingIds)
@@ -412,24 +428,42 @@ class ReceivableService
                 throw new \InvalidArgumentException('Sebagian booking tidak ditemukan pada branch aktif.');
             }
 
-            $activeInvoiceBooking = $bookings->first(
-                fn(Booking $booking) =>
-                $booking->invoices->contains(
-                    fn(Invoice $invoice) =>
-                    ! in_array($invoice->status, ['void', 'paid'], true) && $this->invoiceRemaining($invoice) > 0
-                )
-            );
-
-            if ($activeInvoiceBooking) {
-                throw new \InvalidArgumentException("Booking {$activeInvoiceBooking->kode_booking} sudah memiliki invoice aktif.");
+            $cancelledBooking = $bookings->first(fn(Booking $booking) => $booking->status === 'batal');
+            if ($cancelledBooking) {
+                throw new \InvalidArgumentException("Booking {$cancelledBooking->kode_booking} sudah dibatalkan.");
             }
 
-            $amounts = $bookings->mapWithKeys(fn(Booking $booking) => [
-                $booking->id => $this->billingService->invoiceAmount($booking),
-            ]);
+            $isManualAmount = false;
+            $resolvedAmounts = $bookings->mapWithKeys(function (Booking $booking) use ($amounts, &$isManualAmount) {
+                $autoAmount = $this->billingService->invoiceAmount($booking);
+                $manualAmount = $amounts[$booking->id] ?? null;
 
-            if ($amounts->contains(fn($amount) => $amount <= 0)) {
+                if ($manualAmount !== null) {
+                    $manualAmount = (int) $manualAmount;
+                    if ($manualAmount !== $autoAmount) {
+                        $isManualAmount = true;
+                    }
+
+                    return [$booking->id => $manualAmount];
+                }
+
+                return [$booking->id => $autoAmount];
+            });
+
+            if ($resolvedAmounts->contains(fn($amount) => $amount <= 0)) {
                 throw new \InvalidArgumentException('Semua booking harus memiliki tagihan.');
+            }
+
+            foreach ($bookings as $booking) {
+                $requested = (int) $resolvedAmounts[$booking->id];
+                $invoiceableBalance = $this->billingService->invoiceableBalance($booking);
+
+                if ($requested > $invoiceableBalance) {
+                    $formattedBalance = number_format($invoiceableBalance, 0, ',', '.');
+                    throw new \InvalidArgumentException(
+                        "Nominal invoice untuk booking {$booking->kode_booking} melebihi sisa yang bisa ditagih (maks Rp {$formattedBalance})."
+                    );
+                }
             }
 
             $paidAmount = (int) $bookings->sum(fn(Booking $booking) => $this->directBookingPayments($booking));
@@ -444,7 +478,9 @@ class ReceivableService
                 'invoice_number'       => $this->nextInvoiceNumber($branchId),
                 'public_token'         => $this->newPublicToken(),
                 'status'               => 'generated',
-                'total_amount'         => (int) $amounts->sum(),
+                'total_amount'         => (int) $resolvedAmounts->sum(),
+                'is_manual_amount'     => $isManualAmount,
+                'payment_classification' => $paymentClassification,
                 'paid_amount'          => $paidAmount,
                 'due_date'             => $invoiceDueDate,
                 'terms_and_conditions' => $termsAndConditions,
@@ -452,7 +488,7 @@ class ReceivableService
                 'created_by'           => auth()->id(),
             ]);
 
-            foreach ($amounts as $bookingId => $amount) {
+            foreach ($resolvedAmounts as $bookingId => $amount) {
                 $invoice->bookings()->attach($bookingId, ['amount' => (int) $amount]);
             }
 
@@ -833,6 +869,135 @@ class ReceivableService
         return $payment->fresh(['invoice', 'paymentAccount', 'creator', 'voidRequester', 'voidApprover', 'voidRejecter']);
     }
 
+    public function requestVoidInvoice(Invoice $invoice, string $reason): Invoice
+    {
+        if ($invoice->status === 'void') {
+            throw ValidationException::withMessages([
+                'invoice' => ['Invoice ini sudah void.'],
+            ]);
+        }
+
+        if ($invoice->status === 'void_requested') {
+            throw ValidationException::withMessages([
+                'invoice' => ['Request void invoice ini masih menunggu approval supervisor.'],
+            ]);
+        }
+
+        if ($invoice->childInvoices()->exists()) {
+            throw ValidationException::withMessages([
+                'invoice' => ['Invoice ini punya invoice gabungan turunan. Void invoice gabungan tersebut dulu.'],
+            ]);
+        }
+
+        $invoice->update([
+            'status' => 'void_requested',
+            'void_reason' => $reason,
+            'void_requested_by' => Auth::id(),
+            'void_requested_at' => now(),
+            'void_approved_by' => null,
+            'void_approved_at' => null,
+            'void_rejected_by' => null,
+            'void_rejected_at' => null,
+            'void_rejection_note' => null,
+        ]);
+
+        return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'voidRequester', 'voidApprover', 'voidRejecter']);
+    }
+
+    public function approveVoidInvoice(Invoice $invoice): Invoice
+    {
+        return DB::transaction(function () use ($invoice) {
+            $invoice = Invoice::query()
+                ->with(['bookings.bookingDetails.costs', 'bookings.payments', 'payments'])
+                ->lockForUpdate()
+                ->findOrFail($invoice->id);
+
+            if ($invoice->status !== 'void_requested') {
+                throw ValidationException::withMessages([
+                    'invoice' => ['Hanya invoice dengan status request void yang bisa di-approve.'],
+                ]);
+            }
+
+            if ($invoice->void_requested_by === Auth::id() && Auth::user()?->role !== 'superadmin') {
+                throw ValidationException::withMessages([
+                    'invoice' => ['Request void harus di-ACC oleh supervisor lain.'],
+                ]);
+            }
+
+            foreach ($invoice->payments as $payment) {
+                if (($payment->status ?? 'active') !== 'active') {
+                    continue;
+                }
+
+                $payment->update([
+                    'status' => 'voided',
+                    'void_approved_by' => Auth::id(),
+                    'void_approved_at' => now(),
+                ]);
+
+                BookingPayment::where('invoice_payment_id', $payment->id)->update(['status' => 'voided']);
+
+                $account = PaymentAccount::lockForUpdate()->findOrFail($payment->payment_account_id);
+                $this->transactionService->applyDelta($account, -(int) $payment->amount, [
+                    'type' => 'invoice_void',
+                    'amount' => (int) $payment->amount,
+                    'description' => "Void invoice #{$invoice->invoice_number}: " . $invoice->void_reason,
+                    'created_by' => Auth::id(),
+                    'transaction_at' => now(),
+                ]);
+
+                InvoiceHistory::create([
+                    'invoice_id'     => $invoice->id,
+                    'event_type'     => 'payment_voided',
+                    'description'    => 'Pembayaran di-void mengikuti void invoice: ' . $invoice->void_reason,
+                    'payment_amount' => (int) $payment->amount,
+                    'created_by'     => Auth::id(),
+                ]);
+            }
+
+            foreach ($invoice->bookings as $booking) {
+                $this->billingService->updateCachedSisaTagihan($booking);
+            }
+
+            $invoice->update([
+                'status' => 'void',
+                'paid_amount' => 0,
+                'voided_at' => now(),
+                'void_approved_by' => Auth::id(),
+                'void_approved_at' => now(),
+            ]);
+
+            InvoiceHistory::create([
+                'invoice_id'  => $invoice->id,
+                'event_type'  => 'voided',
+                'description' => 'Invoice di-void: ' . $invoice->void_reason,
+                'created_by'  => Auth::id(),
+            ]);
+
+            return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'voidRequester', 'voidApprover', 'voidRejecter']);
+        });
+    }
+
+    public function rejectVoidInvoice(Invoice $invoice, ?string $note = null): Invoice
+    {
+        if ($invoice->status !== 'void_requested') {
+            throw ValidationException::withMessages([
+                'invoice' => ['Hanya invoice dengan status request void yang bisa ditolak.'],
+            ]);
+        }
+
+        $paidAmount = $this->invoicePaidAmount($invoice);
+        $invoice->update([
+            'status' => $this->invoiceStatus((int) $invoice->total_amount, $paidAmount),
+            'paid_amount' => $paidAmount,
+            'void_rejected_by' => Auth::id(),
+            'void_rejected_at' => now(),
+            'void_rejection_note' => $note,
+        ]);
+
+        return $invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'voidRequester', 'voidApprover', 'voidRejecter']);
+    }
+
     public function publicInvoice(string $token): array
     {
         $invoice = Invoice::query()
@@ -849,6 +1014,48 @@ class ReceivableService
             ->get();
 
         return [$invoice, $paymentAccounts];
+    }
+
+    public function publicBookingProgress(string $token): Booking
+    {
+        return Booking::query()
+            ->with(['customer', 'bookingDetails.costs', 'bookingDetails.unit'])
+            ->where('public_token', $token)
+            ->firstOrFail();
+    }
+
+    public function publicBookingInvoices(string $token): \Illuminate\Support\Collection
+    {
+        $booking = Booking::query()
+            ->where('public_token', $token)
+            ->firstOrFail();
+
+        return $booking->invoices()
+            ->where('invoices.status', '!=', 'void')
+            ->with(['payments'])
+            ->latest('invoices.generated_at')
+            ->get();
+    }
+
+    public function bookingInvoiceHistories(Booking $booking): \Illuminate\Support\Collection
+    {
+        return $booking->invoices()
+            ->with(['histories.actor'])
+            ->get()
+            ->flatMap(fn (Invoice $invoice) => $invoice->histories->map(fn ($h) => [
+                'id'             => $h->id,
+                'invoice_id'     => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'event_type'     => $h->event_type,
+                'description'    => $h->description,
+                'amount_before'  => $h->amount_before,
+                'amount_after'   => $h->amount_after,
+                'payment_amount' => $h->payment_amount,
+                'actor_name'     => $h->actor?->name,
+                'created_at'     => $h->created_at,
+            ]))
+            ->sortByDesc('created_at')
+            ->values();
     }
 
     private function syncInvoicePaymentToBookings(Invoice $invoice, Payment $payment): void
@@ -885,7 +1092,8 @@ class ReceivableService
                 'booking_id' => $booking->id,
                 'payment_account_id' => $payment->payment_account_id,
                 'amount' => $allocated,
-                'payment_type' => $allocated >= $bookingRemaining ? 'pelunasan' : 'cicilan',
+                'payment_type' => $invoice->payment_classification
+                    ?? ($allocated >= $bookingRemaining ? 'pelunasan' : 'cicilan'),
                 'status' => 'active',
                 'catatan' => "Pembayaran invoice {$invoice->invoice_number}",
                 'paid_at' => $payment->paid_at,
@@ -1085,7 +1293,11 @@ class ReceivableService
         $invoice->loadMissing(['bookings.bookingDetails.unit', 'bookings.bookingDetails.costs']);
 
         return $invoice->bookings
-            ->flatMap(function (Booking $booking) {
+            ->flatMap(function (Booking $booking) use ($invoice) {
+                if ($invoice->payment_classification) {
+                    return collect([$this->classifiedPaymentItem($invoice, $booking)]);
+                }
+
                 if ($this->billingService->usesDealingAmount($booking)) {
                     $detail = $booking->bookingDetails->whereNotIn('status', ['batal'])->first();
                     $unit = $detail?->unit;
@@ -1150,7 +1362,86 @@ class ReceivableService
                         return $items;
                     });
             })
-            ->values();
+            ->values()
+            ->when($invoice->is_manual_amount && ! $invoice->payment_classification, function ($items) use ($invoice) {
+                $difference = (int) $invoice->total_amount - (int) $items->sum('amount');
+
+                if ($difference === 0) {
+                    return $items;
+                }
+
+                return $items->push([
+                    'type' => 'adjustment',
+                    'description' => 'Penyesuaian Nominal',
+                    'price' => $difference,
+                    'qty' => 1,
+                    'amount' => $difference,
+                ]);
+            });
+    }
+
+    private function classifiedPaymentItem(Invoice $invoice, Booking $booking): array
+    {
+        $labels = [
+            'dp' => 'Down Payment',
+            'cicilan' => 'Cicilan',
+            'pelunasan' => 'Pelunasan',
+        ];
+        $label = $labels[$invoice->payment_classification] ?? ucfirst($invoice->payment_classification);
+
+        $detail = $booking->bookingDetails->firstWhere('status', 'aktif')
+            ?? $booking->bookingDetails->whereNotIn('status', ['batal'])->first();
+        $unit = $detail?->unit;
+        $vehicleName = trim(implode(' ', array_filter([$unit?->merk, $unit?->tipe]))) ?: ($detail?->unit_placeholder ?? null);
+
+        $amount = (int) $booking->pivot->amount;
+        $totalNilaiSewa = $this->billingService->invoiceAmount($booking);
+        $percentage = $totalNilaiSewa > 0 ? round($amount / $totalNilaiSewa * 100) : null;
+
+        $description = $percentage !== null
+            ? "{$label} ({$percentage}%) Sewa Mobil {$vehicleName}"
+            : "{$label} Sewa Mobil {$vehicleName}";
+
+        return [
+            'type' => 'classified_payment',
+            'description' => trim($description),
+            'booking_code' => $booking->kode_booking,
+            'vehicle_name' => $vehicleName,
+            'vehicle_plate' => $unit?->no_polisi,
+            'rental_start_date' => $detail?->tgl_sewa,
+            'rental_end_date' => $detail?->tgl_kembali,
+            'price' => $amount,
+            'qty' => 1,
+            'amount' => $amount,
+        ];
+    }
+
+    public function contractInfo(Invoice $invoice): array
+    {
+        $invoice->loadMissing(['bookings.bookingDetails.costs', 'bookings.payments', 'payments']);
+        $invoicePaymentIds = $invoice->payments->pluck('id');
+
+        return $invoice->bookings->map(function (Booking $booking) use ($invoicePaymentIds) {
+            $totalNilaiSewa = $this->billingService->invoiceAmount($booking);
+            $tagihanSaatIni = (int) $booking->pivot->amount;
+
+            $paidViaThisInvoice = $invoicePaymentIds->isEmpty() ? 0 : (int) $booking->payments
+                ->filter(fn(BookingPayment $payment) =>
+                    ($payment->status ?? 'active') !== 'voided'
+                    && $invoicePaymentIds->contains($payment->invoice_payment_id))
+                ->sum('amount');
+
+            $telahDibayar = max(0, $this->billingService->paidAmount($booking) - $paidViaThisInvoice);
+            $sisaPembayaranSelanjutnya = $this->billingService->invoiceableBalance($booking);
+
+            return [
+                'kode_booking' => $booking->kode_booking,
+                'total_nilai_sewa' => $totalNilaiSewa,
+                'telah_dibayar' => $telahDibayar,
+                'tagihan_saat_ini' => $tagihanSaatIni,
+                'sisa_pembayaran_selanjutnya' => $sisaPembayaranSelanjutnya,
+            ];
+        })->values()->all();
     }
 
     private function currentInvoiceBookingAmounts(Invoice $invoice)
