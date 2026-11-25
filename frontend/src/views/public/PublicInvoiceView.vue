@@ -38,6 +38,12 @@ const customerName = computed(() => {
   return primaryBooking.value?.customer_name || 'Pelanggan'
 })
 
+const bookingCodes = computed(() => {
+  return (invoice.value?.bookings || []).map(b => b.kode_booking).filter(Boolean).join(', ') || '-'
+})
+
+const contractInfo = computed(() => invoice.value?.contract_info || [])
+
 const customerAddressLines = computed(() => {
   const booking = primaryBooking.value
   return [booking?.customer_address, booking?.customer_city].filter(Boolean)
@@ -251,6 +257,10 @@ onBeforeUnmount(() => {
               <span>{{ invoice.invoice_number }}</span>
             </div>
             <div class="detail-row">
+              <span>Booking#</span>
+              <span>{{ bookingCodes }}</span>
+            </div>
+            <div class="detail-row">
               <span>Date:</span>
               <span>{{ formatDate(invoice.generated_at || invoice.created_at) }}</span>
             </div>
@@ -333,6 +343,8 @@ onBeforeUnmount(() => {
               <div v-if="hasTermsAndConditions" class="terms-content" v-html="termsAndConditions"></div>
               <p v-else>Harap lakukan pembayaran sebelum tanggal jatuh tempo. Keterlambatan dapat dikenakan denda sesuai dengan ketentuan penyewaan. Terima kasih telah mempercayai DRENT.</p>
             </div>
+
+
           </div>
 
           <div class="bottom-right">
@@ -342,18 +354,30 @@ onBeforeUnmount(() => {
                 <span>{{ formatCurrency(invoice.total_amount) }}</span>
               </div>
               <div class="total-row">
-                <span>Paid:</span>
-                <span>{{ formatCurrency(invoice.paid_amount) }}</span>
-              </div>
-              <div class="total-row" style="align-items: center;">
-                <span>Status:</span>
-                <span>
-                  <Tag :value="invoice.status" :severity="statusSeverity(invoice.status)" class="status-badge" />
-                </span>
+                <span>Biaya Layanan/Admin:</span>
+                <span>{{ formatCurrency(0) }}</span>
               </div>
               <div class="total-row grand-total">
-                <span>Remaining:</span>
-                <span>{{ formatCurrency(remainingAmount) }}</span>
+                <span>Total Tagihan Ini:</span>
+                <span>{{ formatCurrency(invoice.total_amount) }}</span>
+              </div>
+              <div v-if="contractInfo.length" class="contract-info">
+                <div class="terms-title">Informasi Transaksi</div>
+                <div v-for="info in contractInfo" :key="info.kode_booking" class="contract-info-card">
+                  <div class="contract-info-title">Booking #{{ info.kode_booking }}</div>
+                  <div class="history-row">
+                    <span>Total Nilai Sewa</span>
+                    <span class="mono">{{ formatCurrency(info.total_nilai_sewa) }}</span>
+                  </div>
+                  <div class="history-row">
+                    <span>Telah Dibayar</span>
+                    <span class="mono">{{ formatCurrency(info.telah_dibayar) }}</span>
+                  </div>
+                  <div class="history-row">
+                    <span>Sisa Pembayaran Selanjutnya</span>
+                    <span class="mono">{{ formatCurrency(info.sisa_pembayaran_selanjutnya) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -404,7 +428,7 @@ onBeforeUnmount(() => {
   background: var(--text-primary);
   color: var(--text-white);
   padding: 8px 16px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   cursor: pointer;
   box-shadow: var(--shadow-tile);
@@ -461,7 +485,7 @@ onBeforeUnmount(() => {
 }
 
 .brand-header i.logo-icon {
-  font-size: 32px;
+  font-size: var(--font-size-32px);
 }
 
 .brand-logo {
@@ -476,13 +500,13 @@ onBeforeUnmount(() => {
 
 .brand-name {
   font-family: var(--font-headline);
-  font-size: 24px;
+  font-size: var(--font-size-24px);
   font-weight: 700;
   line-height: 1.2;
 }
 
 .brand-tagline {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   color: var(--neutral-4);
   letter-spacing: 1px;
 }
@@ -492,7 +516,7 @@ onBeforeUnmount(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--neutral-4);
   line-height: 1.5;
   max-width: 480px;
@@ -510,7 +534,7 @@ onBeforeUnmount(() => {
 }
 
 .brand-contact-item i {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   flex-shrink: 0;
 }
 
@@ -529,7 +553,7 @@ onBeforeUnmount(() => {
 
 .invoice-title {
   font-family: var(--font-headline);
-  font-size: 36px;
+  font-size: var(--font-size-36px);
   font-weight: 700;
   color: var(--negative);
   letter-spacing: 2px;
@@ -537,7 +561,7 @@ onBeforeUnmount(() => {
 }
 
 .invoice-title-meta {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--neutral-4);
   display: flex;
   flex-direction: column;
@@ -565,21 +589,21 @@ onBeforeUnmount(() => {
 }
 
 .invoice-to {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--neutral-4);
   max-width: 360px;
 }
 
 .invoice-to-title {
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 600;
   color: var(--text-white);
   margin-bottom: 8px;
 }
 
 .customer-name {
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 600;
   color: var(--text-white);
   margin-bottom: 4px;
@@ -601,7 +625,7 @@ onBeforeUnmount(() => {
 }
 
 .invoice-details {
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   color: var(--text-white);
   display: flex;
   flex-direction: column;
@@ -638,20 +662,20 @@ onBeforeUnmount(() => {
   font-weight: 600;
   font-family: var(--font-headline);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .table-row {
   display: flex;
   padding: 16px 20px;
   border-bottom: 1px solid var(--surface-border);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   align-items: center;
 }
 
 .item-meta {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.4;
   margin-top: 2px;
 }
@@ -697,26 +721,26 @@ onBeforeUnmount(() => {
 
 .thank-you {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   margin-bottom: 16px;
 }
 
 .payment-title {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   margin-bottom: 12px;
 }
 
 .payment-info {
   margin-bottom: 30px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .section-label {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   letter-spacing: .4px;
   margin: 0 0 8px;
@@ -761,14 +785,14 @@ onBeforeUnmount(() => {
 }
 
 .account-bank {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   color: var(--text-primary);
 }
 
 .account-number {
   margin-top: 6px;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
@@ -781,20 +805,43 @@ onBeforeUnmount(() => {
 
 .terms-title {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   margin-bottom: 8px;
 }
 
 .terms-conditions p {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   color: var(--text-secondary);
   line-height: 1.5;
   margin: 0;
 }
 
+.contract-info {
+  margin-top: 18px;
+}
+
+.contract-info-card {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.contract-info-card .history-row {
+  padding: 4px 0;
+  font-size: var(--font-size-11px);
+}
+
+.contract-info-title {
+  font-size: var(--font-size-11px);
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
 .terms-content {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -836,7 +883,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   padding: 8px 0;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 600;
 }
 
@@ -849,7 +896,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--text-primary);
   margin-top: 12px;
   padding: 12px 0;
-  font-size: 16px;
+  font-size: var(--font-size-16px);
 }
 
 .signature-section {
@@ -873,7 +920,7 @@ onBeforeUnmount(() => {
 }
 
 .signature-text {
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
   text-align: center;
   color: var(--text-primary);
@@ -881,7 +928,7 @@ onBeforeUnmount(() => {
 }
 
 .signature-caption {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 500;
   text-align: center;
   color: var(--text-secondary);
@@ -938,7 +985,7 @@ onBeforeUnmount(() => {
   }
 
   .invoice-title {
-    font-size: 28px;
+    font-size: var(--font-size-28px);
   }
 
   .brand-logo {

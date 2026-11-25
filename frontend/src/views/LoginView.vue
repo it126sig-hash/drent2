@@ -154,7 +154,7 @@ const handleLogin = async () => {
   background: color-mix(in srgb, var(--text-white) 12%, transparent);
   color: var(--text-white);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -172,7 +172,7 @@ const handleLogin = async () => {
   max-width: 520px;
   margin: var(--space-xl) 0 0;
   color: color-mix(in srgb, var(--text-white) 76%, transparent);
-  font-size: 15px;
+  font-size: var(--font-size-15px);
   line-height: 1.7;
 }
 
@@ -201,7 +201,7 @@ const handleLogin = async () => {
   border-radius: var(--radius-default);
   background: color-mix(in srgb, var(--text-white) 10%, transparent);
   color: var(--text-white);
-  font-size: 15px;
+  font-size: var(--font-size-15px);
   line-height: 1;
 }
 
@@ -226,14 +226,14 @@ const handleLogin = async () => {
 
 .summary-item strong {
   color: var(--text-white);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
 .summary-item span {
   margin-top: 2px;
   color: color-mix(in srgb, var(--text-white) 70%, transparent);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.45;
 }
 
@@ -269,7 +269,7 @@ const handleLogin = async () => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 22px;
+  font-size: var(--font-size-22px);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -277,7 +277,7 @@ const handleLogin = async () => {
 .form-header p {
   margin: var(--space-sm) 0 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   line-height: 1.55;
 }
 
@@ -299,7 +299,7 @@ const handleLogin = async () => {
 
 .field-group label {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -323,7 +323,7 @@ const handleLogin = async () => {
   margin-top: var(--space-3xl);
   text-align: center;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.p-inputtext),
@@ -336,7 +336,7 @@ const handleLogin = async () => {
   border-color: var(--surface-border);
   border-radius: var(--radius-default);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 :deep(.p-inputtext:enabled:focus) {
@@ -430,7 +430,7 @@ const handleLogin = async () => {
   }
 
   .form-header h2 {
-    font-size: 20px;
+    font-size: var(--font-size-20px);
   }
 }
 </style>

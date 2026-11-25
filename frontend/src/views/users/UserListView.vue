@@ -52,7 +52,9 @@ const statusOptions = [
   { label: 'Non-Aktif', value: false }
 ]
 
-const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('master.user.create'))
+const canEdit = computed(() => authStore.hasPermission('master.user.update'))
+const canDelete = computed(() => authStore.hasPermission('master.user.delete'))
 
 onMounted(async () => {
   fetchData()
@@ -181,8 +183,8 @@ const getRoleBadgeClass = (role) => {
         </div>
       </div>
       <div class="header-actions">
-        <button 
-          v-if="canManage"
+        <button
+          v-if="canCreate"
           class="btn-pill btn-primary"
           type="button"
           @click="openNew"
@@ -281,38 +283,38 @@ const getRoleBadgeClass = (role) => {
         <Column header="Aksi" style="min-width: 180px; text-align: center">
           <template #body="{ data }">
             <div class="action-pill-group">
-              <button 
-                v-if="canManage"
+              <button
+                v-if="canEdit"
                 class="action-btn"
                 type="button"
-                @click="openPermissions(data)" 
+                @click="openPermissions(data)"
                 v-tooltip.top="'Hak Akses'"
               >
                 <i class="pi pi-shield" />
               </button>
-              <button 
-                v-if="canManage"
+              <button
+                v-if="canEdit"
                 class="action-btn"
                 type="button"
-                @click="openReset(data)" 
+                @click="openReset(data)"
                 v-tooltip.top="'Reset Password'"
               >
                 <i class="pi pi-key" />
               </button>
-              <button 
-                v-if="canManage"
+              <button
+                v-if="canEdit"
                 class="action-btn"
                 type="button"
-                @click="editUser(data)" 
+                @click="editUser(data)"
                 v-tooltip.top="'Edit'"
               >
                 <i class="pi pi-pencil" />
               </button>
-              <button 
-                v-if="canManage"
+              <button
+                v-if="canDelete"
                 class="action-btn action-btn-danger"
                 type="button"
-                @click="confirmDelete(data)" 
+                @click="confirmDelete(data)"
                 v-tooltip.top="'Hapus'"
                 :disabled="data.id === authStore.user?.id"
               >
@@ -348,12 +350,12 @@ const getRoleBadgeClass = (role) => {
           <div><span class="field-hint">Role</span> <span class="drent-badge" :class="getRoleBadgeClass(user.role)">{{ user.role_label }}</span></div>
           <div><span class="field-hint">Branch</span> {{ user.branch_name || '-' }}</div>
         </div>
-        <div v-if="canManage" class="card-footer">
+        <div v-if="canEdit || canDelete" class="card-footer">
           <div class="action-pill-group">
-            <button class="action-btn" type="button" @click="openPermissions(user)" v-tooltip.top="'Hak Akses'"><i class="pi pi-shield" /></button>
-            <button class="action-btn" type="button" @click="openReset(user)" v-tooltip.top="'Reset Password'"><i class="pi pi-key" /></button>
-            <button class="action-btn" type="button" @click="editUser(user)" v-tooltip.top="'Edit'"><i class="pi pi-pencil" /></button>
-            <button class="action-btn action-btn-danger" type="button" @click="confirmDelete(user)" :disabled="user.id === authStore.user?.id" v-tooltip.top="'Hapus'"><i class="pi pi-trash" /></button>
+            <button v-if="canEdit" class="action-btn" type="button" @click="openPermissions(user)" v-tooltip.top="'Hak Akses'"><i class="pi pi-shield" /></button>
+            <button v-if="canEdit" class="action-btn" type="button" @click="openReset(user)" v-tooltip.top="'Reset Password'"><i class="pi pi-key" /></button>
+            <button v-if="canEdit" class="action-btn" type="button" @click="editUser(user)" v-tooltip.top="'Edit'"><i class="pi pi-pencil" /></button>
+            <button v-if="canDelete" class="action-btn action-btn-danger" type="button" @click="confirmDelete(user)" :disabled="user.id === authStore.user?.id" v-tooltip.top="'Hapus'"><i class="pi pi-trash" /></button>
           </div>
         </div>
       </article>
@@ -404,7 +406,7 @@ const getRoleBadgeClass = (role) => {
 
 .user-name {
   font-family: var(--font-headline);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -416,7 +418,7 @@ const getRoleBadgeClass = (role) => {
 }
 
 .user-email {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-secondary);
 }
 
@@ -424,7 +426,7 @@ const getRoleBadgeClass = (role) => {
   color: var(--negative) !important;
 }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card-list .card-footer { justify-content: flex-end; }
 
 .empty-state {
@@ -437,7 +439,7 @@ const getRoleBadgeClass = (role) => {
 }
 
 .empty-state i {
-  font-size: 2.4rem;
+  font-size: var(--font-size-2p4rem);
   margin-bottom: var(--space-md);
   opacity: 0.7;
 }
@@ -454,7 +456,7 @@ const getRoleBadgeClass = (role) => {
   padding: 3px 6px;
   border-radius: 6px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.3;
   text-transform: capitalize;

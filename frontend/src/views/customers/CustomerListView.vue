@@ -50,8 +50,9 @@ const statusOptions = [
   { label: 'Blacklist', value: 'Blacklist' }
 ]
 
-const canManage = computed(() => ['superadmin', 'admin_branch', 'cs'].includes(authStore.user?.role))
-const canDelete = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('customer.create'))
+const canEdit = computed(() => authStore.hasPermission('customer.update'))
+const canDelete = computed(() => authStore.hasPermission('customer.delete'))
 const hasRiskCustomer = computed(() =>
   customers.value.some(c => ['Redflag', 'Blacklist'].includes(c.status))
 )
@@ -261,7 +262,7 @@ const formatRentalPeriod = (booking) => {
         </div>
       </div>
       <div class="header-actions">
-        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Pelanggan</span>
         </button>
@@ -330,7 +331,7 @@ const formatRentalPeriod = (booking) => {
               <button class="action-btn action-btn-primary" type="button" title="Lihat detail konsumen" @click.stop="openDetail(data)">
                 <i class="pi pi-eye"></i>
               </button>
-              <button v-if="canManage" class="action-btn" type="button" title="Edit" @click.stop="editCustomer(data)">
+              <button v-if="canEdit" class="action-btn" type="button" title="Edit" @click.stop="editCustomer(data)">
                 <i class="pi pi-pencil"></i>
               </button>
               <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click.stop="confirmDelete(data)">
@@ -410,7 +411,7 @@ const formatRentalPeriod = (booking) => {
         <p v-if="customer.catatan" class="mobile-note">{{ customer.catatan }}</p>
         <div class="card-actions">
           <button class="btn-pill btn-primary btn-pill-compact" type="button" @click="openDetail(customer)">Lihat</button>
-          <button v-if="canManage" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="editCustomer(customer)">Edit</button>
+          <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="editCustomer(customer)">Edit</button>
         </div>
       </article>
     </div>
@@ -570,12 +571,12 @@ const formatRentalPeriod = (booking) => {
 .customer-info small,
 .stacked-text small {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .status-tag {
   font-weight: 700;
-  font-size: 0.72rem;
+  font-size: var(--font-size-0p72rem);
 }
 
 .truncate-text,
@@ -613,7 +614,7 @@ const formatRentalPeriod = (booking) => {
 }
 
 .empty-state i {
-  font-size: 2rem;
+  font-size: var(--font-size-2rem);
   opacity: 0.55;
 }
 
@@ -644,13 +645,13 @@ const formatRentalPeriod = (booking) => {
 
 .app-section-header h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .app-section-header p {
   margin: 3px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .timeline-list {
@@ -708,7 +709,7 @@ const formatRentalPeriod = (booking) => {
 .timeline-head span,
 .timeline-content p {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .timeline-content p {
@@ -735,7 +736,7 @@ const formatRentalPeriod = (booking) => {
 
 .info-list dt {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -743,7 +744,7 @@ const formatRentalPeriod = (booking) => {
 .info-list dd {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   overflow-wrap: anywhere;
 }
 
@@ -778,7 +779,7 @@ const formatRentalPeriod = (booking) => {
 
 .history-row small {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.customer-detail-dialog .p-dialog-content) {
@@ -819,13 +820,13 @@ const formatRentalPeriod = (booking) => {
   }
 
   .mobile-card-head h3 {
-    font-size: 15px;
+    font-size: var(--font-size-15px);
   }
 
   .mobile-card-head p,
   .mobile-note {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-12px);
   }
 
   .mobile-note {

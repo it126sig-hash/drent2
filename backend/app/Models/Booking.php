@@ -15,6 +15,7 @@ class Booking extends Model
         'customer_id',
         'created_by',
         'kode_booking',
+        'public_token',
         'status',
         'lama_sewa',
         'paket_sewa',
@@ -55,6 +56,8 @@ class Booking extends Model
         'operational_revert_rejected_by',
         'operational_revert_rejected_at',
         'operational_revert_rejection_note',
+        'catatan_status',
+        'reschedule_date',
     ];
 
     protected $casts = [
@@ -72,6 +75,7 @@ class Booking extends Model
         'operational_revert_requested_at' => 'datetime',
         'operational_revert_approved_at' => 'datetime',
         'operational_revert_rejected_at' => 'datetime',
+        'reschedule_date' => 'date',
     ];
 
     // TODO: konfirmasi strategi arsip (soft-delete vs tabel terpisah vs is_archived flag)
@@ -175,6 +179,16 @@ class Booking extends Model
     public function operationalExpenses()
     {
         return $this->hasMany(DriverOperationalExpense::class);
+    }
+
+    public function fleetCardFunds()
+    {
+        return $this->hasMany(FleetCardFund::class);
+    }
+
+    public function fleetCardExpenses()
+    {
+        return $this->hasMany(FleetCardExpense::class);
     }
 
     public function invoices()

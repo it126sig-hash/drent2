@@ -24,7 +24,7 @@ class UserPolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.create');
     }
 
     public function update(User $user, User $model): bool
@@ -34,7 +34,7 @@ class UserPolicy
         }
 
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.update')
             && $user->branch_id === $model->branch_id;
     }
 
@@ -45,7 +45,7 @@ class UserPolicy
         }
 
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.delete')
             && $user->branch_id === $model->branch_id;
     }
 

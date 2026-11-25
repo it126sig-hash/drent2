@@ -22,7 +22,9 @@ const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
 
-const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('master.payment_account.create'))
+const canManage = computed(() => authStore.hasPermission('master.payment_account.update'))
+const canDelete = computed(() => authStore.hasPermission('master.payment_account.delete'))
 const canAdjust = computed(() => ['superadmin', 'admin_branch', 'finance'].includes(authStore.user?.role))
 
 const showDialog = ref(false)
@@ -179,7 +181,7 @@ const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum 
         </div>
       </div>
       <div class="header-actions">
-        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Akun</span>
         </button>
@@ -258,7 +260,7 @@ const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum 
               <button v-if="canAdjust" class="action-btn action-btn-primary" type="button" title="Adjust Saldo" @click="openAdjust(data)">
                 <i class="pi pi-calculator"></i>
               </button>
-              <button v-if="canManage" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
                 <i class="pi pi-trash"></i>
               </button>
             </div>
@@ -417,32 +419,32 @@ const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum 
 }
 
 .summary-tile-header i {
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .summary-tile-header span { 
   font-family: var(--font-body);
-  font-size: 11px; 
+  font-size: var(--font-size-11px); 
   font-weight: 600; 
   color: var(--text-secondary);
 }
 .summary-tile strong { 
   color: var(--text-primary); 
   font-family: var(--font-headline); 
-  font-size: 18px; 
+  font-size: var(--font-size-18px); 
   font-weight: 700;
 }
 .payment-account-table { min-width: 760px; }
 .paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 0; color: #94a3b8; }
-.empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: .5; }
+.empty-state i { font-size: var(--font-size-3rem); margin-bottom: 15px; opacity: .5; }
 .mono-text { font-family: var(--font-mono); font-weight: 600; }
 .amount-text { font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; }
 .form-grid { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
 .adjust-summary { display: flex; justify-content: space-between; gap: 12px; border: 1px solid var(--surface-border); background: var(--card-bg); border-radius: var(--radius-default); padding: 12px; color: var(--text-secondary); }
 .adjust-summary strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
+.field label { font-weight: 700; font-size: var(--font-size-12px); color: var(--text-secondary); }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
 .action-btn-primary { color: var(--info-cyan); }
@@ -451,11 +453,11 @@ const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum 
 .mobile-state { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); padding: var(--space-xl); color: var(--text-secondary); }
 .account-card { padding: var(--space-lg); }
 .mobile-card-head { display: flex; justify-content: space-between; gap: var(--space-md); align-items: flex-start; }
-.mobile-card-head h3 { margin: 0; font-family: var(--font-headline); font-size: 15px; }
-.mobile-card-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+.mobile-card-head h3 { margin: 0; font-family: var(--font-headline); font-size: var(--font-size-15px); }
+.mobile-card-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--font-size-12px); }
 .mobile-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-md); }
 .mobile-info-grid div { display: flex; flex-direction: column; gap: 3px; }
-.mobile-info-grid span { color: var(--text-tertiary); font-size: 11px; font-weight: 700; }
+.mobile-info-grid span { color: var(--text-tertiary); font-size: var(--font-size-11px); font-weight: 700; }
 .card-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); justify-content: flex-end; margin-top: var(--space-md); }
 .mobile-paginator { overflow: hidden; border: 1px solid var(--surface-border); border-radius: var(--radius-default); background: var(--surface-default); }
 
@@ -466,7 +468,7 @@ const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum 
   padding: 3px 6px;
   border-radius: 6px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.3;
   text-transform: capitalize;

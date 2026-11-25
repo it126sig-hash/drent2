@@ -71,7 +71,7 @@ class UnitController extends Controller
     public function show(Unit $unit)
     {
         $this->authorize('view', $unit);
-        $unit->load(['rentalOwner', 'photos']);
+        $unit->load(['rentalOwner', 'photos', 'city']);
         return new UnitResource($unit);
     }
 

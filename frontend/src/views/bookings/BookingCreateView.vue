@@ -11,7 +11,7 @@ import { usePaymentAccount } from '../../composables/usePaymentAccount';
 import { useCity } from '../../composables/useCity';
 import { useCostType } from '../../composables/useCostType';
 import { usePricingPackage } from '../../composables/usePricingPackage';
-import { getUnits, checkUnitSchedule } from '../../api/unit';
+import { getUnits, getUnit, updateUnit, checkUnitSchedule } from '../../api/unit';
 import { calcRentalSubtotal } from '../../utils/bookingPricing';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
@@ -53,11 +53,46 @@ const isSubmitting = ref(false);
 const unitSearchLoading = ref(false);
 const unitServerSearchTerm = ref('');
 const unitCityFilter = ref(null);
+const showUnitPriceDialog = ref(false);
+const unitPriceSaving = ref(false);
+const unitPriceErrors = ref({});
+const unitPriceForm = ref({
+  id: null,
+  label: '',
+  city_id: null,
+  harga_1_hari: 0,
+  harga_1_minggu: 0,
+  harga_1_bulan: 0,
+  harga_all_in: 0,
+  harga_all_in_1_minggu: 0,
+  harga_all_in_1_bulan: 0,
+  modal_1_hari: 0,
+  modal_1_minggu: 0,
+  modal_1_bulan: 0,
+  modal_all_in: 0,
+  modal_all_in_1_minggu: 0,
+  modal_all_in_1_bulan: 0,
+});
+const unitPriceFields = [
+  'harga_1_hari',
+  'harga_1_minggu',
+  'harga_1_bulan',
+  'harga_all_in',
+  'harga_all_in_1_minggu',
+  'harga_all_in_1_bulan',
+  'modal_1_hari',
+  'modal_1_minggu',
+  'modal_1_bulan',
+  'modal_all_in',
+  'modal_all_in_1_minggu',
+  'modal_all_in_1_bulan',
+];
 const waitingHargaTouched = ref(false);
 const waitingModalTouched = ref(false);
 let lastPrefilledUnitId = null;
 const showScheduleConflictDialog = ref(false);
 const scheduleConflicts = ref([]);
+const showSubmitConfirmDialog = ref(false);
 let customerSearchTimer = null;
 let unitSearchTimer = null;
 let pricingPackageSearchTimer = null;
@@ -549,6 +584,11 @@ const handleSubmit = async () => {
     return;
   }
 
+  showSubmitConfirmDialog.value = true;
+};
+
+const confirmSubmit = async () => {
+  showSubmitConfirmDialog.value = false;
   isSubmitting.value = true;
 
   try {
@@ -985,6 +1025,57 @@ const loadPricingFromUnit = () => {
   waitingHargaTouched.value = false;
   waitingModalTouched.value = false;
   toast.add({ severity: 'success', summary: 'Harga dimuat', detail: 'Harga & modal diambil dari master unit.', life: 2500 });
+};
+
+const refreshSelectedUnit = async (unitId) => {
+  const response = await getUnit(unitId);
+  const updatedUnit = response.data.data;
+  const mappedUnit = mapUnitOption(updatedUnit);
+  const existingIndex = units.value.findIndex(unit => unit.id === updatedUnit.id);
+
+  if (existingIndex >= 0) {
+    units.value.splice(existingIndex, 1, updatedUnit);
+  } else {
+    units.value.unshift(updatedUnit);
+  }
+
+  selectedUnitCache.value = mappedUnit;
+};
+
+const saveUnitPrice = async (data) => {
+  if (!selectedUnit.value?.id) return;
+  unitPriceErrors.value = {};
+
+  if (!data?.city_id) {
+    unitPriceErrors.value.city_id = 'Kota unit wajib dipilih.';
+    return;
+  }
+
+  const pricePayload = unitPriceFields.reduce((payload, field) => {
+    payload[field] = data?.[field] ?? 0;
+    return payload;
+  }, {});
+
+  unitPriceSaving.value = true;
+  try {
+    await updateUnit(selectedUnit.value.id, {
+      ...selectedUnit.value,
+      city_id: data.city_id,
+      ...pricePayload,
+      id: selectedUnit.value.id,
+    });
+    await refreshSelectedUnit(selectedUnit.value.id);
+    toast.add({ severity: 'success', summary: 'Sukses', detail: 'Harga unit berhasil diperbarui.', life: 3000 });
+    showUnitPriceDialog.value = false;
+  } catch (err) {
+    const cityError = err.response?.data?.errors?.city_id;
+    if (cityError) {
+      unitPriceErrors.value.city_id = Array.isArray(cityError) ? cityError[0] : cityError;
+    }
+    toast.add({ severity: 'error', summary: 'Gagal', detail: err.response?.data?.message || 'Gagal memperbarui harga unit.', life: 5000 });
+  } finally {
+    unitPriceSaving.value = false;
+  }
 };
 
 watch(selectedCustomer, (customer) => {
@@ -1815,6 +1906,44 @@ const formatDate = (value) => {
       </aside>
     </div>
 
+    <Dialog v-model:visible="showSubmitConfirmDialog" modal :closable="!isSubmitting" :style="{ width: '480px' }" :breakpoints="{ '640px': '94vw' }" class="confirm-submit-dialog">
+      <div class="confirm-submit-header">
+        <span class="confirm-submit-icon"><i class="pi pi-shield" /></span>
+        <div>
+          <h3>Konfirmasi Simpan Booking</h3>
+          <p>Pastikan data berikut sudah benar sebelum disimpan.</p>
+        </div>
+      </div>
+
+      <div class="confirm-summary-panel">
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Pelanggan</span>
+          <strong class="confirm-summary-value">{{ form.customer_mode === 'existing' ? (selectedCustomer?.nama || '-') : (form.customer_name || '-') }}</strong>
+        </div>
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Unit</span>
+          <strong class="confirm-summary-value">{{ form.unit_mode === 'existing' ? (selectedUnit?.label || '-') : (form.unit_placeholder || '-') }}</strong>
+        </div>
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Mulai sewa</span>
+          <strong class="confirm-summary-value">{{ formatDate(form.tgl_sewa) }}</strong>
+        </div>
+        <div class="confirm-summary-row">
+          <span class="confirm-summary-label">Selesai sewa</span>
+          <strong class="confirm-summary-value">{{ formatDate(form.tgl_kembali) }}</strong>
+        </div>
+        <div class="confirm-summary-row confirm-summary-row--highlight">
+          <span class="confirm-summary-label">{{ isDirectWaitingList ? 'Tagihan konsumen' : 'Harga dealing' }}</span>
+          <strong class="confirm-summary-value">{{ formatCurrency(isDirectWaitingList ? waitingTagihanKonsumen : form.harga_dealing) }}</strong>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button label="Batal" icon="pi pi-times" text class="button-secondary" :disabled="isSubmitting" @click="showSubmitConfirmDialog = false" />
+        <Button :label="isEditMode ? 'Ya, Simpan Perubahan' : 'Ya, Simpan Booking'" icon="pi pi-check" :loading="isSubmitting" @click="confirmSubmit" class="p-button-tosca" />
+      </template>
+    </Dialog>
+
     <!-- Dialog: Peringatan Konflik Jadwal Unit -->
     <Dialog v-model:visible="showScheduleConflictDialog" modal :closable="false" header="Peringatan Jadwal Unit" :style="{ width: '480px' }" :breakpoints="{ '640px': '94vw' }">
       <div class="conflict-dialog-body">
@@ -1836,6 +1965,103 @@ const formatDate = (value) => {
       </div>
       <template #footer>
         <Button label="OK, Tetap Lanjutkan" icon="pi pi-check" @click="showScheduleConflictDialog = false" class="p-button-tosca w-full justify-center" />
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showUnitPriceDialog" modal header="Edit Harga Unit" class="custom-dialog" :style="{ width: '760px' }" :breakpoints="{ '820px': '95vw' }">
+      <div class="unit-price-dialog">
+        <div class="unit-price-heading">
+          <div>
+            <span>Unit</span>
+            <strong>{{ unitPriceForm.label }}</strong>
+          </div>
+          <Tag v-if="selectedUnit" :value="unitStatusMeta(selectedUnit.status).label" :severity="unitStatusMeta(selectedUnit.status).severity" />
+        </div>
+
+        <div class="unit-price-location form-field-vertical">
+          <label class="field-label">Kota Unit *</label>
+          <Dropdown v-model="unitPriceForm.city_id" :options="cityOptions" optionLabel="label" optionValue="id" placeholder="Pilih kota unit" filter :filterFields="['searchableLabel', 'label']" :loading="citiesLoading" class="w-full premium-input" :class="{ 'p-invalid': unitPriceErrors.city_id }" :empty-message="'Belum ada kota aktif'" @filter="onCityFilter" />
+          <small v-if="unitPriceErrors.city_id" class="p-error">{{ unitPriceErrors.city_id }}</small>
+        </div>
+
+        <div class="unit-price-grid">
+          <section class="unit-price-section">
+            <h3>Harga Lepas Kunci</h3>
+            <div class="unit-price-fields">
+              <div class="form-field-vertical">
+                <label class="field-label">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.harga_1_hari" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.harga_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.harga_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+            </div>
+          </section>
+
+          <section class="unit-price-section">
+            <h3>Harga All In</h3>
+            <div class="unit-price-fields">
+              <div class="form-field-vertical">
+                <label class="field-label">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.harga_all_in_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.harga_all_in_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+            </div>
+          </section>
+
+          <section class="unit-price-section">
+            <h3>Modal Lepas Kunci</h3>
+            <div class="unit-price-fields">
+              <div class="form-field-vertical">
+                <label class="field-label">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.modal_1_hari" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.modal_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.modal_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+            </div>
+          </section>
+
+          <section class="unit-price-section">
+            <h3>Modal All In</h3>
+            <div class="unit-price-fields">
+              <div class="form-field-vertical">
+                <label class="field-label">1 Hari</label>
+                <InputNumber v-model="unitPriceForm.modal_all_in" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Minggu</label>
+                <InputNumber v-model="unitPriceForm.modal_all_in_1_minggu" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+              <div class="form-field-vertical">
+                <label class="field-label">1 Bulan</label>
+                <InputNumber v-model="unitPriceForm.modal_all_in_1_bulan" mode="currency" currency="IDR" locale="id-ID" :min="0" class="w-full premium-input" />
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button label="Batal" icon="pi pi-times" text class="button-secondary" @click="showUnitPriceDialog = false" />
+        <Button label="Simpan Harga" icon="pi pi-save" class="p-button-tosca" :loading="unitPriceSaving" :disabled="unitPriceSaving || !unitPriceForm.city_id" @click="saveUnitPrice(unitPriceForm)" />
       </template>
     </Dialog>
   </div>
@@ -1865,7 +2091,7 @@ const formatDate = (value) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -1873,7 +2099,7 @@ const formatDate = (value) => {
 .booking-page-subtitle {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
@@ -1929,7 +2155,7 @@ const formatDate = (value) => {
   gap: var(--space-sm);
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -1944,7 +2170,7 @@ const formatDate = (value) => {
   border-radius: var(--radius-full);
   background: #E1F4F6;
   color: #085A66;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .form-field-vertical {
@@ -1954,7 +2180,7 @@ const formatDate = (value) => {
 }
 
 .field-label {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1975,7 +2201,7 @@ const formatDate = (value) => {
 
 :deep(.field-action-button.p-button) {
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .text-tosca {
@@ -1992,7 +2218,7 @@ const formatDate = (value) => {
   background: var(--surface-default);
   transition: all 0.2s;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   min-height: 38px;
 }
 
@@ -2019,13 +2245,13 @@ const formatDate = (value) => {
 
 :deep(.p-button) {
   border-radius: var(--radius-full);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
 }
 
 :deep(.p-message) {
   border-radius: var(--radius-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 :deep(.premium-input .p-inputtext:focus),
@@ -2041,7 +2267,7 @@ const formatDate = (value) => {
   color: var(--text-secondary);
   border-radius: var(--radius-full) !important;
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   padding: 8px;
 }
 
@@ -2068,26 +2294,26 @@ const formatDate = (value) => {
 
 .option-title {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
 .option-meta,
 .option-source {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
 .option-positive {
   color: #147239;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
 .option-warning {
   color: #8C660A;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -2102,7 +2328,7 @@ const formatDate = (value) => {
   margin-bottom: 10px;
   color: var(--text-primary);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .info-grid,
@@ -2113,7 +2339,7 @@ const formatDate = (value) => {
 
 .info-grid {
   grid-template-columns: minmax(96px, 0.38fr) 1fr;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .info-grid span,
@@ -2212,14 +2438,14 @@ const formatDate = (value) => {
 
 .create-mode-title {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   line-height: 1.25;
 }
 
 .create-mode-description {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.45;
 }
 
@@ -2247,7 +2473,7 @@ const formatDate = (value) => {
   padding: 14px;
   color: var(--text-secondary);
   text-align: center;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .cost-row {
@@ -2275,13 +2501,13 @@ const formatDate = (value) => {
   justify-content: space-between;
   gap: 12px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .waiting-total-panel strong {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 600;
 }
 
@@ -2295,6 +2521,71 @@ const formatDate = (value) => {
 .waiting-total-highlight strong {
   color: #085A66;
   font-weight: 700;
+}
+
+.unit-price-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.unit-price-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--surface-default);
+}
+
+.unit-price-heading span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-11px);
+  line-height: 1.35;
+}
+
+.unit-price-heading strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-14px);
+}
+
+.unit-price-location {
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.unit-price-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.unit-price-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
+}
+
+.unit-price-section h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-13px);
+  font-weight: 700;
+}
+
+.unit-price-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
 }
 
 .summary-panel {
@@ -2316,7 +2607,7 @@ const formatDate = (value) => {
   margin-bottom: var(--space-md);
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
 }
 
@@ -2338,7 +2629,7 @@ const formatDate = (value) => {
 .summary-kpi span {
   display: block;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.3;
 }
 
@@ -2347,7 +2638,7 @@ const formatDate = (value) => {
   margin-top: 3px;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -2363,7 +2654,7 @@ const formatDate = (value) => {
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-default);
   background: var(--surface-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .summary-actions {
@@ -2384,7 +2675,7 @@ const formatDate = (value) => {
 .premium-tag {
   border-radius: var(--radius-sm);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -2417,7 +2708,7 @@ const formatDate = (value) => {
 
 .option-source {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1;
   text-transform: uppercase;
@@ -2477,7 +2768,7 @@ const formatDate = (value) => {
 
 .numeric-value {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 500;
 }
 
@@ -2559,13 +2850,13 @@ const formatDate = (value) => {
   border: 1px solid #B0DDE4;
   border-radius: var(--radius-full);
   color: #085A66;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
 
 .unit-city-filter-chip i {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.chip-clear-btn.p-button) {
@@ -2574,7 +2865,7 @@ const formatDate = (value) => {
   padding: 0 !important;
   border-radius: 50% !important;
   color: #085A66 !important;
-  font-size: 9px;
+  font-size: var(--font-size-9px);
 }
 
 :deep(.chip-clear-btn.p-button:hover) {
@@ -2584,7 +2875,7 @@ const formatDate = (value) => {
 /* ── Field hint ───────────────────────────────────────── */
 .field-hint {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
@@ -2602,14 +2893,14 @@ const formatDate = (value) => {
 }
 
 .conflict-icon-wrap i {
-  font-size: 36px;
+  font-size: var(--font-size-36px);
   color: #D4A017;
 }
 
 .conflict-message {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   line-height: 1.5;
 }
 
@@ -2627,7 +2918,7 @@ const formatDate = (value) => {
   background: #FDF4D9;
   border: 1px solid #F2C94C;
   border-radius: var(--radius-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-primary);
   line-height: 1.4;
 }
@@ -2641,6 +2932,81 @@ const formatDate = (value) => {
 .conflict-note {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
+}
+
+.confirm-submit-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.confirm-submit-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(13, 148, 136, 0.12);
+  color: var(--color-tosca, #0d9488);
+  font-size: 18px;
+}
+
+.confirm-submit-header h3 {
+  margin: 0;
+  font-size: var(--font-size-15px, 15px);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.confirm-submit-header p {
+  margin: 2px 0 0;
+  font-size: var(--font-size-12px);
+  color: var(--text-secondary);
+}
+
+.confirm-summary-panel {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  overflow: hidden;
+}
+
+.confirm-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.confirm-summary-row:last-child {
+  border-bottom: none;
+}
+
+.confirm-summary-row--highlight {
+  background: rgba(13, 148, 136, 0.06);
+}
+
+.confirm-summary-label {
+  font-size: var(--font-size-12px);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.confirm-summary-value {
+  font-size: var(--font-size-13px, 13px);
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.confirm-summary-row--highlight .confirm-summary-value {
+  color: var(--color-tosca, #0d9488);
+  font-size: var(--font-size-14px, 14px);
 }
 </style>

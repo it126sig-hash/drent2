@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\RejectCancelExtendRequest;
+use App\Http\Requests\RequestCancelExtendRequest;
 use App\Http\Requests\StoreBookingDetailRequest;
 use App\Http\Resources\BookingResource;
 use App\Models\Booking;
 use App\Services\BookingBillingService;
+use App\Services\BookingModificationService;
 use App\Services\BookingModalService;
 use App\Services\BookingService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -19,9 +22,15 @@ class BookingDetailController extends Controller
 {
     use AuthorizesRequests;
 
+    protected array $bookingRelations = [
+        'customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver',
+        'bookingDetails.costs.costType', 'payments', 'refunds',
+    ];
+
     public function __construct(
         protected BookingService $bookingService,
         protected BookingBillingService $billingService,
+        protected BookingModificationService $modificationService,
         protected BookingModalService $modalService,
     ) {}
 
@@ -87,5 +96,29 @@ class BookingDetailController extends Controller
         $this->billingService->updateCachedSisaTagihan($booking);
 
         return new BookingResource($bookingDetail->booking->load(['customer', 'bookingDetails.unit.rentalOwner', 'bookingDetails.driver', 'bookingDetails.costs.costType', 'payments', 'refunds']));
+    }
+
+    public function requestCancelExtend(RequestCancelExtendRequest $request, BookingDetail $bookingDetail)
+    {
+        $this->authorize('requestCancelExtend', $bookingDetail->booking);
+        $this->modificationService->requestCancelExtend($bookingDetail, $request->validated()['reason']);
+
+        return new BookingResource($bookingDetail->booking->load($this->bookingRelations));
+    }
+
+    public function approveCancelExtend(BookingDetail $bookingDetail)
+    {
+        $this->authorize('approveCancelExtend', $bookingDetail->booking);
+        $this->modificationService->approveCancelExtend($bookingDetail);
+
+        return new BookingResource($bookingDetail->booking->load($this->bookingRelations));
+    }
+
+    public function rejectCancelExtend(RejectCancelExtendRequest $request, BookingDetail $bookingDetail)
+    {
+        $this->authorize('approveCancelExtend', $bookingDetail->booking);
+        $this->modificationService->rejectCancelExtend($bookingDetail, $request->validated()['rejection_note'] ?? null);
+
+        return new BookingResource($bookingDetail->booking->load($this->bookingRelations));
     }
 }

@@ -34,17 +34,24 @@ class PermissionService
         // Finance - Piutang
         'finance.receivable',
         'finance.receivable.create',
+        'finance.receivable.pay',
         'finance.receivable.update',
 
         // Finance - Rent to Rent
         'finance.rent_to_rent',
         'finance.rent_to_rent.create',
+        'finance.rent_to_rent.pay',
         'finance.rent_to_rent.update',
 
         // Finance - Biaya Operasional
         'finance.operational_cost',
         'finance.operational_cost.create',
         'finance.operational_cost.update',
+
+        // Finance - Kartu Fleet
+        'finance.fleet_card',
+        'finance.fleet_card.create',
+        'finance.fleet_card.update',
 
         // Finance - Mutasi Rekening
         'finance.account_mutation',

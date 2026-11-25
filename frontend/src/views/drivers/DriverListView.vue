@@ -49,7 +49,9 @@ const typeOptions = [
   { label: 'Non-Tetap', value: false }
 ]
 
-const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('vehicle.driver.create'))
+const canEdit = computed(() => authStore.hasPermission('vehicle.driver.update'))
+const canDelete = computed(() => authStore.hasPermission('vehicle.driver.delete'))
 const canEditBalance = computed(() => ['superadmin', 'finance'].includes(authStore.user?.role))
 
 onMounted(() => {
@@ -165,7 +167,7 @@ const formatCurrency = (value) => {
       </div>
       <div class="header-actions">
         <Button
-          v-if="canManage"
+          v-if="canCreate"
           label="Tambah Driver"
           icon="pi pi-plus"
           class="btn-pill btn-primary"
@@ -253,11 +255,11 @@ const formatCurrency = (value) => {
                 >
                   <i class="pi pi-wallet"></i>
                 </button>
-                <button type="button" class="action-btn" @click="editDriver(data)" v-tooltip.top="'Edit'">
+                <button v-if="canEdit" type="button" class="action-btn" @click="editDriver(data)" v-tooltip.top="'Edit'">
                   <i class="pi pi-pencil"></i>
                 </button>
                 <button
-                  v-if="canManage"
+                  v-if="canDelete"
                   type="button"
                   class="action-btn action-btn-danger"
                   @click="confirmDelete(data)"
@@ -333,8 +335,8 @@ const formatCurrency = (value) => {
           </div>
           <div class="mobile-card-actions">
             <Button v-if="canEditBalance" label="Saldo" icon="pi pi-wallet" class="btn-pill btn-secondary" @click="openBalance(driver)" />
-            <Button label="Edit" icon="pi pi-pencil" class="btn-pill btn-secondary" @click="editDriver(driver)" />
-            <Button v-if="canManage" label="Hapus" icon="pi pi-trash" class="btn-pill btn-secondary danger-action" @click="confirmDelete(driver)" />
+            <Button v-if="canEdit" label="Edit" icon="pi pi-pencil" class="btn-pill btn-secondary" @click="editDriver(driver)" />
+            <Button v-if="canDelete" label="Hapus" icon="pi pi-trash" class="btn-pill btn-secondary danger-action" @click="confirmDelete(driver)" />
           </div>
         </div>
         <Paginator
@@ -392,14 +394,14 @@ const formatCurrency = (value) => {
 }
 
 .type-tag {
-  font-size: 0.65rem;
+  font-size: var(--font-size-0p65rem);
   padding: 2px 8px;
   width: fit-content;
 }
 
 .status-tag {
   font-weight: 600;
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   padding: 4px 10px;
 }
 
@@ -424,7 +426,7 @@ const formatCurrency = (value) => {
 }
 
 .empty-state i {
-  font-size: 3rem;
+  font-size: var(--font-size-3rem);
   margin-bottom: 15px;
   opacity: 0.5;
 }
@@ -458,14 +460,14 @@ const formatCurrency = (value) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
 }
 
 .mobile-card-header p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .mobile-card-meta {
@@ -483,7 +485,7 @@ const formatCurrency = (value) => {
 .mobile-card-meta span {
   display: block;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -492,7 +494,7 @@ const formatCurrency = (value) => {
   display: block;
   margin-top: 3px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .mobile-card-actions {

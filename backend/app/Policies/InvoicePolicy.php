@@ -25,11 +25,19 @@ class InvoicePolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(PermissionService::class)->hasPermission($user, 'finance.receivable');
+        return app(PermissionService::class)->hasPermission($user, 'finance.receivable.create');
     }
 
     public function update(User $user, Invoice $invoice): bool
     {
         return $this->view($user, $invoice);
+    }
+
+    public function pay(User $user, Invoice $invoice): bool
+    {
+        if ($user->role === 'superadmin') return true;
+
+        return app(PermissionService::class)->hasPermission($user, 'finance.receivable.pay')
+            && $user->branch_id === $invoice->branch_id;
     }
 }

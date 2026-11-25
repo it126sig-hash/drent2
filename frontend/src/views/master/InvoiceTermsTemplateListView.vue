@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
+import { useAuthStore } from '../../stores/auth'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Dialog from 'primevue/dialog'
@@ -19,6 +20,11 @@ import {
 
 const toast = useToast()
 const confirm = useConfirm()
+const authStore = useAuthStore()
+
+const canCreate = computed(() => authStore.hasPermission('finance.invoice_terms.create'))
+const canEdit = computed(() => authStore.hasPermission('finance.invoice_terms.update'))
+const canDelete = computed(() => authStore.hasPermission('finance.invoice_terms.delete'))
 
 const templates = ref([])
 const loading = ref(false)
@@ -129,7 +135,7 @@ const confirmDelete = (row) => {
         <p class="text-secondary text-xs">Kelola template teks syarat &amp; ketentuan yang bisa dipilih saat membuat invoice.</p>
       </div>
       <div class="header-actions">
-        <button class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           Tambah Template
         </button>
@@ -165,7 +171,7 @@ const confirmDelete = (row) => {
         <Column header="Nama Template" style="min-width: 200px">
           <template #body="{ data }">
             <div class="font-semibold">{{ data.name }}</div>
-            <Tag v-if="data.is_default" value="Default" severity="success" class="mt-1" style="font-size:10px" />
+            <Tag v-if="data.is_default" value="Default" severity="success" class="mt-1" style="font-size: var(--font-size-10px)" />
           </template>
         </Column>
 
@@ -186,10 +192,10 @@ const confirmDelete = (row) => {
         <Column header="Aksi" style="min-width: 110px; text-align: center">
           <template #body="{ data }">
             <div class="action-pill-group">
-              <button class="action-btn" type="button" title="Edit" @click="openEdit(data)">
+              <button v-if="canEdit" class="action-btn" type="button" title="Edit" @click="openEdit(data)">
                 <i class="pi pi-pencil"></i>
               </button>
-              <button class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
                 <i class="pi pi-trash"></i>
               </button>
             </div>
@@ -205,14 +211,14 @@ const confirmDelete = (row) => {
           <span class="drent-badge" :class="tpl.is_active ? 'success' : 'neutral'">{{ tpl.is_active ? 'Aktif' : 'Nonaktif' }}</span>
         </div>
         <div class="card-body">
-          <Tag v-if="tpl.is_default" value="Default" severity="success" style="font-size:10px; width: fit-content" />
+          <Tag v-if="tpl.is_default" value="Default" severity="success" style="font-size: var(--font-size-10px); width: fit-content" />
           <div class="content-preview" v-html="tpl.content"></div>
         </div>
         <div class="card-footer">
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(tpl)">
+          <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(tpl)">
             <i class="pi pi-pencil"></i> Edit
           </button>
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(tpl)">
+          <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(tpl)">
             <i class="pi pi-trash"></i> Hapus
           </button>
         </div>
@@ -280,13 +286,13 @@ const confirmDelete = (row) => {
 }
 
 .summary-tile-compact span {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .summary-tile-compact strong {
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -299,10 +305,10 @@ const confirmDelete = (row) => {
   padding: 50px 0;
   color: #94a3b8;
 }
-.empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: .5; }
+.empty-state i { font-size: var(--font-size-3rem); margin-bottom: 15px; opacity: .5; }
 
 .content-preview {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-secondary);
   max-height: 60px;
   overflow: hidden;
@@ -320,8 +326,8 @@ const confirmDelete = (row) => {
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-row { display: flex; gap: 16px; }
 .field-row .field { flex: 1; }
-.field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
-.hint { color: var(--text-tertiary); font-size: 11px; line-height: 1.4; }
+.field label { font-weight: 700; font-size: var(--font-size-12px); color: var(--text-secondary); }
+.hint { color: var(--text-tertiary); font-size: var(--font-size-11px); line-height: 1.4; }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
 .action-btn-danger { color: var(--negative) !important; }
@@ -332,7 +338,7 @@ const confirmDelete = (row) => {
   align-items: center;
   padding: 3px 6px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   text-transform: capitalize;
   white-space: nowrap;

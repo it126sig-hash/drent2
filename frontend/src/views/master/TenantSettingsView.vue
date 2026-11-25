@@ -361,7 +361,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   color: var(--text-primary);
   padding-bottom: var(--space-sm);
@@ -372,7 +372,7 @@ onBeforeUnmount(() => {
 
 .field { display: flex; flex-direction: column; gap: var(--space-sm); }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
-.field label { color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.field label { color: var(--text-secondary); font-size: var(--font-size-12px); font-weight: 700; }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
 
@@ -409,7 +409,7 @@ onBeforeUnmount(() => {
   color: var(--text-tertiary);
 }
 
-.logo-placeholder i { font-size: 2.4rem; }
+.logo-placeholder i { font-size: var(--font-size-2p4rem); }
 
 .logo-actions {
   display: flex;

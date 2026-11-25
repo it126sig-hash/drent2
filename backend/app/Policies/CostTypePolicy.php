@@ -26,20 +26,20 @@ class CostTypePolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.create');
     }
 
     public function update(User $user, CostType $costType): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.update')
             && $user->tenant_id === $costType->tenant_id;
     }
 
     public function delete(User $user, CostType $costType): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.delete')
             && $user->tenant_id === $costType->tenant_id;
     }
 }

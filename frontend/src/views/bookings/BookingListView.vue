@@ -184,9 +184,10 @@ const statusOptions = [
   { label: 'Rental Unit', value: 'rental_unit' },
   { label: 'Selesai', value: 'selesai' },
   { label: 'Batal', value: 'batal' },
+  { label: 'Reschedule', value: 'reschedule' },
 ];
 
-const mainTabStatusValues = ['follow_up', 'confirm', 'waiting_list', 'rental_unit'];
+const mainTabStatusValues = ['follow_up', 'confirm', 'waiting_list', 'rental_unit', 'reschedule'];
 const closedTabStatusValues = ['selesai', 'batal'];
 const activeStatusOptions = statusOptions.filter(option => mainTabStatusValues.includes(option.value));
 const closedStatusOptions = statusOptions.filter(option => closedTabStatusValues.includes(option.value));
@@ -352,6 +353,16 @@ const resetFilters = () => {
   applyFilters();
 };
 
+const onSort = (event) => {
+  const field = event.sortField;
+  if (!field) return;
+  const order = event.sortOrder === 1 ? 'asc' : 'desc';
+  if (field === 'tgl_sewa') {
+    selectedSort.value = `tgl_sewa:${order}`;
+    applyFilters();
+  }
+};
+
 const openStatusDialog = (booking) => {
   selectedBooking.value = booking;
   newStatus.value = '';
@@ -501,6 +512,15 @@ const getExtraDetailCount = (booking) => {
   return Math.max(count - 1, 0);
 };
 
+const getDetailTypeBadges = (booking) => {
+  const types = new Set(
+    getRentableDetails(booking)
+      .map(detail => detail.detail_type)
+      .filter(type => type === 'extend' || type === 'rolling')
+  );
+  return [...types];
+};
+
 const getRentableDetails = (booking) => {
   return (booking?.booking_details || []).filter(detail => detail.status !== 'batal');
 };
@@ -604,7 +624,8 @@ const getDriverInfo = (booking) => {
 };
 
 const hasPickupNotes = (booking) => {
-  return Boolean(booking?.alamat_penjemputan || booking?.catatan);
+  return Boolean(booking?.alamat_penjemputan || booking?.catatan
+    || (booking?.status === 'reschedule' && booking?.catatan_status));
 };
 
 const getPaidAmount = (booking) => {
@@ -687,7 +708,49 @@ const getLateInfo = (booking) => {
   };
 };
 
+const getConfirmationWarningInfo = (booking) => {
+  if (!['confirm', 'follow_up'].includes(booking?.status)) return null;
+
+  const tglSewa = getPeriodStartDate(booking);
+  if (!tglSewa) return null;
+
+  const startDate = new Date(tglSewa);
+  startDate.setHours(0, 0, 0, 0);
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  const diffMs = startDate.getTime() - now.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays >= 4 && diffDays <= 7) {
+    return {
+      severity: 'warning',
+      note: `Sisa ${diffDays} hari, segera konfirmasi bookingan`,
+      rowClass: 'booking-row-warning-confirm'
+    };
+  } else if (diffDays >= 0 && diffDays <= 3) {
+    return {
+      severity: 'danger',
+      note: `Sisa ${diffDays} hari, segera konfirmasi bookingan`,
+      rowClass: 'booking-row-danger-confirm'
+    };
+  } else if (diffDays < 0) {
+    return {
+      severity: 'danger',
+      note: `Terlambat ${Math.abs(diffDays)} hari, segera konfirmasi bookingan`,
+      rowClass: 'booking-row-danger-confirm'
+    };
+  }
+  return null;
+};
+
 const rowClass = (data) => {
+  if (data?.status === 'reschedule') return 'booking-row booking-row-reschedule';
+  
+  const confirmWarning = getConfirmationWarningInfo(data);
+  if (confirmWarning) return `booking-row ${confirmWarning.rowClass}`;
+  
   return getLateInfo(data) ? 'booking-row booking-row-late' : 'booking-row';
 };
 
@@ -699,6 +762,7 @@ const getBookingCardClass = (booking) => {
     rental_unit: 'booking-card-success',
     selesai: 'booking-card-completed',
     batal: 'booking-card-error',
+    reschedule: 'booking-card-reschedule',
   };
 
   return statusClassMap[booking?.status] || 'booking-card-neutral';
@@ -806,7 +870,7 @@ const getBookingCardClass = (booking) => {
 
       <!-- Desktop DataTable -->
       <div v-if="!isMobile" class="table-shell booking-table-shell">
-        <DataTable :value="bookings" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" @page="onPage" :loading="loading" class="drent-datatable" responsiveLayout="scroll" :rowClass="rowClass" v-model:contextMenuSelection="contextMenuSelection" contextMenu @row-dblclick="onRowDoubleClick" @row-contextmenu="onRowContextMenu">
+        <DataTable :value="bookings" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" @page="onPage" @sort="onSort" :loading="loading" class="drent-datatable" responsiveLayout="scroll" :rowClass="rowClass" v-model:contextMenuSelection="contextMenuSelection" contextMenu @row-dblclick="onRowDoubleClick" @row-contextmenu="onRowContextMenu">
           <Column header="Aksi" class="text-center">
             <template #body="{ data }">
               <div class="action-pill-group">
@@ -818,54 +882,61 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-          <Column header="Kode" style="min-width: 9rem">
+          <Column header="Kode" :style="{ minWidth: 'var(--col-w-sm)' }">
             <template #body="{ data }">
               <div class="flex flex-col items-start gap-1">
-                <span class="font-semibold text-xs">{{ data.kode_booking }}</span>
+                <span class="font-semibold cell-fs-12">{{ data.kode_booking }}</span>
                 <BookingStatusBadge :status="data.status" />
               </div>
             </template>
           </Column>
-          <Column header="Pelanggan" style="min-width: 10rem">
+          <Column header="Pelanggan" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col items-start gap-1">
                 <span class="font-semibold">{{ data.customer?.nama || '-' }}</span>
                 <BookingStatusBadge v-if="data.customer?.status" :status="data.customer.status" />
-                <span v-else class="text-xs text-tertiary">Status belum ada</span>
+                <span v-else class="cell-fs-12 text-tertiary">Status belum ada</span>
               </div>
             </template>
           </Column>
-          <Column header="Unit" style="min-width: 10rem">
+          <Column header="Unit" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col gap-0.5">
-                <span class="font-semibold text-xs">{{ getVehicleInfo(data).title }}</span>
-                <span class="text-xs text-secondary font-mono-numeric">{{ getVehicleInfo(data).subtitle }}</span>
+                <span class="font-semibold cell-fs-12">{{ getVehicleInfo(data).title }}</span>
+                <span class="cell-fs-12 text-secondary font-mono-numeric">{{ getVehicleInfo(data).subtitle }}</span>
                 <div class="mt-1" v-if="getVehicleInfo(data).ownerType">
                   <BookingStatusBadge :status="getVehicleInfo(data).ownerType" :text="getVehicleInfo(data).ownerName" />
                 </div>
               </div>
             </template>
           </Column>
-          <Column header="Periode" style="min-width: 10rem">
+          <Column header="Periode" sortable sortField="tgl_sewa" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col gap-1">
-                <span class="font-medium text-xs">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
-                <span class="text-[10px] text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(data)) }}</span>
-                <span class="text-[11px] font-bold text-secondary mt-1">{{ getRentalDuration(data) }}</span>
+                <span class="font-medium cell-fs-12">{{ formatDateTime(getPeriodStartDate(data)) }}</span>
+                <span class="cell-fs-10 text-tertiary">s/d {{ formatDateTime(getPeriodEndDate(data)) }}</span>
+                <span class="cell-fs-11 font-bold text-secondary mt-1">{{ getRentalDuration(data) }}</span>
+                <div v-if="getDetailTypeBadges(data).length" class="flex gap-1 mt-1">
+                  <BookingStatusBadge v-for="type in getDetailTypeBadges(data)" :key="type" :status="type" />
+                </div>
                 <span v-if="getLateInfo(data)" class="late-note">
                   <i class="pi pi-clock"></i>
                   {{ getLateInfo(data).note }}
                 </span>
+                <span v-if="getConfirmationWarningInfo(data)" class="confirm-warning-note" :class="getConfirmationWarningInfo(data).severity">
+                  <i class="pi pi-exclamation-triangle"></i>
+                  {{ getConfirmationWarningInfo(data).note }}
+                </span>
               </div>
             </template>
           </Column>
-          <Column header="Total Biaya" style="min-width: 10rem">
+          <Column header="Total Biaya" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="flex flex-col items-end">
-                <span class="font-mono-numeric text-primary text-sm">{{ formatCurrency(getTotalSewa(data)) }}</span>
-                <span class="font-mono-numeric text-positive text-sm">{{ formatCurrency(getPaidAmount(data)) }}</span>
+                <span class="font-mono-numeric text-primary cell-fs-14">{{ formatCurrency(getTotalSewa(data)) }}</span>
+                <span class="font-mono-numeric text-positive cell-fs-14">{{ formatCurrency(getPaidAmount(data)) }}</span>
                 <div v-if="getTotalSewa(data) - getPaidAmount(data) > 0">
-                  <span class="font-mono-numeric text-info text-sm italic">(sisa){{
+                  <span class="font-mono-numeric text-info cell-fs-14 italic">(sisa){{
                     formatCurrency(getTotalSewa(data) - getPaidAmount(data)) }}</span>
                 </div>
                 <div v-else>
@@ -874,28 +945,33 @@ const getBookingCardClass = (booking) => {
               </div>
             </template>
           </Column>
-          <Column header="Tujuan" style="min-width: 11rem">
+          <Column header="Tujuan" :style="{ minWidth: 'var(--col-w-lg)' }">
             <template #body="{ data }">
               <span class="table-text-clamp font-bold">{{ data.kota || '-' }}</span>
               <span class="table-text-clamp font-medium">{{ data.tujuan || '-' }}</span>
             </template>
           </Column>
 
-          <Column header="Alamat & Catatan" style="min-width: 17rem">
+          <Column header="Alamat & Catatan" :style="{ minWidth: 'var(--col-w-xl)' }">
             <template #body="{ data }">
               <div v-if="hasPickupNotes(data)" class="table-note-stack">
                 <div v-if="data.alamat_penjemputan" class="table-note-line">
                   <span class="font-bold">{{ data.alamat_penjemputan }}</span>
                 </div>
                 <div v-if="data.catatan" class="table-note-line">
-                  <span class="text-xs text-secondary italic">*{{ data.catatan }}</span>
+                  <span class="cell-fs-12 text-secondary italic">*{{ data.catatan }}</span>
+                </div>
+                <div v-if="data.status === 'reschedule' && data.catatan_status" class="table-note-line">
+                  <span class="cell-fs-12 font-semibold" style="color: var(--warning)">
+                    <i class="pi pi-calendar-times"></i> Alasan reschedule: {{ data.catatan_status }}
+                  </span>
                 </div>
               </div>
               <span v-else class="text-secondary">-</span>
             </template>
           </Column>
 
-          <Column header="Driver" style="min-width: 10rem">
+          <Column header="Driver" :style="{ minWidth: 'var(--col-w-md)' }">
             <template #body="{ data }">
               <div class="driver-cell" :class="{ 'driver-cell-empty': !getDriverInfo(data).hasDriver }">
                 <span class="driver-name">{{ getDriverInfo(data).name }}</span>
@@ -974,8 +1050,15 @@ const getBookingCardClass = (booking) => {
                 <span class="booking-duration-pill"><i class="pi pi-clock"></i>{{ getRentalDuration(booking) }}</span>
               </div>
 
+              <div v-if="getDetailTypeBadges(booking).length" class="flex gap-1 mt-1">
+                <BookingStatusBadge v-for="type in getDetailTypeBadges(booking)" :key="type" :status="type" />
+              </div>
+
               <div v-if="getLateInfo(booking)" class="late-banner-mini mt-2">
                 <i class="pi pi-clock"></i> {{ getLateInfo(booking).note }}
+              </div>
+              <div v-if="getConfirmationWarningInfo(booking)" class="confirm-warning-banner-mini mt-2" :class="getConfirmationWarningInfo(booking).severity">
+                <i class="pi pi-exclamation-triangle"></i> {{ getConfirmationWarningInfo(booking).note }}
               </div>
             </div>
             <div class="booking-card-footer">
@@ -1113,6 +1196,27 @@ const getBookingCardClass = (booking) => {
 </template>
 
 <style scoped>
+.page-container {
+  --col-w-sm: 9rem;
+  --col-w-md: 10rem;
+  --col-w-lg: 11rem;
+  --col-w-xl: 17rem;
+}
+
+@media (min-width: 769px) and (max-width: 1365px) {
+  .page-container {
+    --col-w-sm: 7.2rem;
+    --col-w-md: 8rem;
+    --col-w-lg: 8.8rem;
+    --col-w-xl: 13.6rem;
+  }
+}
+
+.cell-fs-10 { font-size: var(--font-size-10px); }
+.cell-fs-11 { font-size: var(--font-size-11px); }
+.cell-fs-12 { font-size: var(--font-size-12px); }
+.cell-fs-14 { font-size: var(--font-size-14px); }
+
 .create-label-mobile {
   display: none;
 }
@@ -1125,28 +1229,72 @@ const getBookingCardClass = (booking) => {
   border-left: 3px solid var(--negative);
 }
 
+:deep(.booking-row-reschedule) {
+  background-color: rgba(247, 144, 9, 0.05) !important;
+}
+
+:deep(.booking-row-reschedule td:first-child) {
+  border-left: 3px solid var(--warning);
+}
+
+:deep(.booking-row-warning-confirm) {
+  background-color: rgba(247, 144, 9, 0.05) !important;
+}
+
+:deep(.booking-row-warning-confirm td:first-child) {
+  border-left: 3px solid var(--warning);
+}
+
+:deep(.booking-row-danger-confirm) {
+  background-color: rgba(229, 83, 75, 0.04) !important;
+}
+
+:deep(.booking-row-danger-confirm td:first-child) {
+  border-left: 3px solid var(--negative);
+}
+
 .late-note,
-.late-banner-mini {
+.late-banner-mini,
+.confirm-warning-note,
+.confirm-warning-banner-mini {
   display: inline-flex;
   align-items: center;
   width: fit-content;
   max-width: 100%;
   border-radius: var(--radius-xs);
-  background: rgba(229, 83, 75, 0.08);
-  color: var(--negative);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1.2;
 }
 
-.late-note {
+.late-note,
+.late-banner-mini {
+  background: rgba(229, 83, 75, 0.08);
+  color: var(--negative);
+}
+
+.confirm-warning-note.warning,
+.confirm-warning-banner-mini.warning {
+  background: rgba(247, 144, 9, 0.08);
+  color: var(--warning);
+}
+
+.confirm-warning-note.danger,
+.confirm-warning-banner-mini.danger {
+  background: rgba(229, 83, 75, 0.08);
+  color: var(--negative);
+}
+
+.late-note,
+.confirm-warning-note {
   gap: 5px;
   margin-top: 2px;
   padding: 4px 8px;
 }
 
-.late-note i {
-  font-size: 10px;
+.late-note i,
+.confirm-warning-note i {
+  font-size: var(--font-size-10px);
 }
 
 .driver-cell {
@@ -1159,7 +1307,7 @@ const getBookingCardClass = (booking) => {
 
 .driver-name {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -1202,17 +1350,18 @@ const getBookingCardClass = (booking) => {
 
 .info-col .label {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 500;
 }
 
 .info-col .value {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
 }
 
-.late-banner-mini {
+.late-banner-mini,
+.confirm-warning-banner-mini {
   gap: 6px;
   padding: 4px 8px;
 }
@@ -1240,7 +1389,7 @@ const getBookingCardClass = (booking) => {
 .booking-card-code {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   letter-spacing: 0;
   white-space: nowrap;
@@ -1278,7 +1427,7 @@ const getBookingCardClass = (booking) => {
 .booking-card-title {
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 800;
   line-height: 1.2;
 }
@@ -1286,7 +1435,7 @@ const getBookingCardClass = (booking) => {
 .booking-card-subtitle {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
 }
 
@@ -1313,13 +1462,13 @@ const getBookingCardClass = (booking) => {
   flex: 0 0 auto;
   margin-top: 1px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .booking-info-label {
   display: block;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 700;
   line-height: 1.2;
 }
@@ -1327,7 +1476,7 @@ const getBookingCardClass = (booking) => {
 .booking-info-value {
   display: block;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -1349,7 +1498,7 @@ const getBookingCardClass = (booking) => {
 }
 
 .booking-period-text {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .booking-duration-pill {
@@ -1363,13 +1512,13 @@ const getBookingCardClass = (booking) => {
   border-radius: var(--radius-full);
   background: var(--primary);
   color: var(--text-white);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   white-space: nowrap;
 }
 
 .booking-duration-pill i {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
 }
 
 .booking-card-footer {
@@ -1384,21 +1533,21 @@ const getBookingCardClass = (booking) => {
 
 .booking-total-amount {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 900;
   line-height: 1.2;
 }
 
 .booking-paid-amount {
   color: var(--positive);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 900;
   line-height: 1.2;
 }
 
 .booking-remaining-amount {
   color: var(--warning);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   line-height: 1.2;
 }
@@ -1417,7 +1566,7 @@ const getBookingCardClass = (booking) => {
 
 .calendar-title {
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   text-transform: capitalize;
@@ -1435,7 +1584,7 @@ const getBookingCardClass = (booking) => {
   background: var(--card-bg);
   padding: var(--space-lg);
   border-radius: var(--radius-default);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 :deep(.mobile-bottom-sheet) {
@@ -1459,7 +1608,7 @@ const getBookingCardClass = (booking) => {
   }
 
   .page-header .text-h1 {
-    font-size: 20px;
+    font-size: var(--font-size-20px);
     line-height: 1.2;
   }
 
@@ -1476,7 +1625,7 @@ const getBookingCardClass = (booking) => {
   .toggle-item {
     min-height: 32px;
     padding: 7px 16px;
-    font-size: 12px;
+    font-size: var(--font-size-12px);
   }
 
   .filter-bar {
@@ -1516,7 +1665,7 @@ const getBookingCardClass = (booking) => {
 
   .filter-group label {
     margin-left: 4px;
-    font-size: 10px;
+    font-size: var(--font-size-10px);
   }
 
   .booking-filter-bar .filter-search :deep(.p-inputtext) {
@@ -1631,6 +1780,11 @@ const getBookingCardClass = (booking) => {
     border-color: var(--negative);
   }
 
+  .booking-card-reschedule {
+    border-color: var(--warning);
+    border-left-width: 3px;
+  }
+
   .card-header {
     margin-bottom: var(--space-md);
     padding-bottom: var(--space-sm);
@@ -1639,7 +1793,7 @@ const getBookingCardClass = (booking) => {
 
   .card-header :deep(.status-badge) {
     padding: 5px 10px;
-    font-size: 10px;
+    font-size: var(--font-size-10px);
   }
 
   .card-body {
@@ -1685,11 +1839,11 @@ const getBookingCardClass = (booking) => {
 
   .booking-card-topline :deep(.status-badge) {
     padding: 5px 10px;
-    font-size: 10px;
+    font-size: var(--font-size-10px);
   }
 
   .booking-card-title {
-    font-size: 15px;
+    font-size: var(--font-size-15px);
   }
 
   .booking-card-footer {
@@ -1734,7 +1888,7 @@ const getBookingCardClass = (booking) => {
 
 .calendar-title {
   font-family: var(--font-headline);
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   min-width: 160px;
@@ -1763,7 +1917,7 @@ const getBookingCardClass = (booking) => {
   position: absolute;
   left: 10px;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   z-index: 1;
 }
 
@@ -1772,7 +1926,7 @@ const getBookingCardClass = (booking) => {
   padding-left: 30px;
   border-radius: var(--radius-default);
   border-color: var(--surface-border);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .calendar-filter-dropdown :deep(.p-select),
@@ -1780,7 +1934,7 @@ const getBookingCardClass = (booking) => {
   min-height: 34px;
   border-radius: var(--radius-default);
   border-color: var(--surface-border);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .calendar-load-more {

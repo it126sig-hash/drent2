@@ -133,7 +133,7 @@ class RentToRentController extends Controller
 
     public function storePayment(StoreRentToRentPaymentRequest $request, RentToRentBill $bill): RentToRentBillResource
     {
-        $this->authorize('update', $bill);
+        $this->authorize('pay', $bill);
 
         try {
             return new RentToRentBillResource($this->service->storePayment($bill, $request->validated()));
@@ -147,7 +147,7 @@ class RentToRentController extends Controller
 
     public function storeDebtPayment(StoreRentToRentPaymentRequest $request, RentToRentDebt $debt): RentToRentDebtResource
     {
-        $this->authorize('create', RentToRentBill::class);
+        $this->assertCanPay();
         $this->assertDebtScope($debt);
 
         try {
@@ -162,7 +162,7 @@ class RentToRentController extends Controller
 
     public function markDebtPaid(RentToRentDebt $debt): RentToRentDebtResource
     {
-        $this->authorize('create', RentToRentBill::class);
+        $this->assertCanPay();
         $this->assertDebtScope($debt);
 
         try {
@@ -177,7 +177,7 @@ class RentToRentController extends Controller
 
     public function markBillPaid(RentToRentBill $bill): RentToRentBillResource
     {
-        $this->authorize('update', $bill);
+        $this->authorize('pay', $bill);
 
         try {
             return new RentToRentBillResource($this->service->markBillPaid($bill));
@@ -327,6 +327,17 @@ class RentToRentController extends Controller
         }
 
         return $filters;
+    }
+
+    private function assertCanPay(): void
+    {
+        $user = auth()->user();
+
+        if ($user->role === 'superadmin') {
+            return;
+        }
+
+        abort_unless(app(\App\Services\PermissionService::class)->hasPermission($user, 'finance.rent_to_rent.pay'), 403);
     }
 
     private function assertDebtScope(RentToRentDebt $debt): void

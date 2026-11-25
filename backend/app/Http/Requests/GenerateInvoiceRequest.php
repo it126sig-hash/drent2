@@ -16,8 +16,11 @@ class GenerateInvoiceRequest extends FormRequest
         return [
             'booking_ids'          => ['required', 'array', 'min:1'],
             'booking_ids.*'        => ['integer', 'exists:bookings,id'],
+            'amounts'              => ['nullable', 'array'],
+            'amounts.*'            => ['nullable', 'integer', 'min:1'],
             'due_date'             => ['nullable', 'date'],
             'terms_and_conditions' => ['nullable', 'string'],
+            'payment_classification' => ['nullable', 'in:dp,cicilan,pelunasan'],
         ];
     }
 }

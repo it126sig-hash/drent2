@@ -12,6 +12,11 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      path: "/invoice/soa/:token",
+      name: "PublicMergedInvoice",
+      component: () => import("../views/public/PublicMergedInvoiceView.vue"),
+    },
+    {
       path: "/invoice/:token",
       name: "PublicInvoice",
       component: () => import("../views/public/PublicInvoiceView.vue"),
@@ -20,6 +25,16 @@ const router = createRouter({
       path: "/rent-to-rent/:token",
       name: "PublicRentToRentBill",
       component: () => import("../views/public/PublicRentToRentBillView.vue"),
+    },
+    {
+      path: "/booking/:token",
+      name: "PublicBookingProgress",
+      component: () => import("../views/public/PublicBookingProgressView.vue"),
+    },
+    {
+      path: "/booking/:token/invoices",
+      name: "PublicBookingInvoiceList",
+      component: () => import("../views/public/PublicBookingInvoiceListView.vue"),
     },
     {
       path: "/physical-checks/public/:token",
@@ -187,6 +202,12 @@ const router = createRouter({
           name: "OperationalCostList",
           component: () => import("../views/finance/OperationalCostListView.vue"),
           meta: { permission: "finance.operational_cost", keepAlive: false },
+        },
+        {
+          path: "/finance/fleet-cards",
+          name: "FleetCardList",
+          component: () => import("../views/finance/FleetCardListView.vue"),
+          meta: { permission: "finance.fleet_card", keepAlive: false },
         },
         {
           path: "/finance/rent-to-rent",

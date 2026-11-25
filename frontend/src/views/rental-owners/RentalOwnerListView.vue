@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRentalOwner } from '../../composables/useRentalOwner'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
+import { useAuthStore } from '../../stores/auth'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -12,18 +13,23 @@ import Tag from 'primevue/tag'
 import ConfirmDialog from 'primevue/confirmdialog'
 import RentalOwnerFormDialog from '../../components/rental-owners/RentalOwnerFormDialog.vue'
 
-const { 
-  rentalOwners, 
-  loading, 
-  pagination, 
-  fetchAll, 
-  store, 
-  update, 
-  remove 
+const {
+  rentalOwners,
+  loading,
+  pagination,
+  fetchAll,
+  store,
+  update,
+  remove
 } = useRentalOwner()
 
 const toast = useToast()
 const confirm = useConfirm()
+const authStore = useAuthStore()
+
+const canCreate = computed(() => authStore.hasPermission('vehicle.rental_owner.create'))
+const canEdit = computed(() => authStore.hasPermission('vehicle.rental_owner.update'))
+const canDelete = computed(() => authStore.hasPermission('vehicle.rental_owner.delete'))
 
 const searchQuery = ref('')
 const showDialog = ref(false)
@@ -120,7 +126,7 @@ const confirmDelete = (owner) => {
         </p>
       </div>
       <div class="detail-action-bar">
-        <Button label="Tambah Pemilik" icon="pi pi-plus" class="detail-primary-action" @click="openNew" />
+        <Button v-if="canCreate" label="Tambah Pemilik" icon="pi pi-plus" class="detail-primary-action" @click="openNew" />
       </div>
     </div>
 
@@ -202,16 +208,18 @@ const confirmDelete = (owner) => {
         <Column header="Aksi" style="min-width: 120px; text-align: center">
           <template #body="{ data }">
             <div class="action-buttons">
-              <Button 
-                icon="pi pi-pencil" 
-                class="p-button-rounded p-button-text p-button-secondary" 
-                @click="editOwner(data)" 
+              <Button
+                v-if="canEdit"
+                icon="pi pi-pencil"
+                class="p-button-rounded p-button-text p-button-secondary"
+                @click="editOwner(data)"
                 v-tooltip.top="'Edit'"
               />
-              <Button 
-                icon="pi pi-trash" 
-                class="p-button-rounded p-button-text p-button-danger" 
-                @click="confirmDelete(data)" 
+              <Button
+                v-if="canDelete"
+                icon="pi pi-trash"
+                class="p-button-rounded p-button-text p-button-danger"
+                @click="confirmDelete(data)"
                 v-tooltip.top="'Hapus'"
               />
             </div>
@@ -231,10 +239,10 @@ const confirmDelete = (owner) => {
             <div v-if="owner.bank"><span class="field-hint">Bank</span> {{ owner.bank }} · {{ owner.no_rek }} (a.n {{ owner.atas_nama }})</div>
           </div>
           <div class="card-footer">
-            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="editOwner(owner)">
+            <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="editOwner(owner)">
               <i class="pi pi-pencil"></i> Edit
             </button>
-            <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(owner)">
+            <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(owner)">
               <i class="pi pi-trash"></i> Hapus
             </button>
           </div>
@@ -295,7 +303,7 @@ const confirmDelete = (owner) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: 0;
@@ -307,13 +315,13 @@ const confirmDelete = (owner) => {
   gap: var(--space-sm);
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
 .detail-subtitle i {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .detail-action-bar {
@@ -330,7 +338,7 @@ const confirmDelete = (owner) => {
   background: var(--text-primary) !important;
   color: var(--text-white) !important;
   padding: 8px 16px !important;
-  font-size: 12px !important;
+  font-size: var(--font-size-12px) !important;
   font-weight: 600 !important;
   box-shadow: none !important;
 }
@@ -387,7 +395,7 @@ const confirmDelete = (owner) => {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -395,7 +403,7 @@ const confirmDelete = (owner) => {
 .app-section-header p {
   margin: 2px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
@@ -431,18 +439,18 @@ const confirmDelete = (owner) => {
 .bank-name {
   font-weight: 700;
   color: var(--info-cyan);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .bank-acc {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .bank-owner {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .muted-value {
@@ -451,7 +459,7 @@ const confirmDelete = (owner) => {
 
 .status-tag {
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   padding: 4px 8px;
 }
 
@@ -474,14 +482,14 @@ const confirmDelete = (owner) => {
 .empty-state i {
   margin-bottom: var(--space-md);
   color: var(--neutral-6);
-  font-size: 34px;
+  font-size: var(--font-size-34px);
   opacity: 0.5;
 }
 
 .empty-state p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .paginator-wrapper {
@@ -495,7 +503,7 @@ const confirmDelete = (owner) => {
   background-color: var(--card-bg);
   color: var(--text-secondary);
   font-family: var(--font-headline);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0;
@@ -541,7 +549,7 @@ const confirmDelete = (owner) => {
   color: var(--text-secondary);
 }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .owner-table-card .mobile-card-list { padding: var(--space-md); }
 .mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 
@@ -557,7 +565,7 @@ const confirmDelete = (owner) => {
   }
 
   .detail-title {
-    font-size: 18px;
+    font-size: var(--font-size-18px);
     overflow-wrap: anywhere;
   }
 

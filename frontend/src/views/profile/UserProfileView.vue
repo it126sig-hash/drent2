@@ -437,7 +437,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   color: #007A44;
   font-family: var(--font-headline);
-  font-size: 34px;
+  font-size: var(--font-size-34px);
   font-weight: 700;
 }
 
@@ -460,7 +460,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--font-size-10px);
 }
 
 .profile-summary-copy {
@@ -470,14 +470,14 @@ onBeforeUnmount(() => {
 .profile-summary-copy h2 {
   margin: 0 0 4px;
   font-family: var(--font-headline);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .profile-summary-copy p {
   margin: 0 0 var(--space-md);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-secondary);
 }
 
@@ -526,13 +526,13 @@ onBeforeUnmount(() => {
   gap: var(--space-sm);
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
 }
 
 .section-title i {
   color: #007A44;
-  font-size: 14px;
+  font-size: var(--font-size-14px);
 }
 
 .password-header .section-title i {
@@ -564,7 +564,7 @@ onBeforeUnmount(() => {
 }
 
 .form-field label {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.35;
   color: var(--text-secondary);
@@ -614,7 +614,7 @@ onBeforeUnmount(() => {
 
 .password-note {
   margin: 0 0 var(--space-sm);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.65;
   color: var(--text-secondary);
 }
@@ -648,7 +648,7 @@ onBeforeUnmount(() => {
 .security-tips h3 {
   margin: 0 0 var(--space-sm);
   font-family: var(--font-headline);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   color: var(--text-primary);
 }
 
@@ -656,7 +656,7 @@ onBeforeUnmount(() => {
   margin: 0;
   padding-left: 16px;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.55;
 }
 
@@ -693,7 +693,7 @@ onBeforeUnmount(() => {
     width: 88px;
     height: 88px;
     flex-basis: 88px;
-    font-size: 26px;
+    font-size: var(--font-size-26px);
   }
 
   .profile-form,

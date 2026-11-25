@@ -14,6 +14,10 @@ export const generateInvoice = (payload) => {
   return api.post(`${prefix}/invoices`, payload)
 }
 
+export const mergeInvoices = (payload) => {
+  return api.post('/v1/invoices/merge', payload)
+}
+
 export const getInvoices = (params) => {
   return api.get('/v1/invoices', { params })
 }
@@ -42,14 +46,51 @@ export const getPublicInvoice = (token) => {
   return api.get(`/v1/public/invoices/${token}`)
 }
 
+export const getPublicBookingProgress = (token) => {
+  return api.get(`/v1/public/bookings/${token}`)
+}
+
+export const getPublicBookingInvoices = (token) => {
+  return api.get(`/v1/public/bookings/${token}/invoices`)
+}
+
 export const getInvoiceHistories = (invoiceId) => {
   return api.get(`/v1/invoices/${invoiceId}/histories`)
+}
+
+export const getBookingInvoiceHistories = (bookingId) => {
+  return api.get(`/v1/bookings/${bookingId}/invoice-histories`)
+}
+
+export const requestVoidInvoicePayment = (paymentId, data) => {
+  return api.post(`/v1/invoice-payments/${paymentId}/request-void`, data)
+}
+
+export const approveVoidInvoicePayment = (paymentId) => {
+  return api.post(`/v1/invoice-payments/${paymentId}/approve-void`)
+}
+
+export const rejectVoidInvoicePayment = (paymentId, data = {}) => {
+  return api.post(`/v1/invoice-payments/${paymentId}/reject-void`, data)
+}
+
+export const requestVoidInvoice = (invoiceId, data) => {
+  return api.post(`/v1/invoices/${invoiceId}/request-void`, data)
+}
+
+export const approveVoidInvoice = (invoiceId) => {
+  return api.post(`/v1/invoices/${invoiceId}/approve-void`)
+}
+
+export const rejectVoidInvoice = (invoiceId, data = {}) => {
+  return api.post(`/v1/invoices/${invoiceId}/reject-void`, data)
 }
 
 export default {
   getReceivables,
   getPaymentHistory,
   generateInvoice,
+  mergeInvoices,
   getInvoices,
   getInvoice,
   markInvoiceSent,
@@ -57,5 +98,14 @@ export default {
   downloadInvoicePdf,
   addInvoicePayment,
   getPublicInvoice,
+  getPublicBookingProgress,
+  getPublicBookingInvoices,
   getInvoiceHistories,
+  getBookingInvoiceHistories,
+  requestVoidInvoicePayment,
+  approveVoidInvoicePayment,
+  rejectVoidInvoicePayment,
+  requestVoidInvoice,
+  approveVoidInvoice,
+  rejectVoidInvoice,
 }

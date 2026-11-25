@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\InvoiceTermsTemplate;
+use App\Services\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +26,8 @@ class InvoiceTermsTemplateController extends Controller
 
     public function store(Request $request)
     {
+        $this->ensurePermission('finance.invoice_terms.create');
+
         $validated = $request->validate([
             'name'       => ['required', 'string', 'max:255'],
             'content'    => ['required', 'string'],
@@ -55,6 +58,7 @@ class InvoiceTermsTemplateController extends Controller
     public function update(Request $request, InvoiceTermsTemplate $invoiceTermsTemplate)
     {
         $this->ensureSameTenant($invoiceTermsTemplate);
+        $this->ensurePermission('finance.invoice_terms.update');
 
         $validated = $request->validate([
             'name'       => ['sometimes', 'required', 'string', 'max:255'],
@@ -82,6 +86,7 @@ class InvoiceTermsTemplateController extends Controller
     public function destroy(InvoiceTermsTemplate $invoiceTermsTemplate)
     {
         $this->ensureSameTenant($invoiceTermsTemplate);
+        $this->ensurePermission('finance.invoice_terms.delete');
         $invoiceTermsTemplate->delete();
 
         return response()->json(null, 204);
@@ -90,5 +95,10 @@ class InvoiceTermsTemplateController extends Controller
     private function ensureSameTenant(InvoiceTermsTemplate $template): void
     {
         abort_if($template->tenant_id !== auth()->user()->tenant_id, 403);
+    }
+
+    private function ensurePermission(string $key): void
+    {
+        abort_if(!app(PermissionService::class)->hasPermission(auth()->user(), $key), 403);
     }
 }

@@ -17,7 +17,8 @@ class StoreDriverOperationalExpenseRequest extends FormRequest
             'cost_type_id' => ['nullable', 'exists:cost_types,id'],
             'type' => ['required', 'in:expense,return'],
             'amount' => ['required', 'integer', 'min:1'],
-            'description' => ['required', 'string', 'min:3'],
+            'description' => ['nullable', 'string'],
+            'payment_date' => ['nullable', 'date'],
             'photo' => ['nullable', 'image', 'max:4096'],
             'payment_account_id' => ['nullable', 'exists:payment_accounts,id'],
         ];

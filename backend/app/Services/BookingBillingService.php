@@ -51,6 +51,19 @@ class BookingBillingService
         });
     }
 
+    public function usesDealingAmount(Booking $booking): bool
+    {
+        return in_array($booking->status, ['follow_up', 'confirm'], true)
+            && (int) $booking->harga_dealing > 0;
+    }
+
+    public function invoiceAmount(Booking $booking): int
+    {
+        return $this->usesDealingAmount($booking)
+            ? (int) $booking->harga_dealing
+            : $this->totalTagihan($booking);
+    }
+
     public function paidAmount(Booking $booking): int
     {
         if (! $booking->relationLoaded('payments')) {
@@ -84,6 +97,47 @@ class BookingBillingService
 
         // updateQuietly agar tidak trigger observer/event & tidak update updated_at
         $booking->updateQuietly(['cached_sisa_tagihan' => $sisa]);
+    }
+
+    /**
+     * Total nominal yang sudah "diklaim" oleh invoice-invoice aktif (non-void) milik booking ini,
+     * terlepas dari sudah dibayar atau belum — sekali sebuah invoice mengklaim suatu nominal,
+     * nominal itu tidak boleh diklaim lagi oleh invoice baru.
+     */
+    public function invoicedClaimAmount(Booking $booking): int
+    {
+        return (int) $booking->invoices()
+            ->where('invoices.status', '!=', 'void')
+            ->sum('invoice_bookings.amount');
+    }
+
+    /**
+     * Pembayaran yang masuk langsung ke booking ini di luar invoice manapun (misal DP yang
+     * dibayar sebelum invoice dibuat). Ikut mengurangi sisa yang boleh diklaim invoice baru.
+     */
+    public function directPaymentsAmount(Booking $booking): int
+    {
+        if (! $booking->relationLoaded('payments')) {
+            $booking->load('payments');
+        }
+
+        return (int) $booking->payments
+            ->filter(fn($payment) => ($payment->status ?? 'active') !== 'voided' && $payment->invoice_payment_id === null)
+            ->sum('amount');
+    }
+
+    /**
+     * Sisa nominal booking ini yang masih boleh dimasukkan ke invoice baru (belum diklaim
+     * invoice manapun, dan belum dibayar langsung di luar invoice). Dipakai sebagai batas
+     * validasi saat generate invoice & hint di UI. Memakai invoiceAmount() (bukan totalTagihan()
+     * mentah) supaya booking yang masih follow_up/confirm dengan harga_dealing tetap bisa
+     * di-invoice sebelum unit & biaya item-based-nya final.
+     */
+    public function invoiceableBalance(Booking $booking): int
+    {
+        return max(0, $this->invoiceAmount($booking)
+            - $this->invoicedClaimAmount($booking)
+            - $this->directPaymentsAmount($booking));
     }
 
     public function calculateDueDate(Booking $booking): ?Carbon

@@ -23,12 +23,21 @@ class InvoiceResource extends JsonResource
             'generated_at' => $this->generated_at?->toISOString(),
             'sent_at' => $this->sent_at?->toISOString(),
             'voided_at' => $this->voided_at?->toISOString(),
+            'is_manual_amount' => (bool) $this->is_manual_amount,
+            'payment_classification' => $this->payment_classification,
+            'void_reason' => $this->void_reason,
+            'void_requested_at' => $this->void_requested_at?->toISOString(),
+            'void_requested_by_name' => $this->voidRequester?->name,
+            'void_approved_at' => $this->void_approved_at?->toISOString(),
+            'void_approved_by_name' => $this->voidApprover?->name,
+            'void_rejected_at' => $this->void_rejected_at?->toISOString(),
+            'void_rejection_note' => $this->void_rejection_note,
             'created_by_name' => $this->creator?->name,
             'sent_by_name' => $this->sentBy?->name,
             'invoice_reconciliation' => $receivableService->invoiceReconciliation($this->resource),
             'pdf_url' => url("/api/v1/invoices/{$this->id}/pdf"),
-            'public_path' => $this->public_token ? "/invoice/{$this->public_token}" : null,
-            'public_url' => $this->public_token ? config('app.frontend_url', url('/')) . "/invoice/{$this->public_token}" : null,
+            'public_path' => $this->public_token ? $this->invoicePublicPath() : null,
+            'public_url' => $this->public_token ? config('app.frontend_url', url('/')) . $this->invoicePublicPath() : null,
             'bookings' => $this->whenLoaded('bookings', fn() => $this->bookings->map(fn($booking) => [
                 'id' => $booking->id,
                 'kode_booking' => $booking->kode_booking,
@@ -38,6 +47,24 @@ class InvoiceResource extends JsonResource
             ])),
             'items' => $this->whenLoaded('bookings', fn() => $receivableService->invoiceItems($this->resource)),
             'payments' => $this->whenLoaded('payments', fn() => $receivableService->invoicePaymentHistory($this->resource)),
+            'merged_into' => $this->merged_into_id ? [
+                'id' => $this->mergedInto?->id,
+                'number' => $this->mergedInto?->invoice_number,
+            ] : null,
+            'merged_children' => $this->whenLoaded('childInvoices', fn() => $this->childInvoices->map(fn($child) => [
+                'id' => $child->id,
+                'invoice_number' => $child->invoice_number,
+                'status' => $child->status,
+                'amount_at_merge' => (int) $child->pivot->amount,
+                'remaining_amount' => max(0, (int) $child->total_amount - $receivableService->invoicePaidAmount($child)),
+            ])),
         ];
+    }
+
+    private function invoicePublicPath(): string
+    {
+        return str_starts_with($this->invoice_number ?? '', 'SOA-')
+            ? "/invoice/soa/{$this->public_token}"
+            : "/invoice/{$this->public_token}";
     }
 }

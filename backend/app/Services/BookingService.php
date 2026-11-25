@@ -12,6 +12,7 @@ use App\Models\RentalOwner;
 use App\Traits\PhoneNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class BookingService
 {
@@ -104,6 +105,7 @@ class BookingService
                 'customer_id' => $customerId,
                 'created_by' => auth()->id(),
                 'kode_booking' => $kodeBooking,
+                'public_token' => $this->newPublicToken(),
                 'status' => $status,
                 'lama_sewa' => $data['lama_sewa'] ?? null,
                 'paket_sewa' => $data['paket_sewa'] ?? null,
@@ -132,6 +134,7 @@ class BookingService
                 'paket_sewa' => $data['paket_sewa'] ?? null,
                 'detail_type' => 'initial',
                 'status' => 'draft',
+                'created_by' => auth()->id(),
             ]);
 
             // 8. Create BookingPayment record for DP
@@ -219,9 +222,9 @@ class BookingService
      */
     public function handleBooking(Booking $booking, array $data): Booking
     {
-        if (!in_array($booking->status, ['follow_up', 'confirm'])) {
+        if (!in_array($booking->status, ['follow_up', 'confirm', 'reschedule'])) {
             throw new \InvalidArgumentException(
-                "Handle hanya diperbolehkan untuk booking dengan status follow_up atau confirm."
+                "Handle hanya diperbolehkan untuk booking dengan status follow_up, confirm, atau reschedule."
             );
         }
 
@@ -292,6 +295,10 @@ class BookingService
             // Sync cached_sisa_tagihan agar booking langsung muncul di daftar piutang
             $booking->unsetRelation('bookingDetails')->unsetRelation('payments');
             app(BookingBillingService::class)->updateCachedSisaTagihan($booking->fresh());
+
+            // Invoice yang sudah dibuat saat masih follow_up/confirm (pakai harga dealing) ikut
+            // disinkronkan ke nominal item-based sekarang unit & biaya sudah final.
+            app(ReceivableService::class)->refreshBookingInvoiceIfAny($booking->fresh());
 
             return $booking->fresh();
         });
@@ -534,6 +541,10 @@ class BookingService
             $updates['completed_at'] = now();
         }
 
+        if ($data['status'] === 'reschedule') {
+            $updates['reschedule_date'] = $data['reschedule_date'] ?? null;
+        }
+
         $booking->update($updates);
 
         if ($data['status'] === 'waiting_list') {
@@ -562,10 +573,11 @@ class BookingService
     private function getAllowedTransitions(string $current): array
     {
         return match ($current) {
-            'follow_up'    => ['confirm', 'waiting_list', 'batal'],
-            'confirm'      => ['waiting_list', 'batal'],
-            'waiting_list' => ['rental_unit', 'batal'],
+            'follow_up'    => ['confirm', 'waiting_list', 'batal', 'reschedule'],
+            'confirm'      => ['waiting_list', 'batal', 'reschedule'],
+            'waiting_list' => ['rental_unit', 'batal', 'reschedule'],
             'rental_unit'  => ['selesai', 'batal'],
+            'reschedule'   => ['batal'],
             default        => [],
         };
     }
@@ -573,5 +585,14 @@ class BookingService
     private function normalizeCustomerStatus(string $status): string
     {
         return strtolower($status) === 'corporate' ? 'Corporate' : 'Normal';
+    }
+
+    private function newPublicToken(): string
+    {
+        do {
+            $token = Str::random(48);
+        } while (Booking::where('public_token', $token)->exists());
+
+        return $token;
     }
 }

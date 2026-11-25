@@ -41,6 +41,7 @@ class BookingModificationService
                 'harga_all_in'       => $data['harga_all_in'] ?? null,
                 'detail_type'        => 'extend',
                 'status'             => 'aktif',
+                'created_by'         => auth()->id(),
             ]);
 
             foreach ($data['costs'] ?? [] as $costData) {
@@ -142,6 +143,7 @@ class BookingModificationService
                 'harga_all_in'       => $data['harga_all_in'] ?? null,
                 'detail_type'        => 'rolling',
                 'status'             => 'aktif',
+                'created_by'         => auth()->id(),
             ]);
 
             foreach ($data['costs'] ?? [] as $costData) {
@@ -228,6 +230,91 @@ class BookingModificationService
 
             return $detail;
         });
+    }
+
+    /**
+     * Request pembatalan transaksi Extend — butuh approval supervisor (lihat approveCancelExtend).
+     * Hanya extend terakhir yang boleh dibatalkan, sama seperti aturan edit di frontend (lastExtendDetail).
+     */
+    public function requestCancelExtend(BookingDetail $detail, string $reason): BookingDetail
+    {
+        if ($detail->detail_type !== 'extend') {
+            throw new UnprocessableEntityHttpException('Hanya transaksi Extend yang bisa diajukan pembatalan.');
+        }
+
+        if ($detail->status !== 'aktif') {
+            throw new UnprocessableEntityHttpException('Transaksi Extend ini sudah tidak aktif.');
+        }
+
+        $isLastExtend = !$detail->booking->bookingDetails()
+            ->where('detail_type', 'extend')
+            ->where('id', '>', $detail->id)
+            ->exists();
+
+        if (!$isLastExtend) {
+            throw new UnprocessableEntityHttpException('Hanya transaksi Extend terakhir yang bisa dibatalkan.');
+        }
+
+        if ($detail->cancel_extend_status === 'pending') {
+            throw new UnprocessableEntityHttpException('Request batal Extend masih menunggu approval supervisor.');
+        }
+
+        $detail->update([
+            'cancel_extend_status' => 'pending',
+            'cancel_extend_reason' => $reason,
+            'cancel_extend_requested_by' => auth()->id(),
+            'cancel_extend_requested_at' => now(),
+            'cancel_extend_approved_by' => null,
+            'cancel_extend_approved_at' => null,
+            'cancel_extend_rejected_by' => null,
+            'cancel_extend_rejected_at' => null,
+            'cancel_extend_rejection_note' => null,
+        ]);
+
+        return $detail->fresh();
+    }
+
+    public function approveCancelExtend(BookingDetail $detail): BookingDetail
+    {
+        if ($detail->cancel_extend_status !== 'pending') {
+            throw new UnprocessableEntityHttpException('Hanya request batal Extend berstatus pending yang bisa disetujui.');
+        }
+
+        if ($detail->cancel_extend_requested_by === auth()->id() && auth()->user()?->role !== 'superadmin') {
+            throw new UnprocessableEntityHttpException('Request harus di-ACC oleh supervisor lain.');
+        }
+
+        return DB::transaction(function () use ($detail) {
+            $detail->update([
+                'status' => 'batal',
+                'cancel_extend_status' => 'approved',
+                'cancel_extend_approved_by' => auth()->id(),
+                'cancel_extend_approved_at' => now(),
+            ]);
+
+            app(RentToRentService::class)->syncDetail($detail->fresh(['booking', 'unit.rentalOwner']));
+
+            $booking = $detail->booking->load(['bookingDetails.costs', 'payments']);
+            $this->billingService->updateCachedSisaTagihan($booking);
+
+            return $detail->fresh();
+        });
+    }
+
+    public function rejectCancelExtend(BookingDetail $detail, ?string $note = null): BookingDetail
+    {
+        if ($detail->cancel_extend_status !== 'pending') {
+            throw new UnprocessableEntityHttpException('Hanya request batal Extend berstatus pending yang bisa ditolak.');
+        }
+
+        $detail->update([
+            'cancel_extend_status' => 'rejected',
+            'cancel_extend_rejected_by' => auth()->id(),
+            'cancel_extend_rejected_at' => now(),
+            'cancel_extend_rejection_note' => $note,
+        ]);
+
+        return $detail->fresh();
     }
 
     public function addAdditionalCost(Booking $booking, array $data): BookingCost

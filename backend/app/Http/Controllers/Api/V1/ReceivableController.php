@@ -4,12 +4,19 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateInvoiceRequest;
+use App\Http\Requests\MergeInvoicesRequest;
 use App\Http\Requests\RefreshInvoiceAmountRequest;
+use App\Http\Requests\RejectVoidInvoicePaymentRequest;
+use App\Http\Requests\RejectVoidInvoiceRequest;
+use App\Http\Requests\RequestVoidInvoicePaymentRequest;
+use App\Http\Requests\RequestVoidInvoiceRequest;
 use App\Http\Requests\StoreInvoicePaymentRequest;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\PublicInvoiceResource;
 use App\Http\Resources\ReceivableResource;
+use App\Models\Booking;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Services\InvoicePdfService;
 use App\Services\ReceivableService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -60,7 +67,9 @@ class ReceivableController extends Controller
                 $user->branch_id,
                 $user->tenant_id,
                 $request->validated('due_date'),
-                $request->validated('terms_and_conditions')
+                $request->validated('terms_and_conditions'),
+                $request->validated('amounts') ?? [],
+                $request->validated('payment_classification')
             );
         } catch (\InvalidArgumentException $exception) {
             abort(response()->json([
@@ -75,7 +84,30 @@ class ReceivableController extends Controller
     public function showInvoice(Invoice $invoice): InvoiceResource
     {
         $this->authorize('view', $invoice);
-        $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy']);
+        $invoice->load(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments', 'creator', 'sentBy', 'mergedInto', 'childInvoices']);
+
+        return new InvoiceResource($invoice);
+    }
+
+    public function mergeInvoices(MergeInvoicesRequest $request): InvoiceResource
+    {
+        $this->authorize('create', Invoice::class);
+
+        $user = auth()->user();
+        try {
+            $invoice = $this->receivableService->mergeInvoices(
+                $request->validated('invoice_ids'),
+                $user->branch_id,
+                $user->tenant_id,
+                $request->validated('due_date'),
+                $request->validated('terms_and_conditions')
+            );
+        } catch (\InvalidArgumentException $exception) {
+            abort(response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => ['invoice_ids' => [$exception->getMessage()]],
+            ], 422));
+        }
 
         return new InvoiceResource($invoice);
     }
@@ -84,7 +116,7 @@ class ReceivableController extends Controller
     {
         $this->authorize('viewAny', Invoice::class);
 
-        $filters = $request->only(['page', 'per_page', 'status', 'search', 'kota']);
+        $filters = $request->only(['page', 'per_page', 'status', 'search', 'kota', 'only_merged', 'exclude_paid', 'booking_id']);
         $user = auth()->user();
         $filters['tenant_id'] = $user->tenant_id;
         if ($user->role !== 'superadmin') {
@@ -144,7 +176,7 @@ class ReceivableController extends Controller
 
     public function storeInvoicePayment(StoreInvoicePaymentRequest $request, Invoice $invoice): InvoiceResource
     {
-        $this->authorize('update', $invoice);
+        $this->authorize('pay', $invoice);
 
         try {
             return new InvoiceResource($this->receivableService->storePayment($invoice, $request->validated()));
@@ -187,6 +219,69 @@ class ReceivableController extends Controller
                 'created_at'     => $h->created_at?->toISOString(),
             ]),
         ]);
+    }
+
+    public function bookingInvoiceHistories(Booking $booking)
+    {
+        $this->authorize('view', $booking);
+        $this->authorize('viewAny', Invoice::class);
+
+        $histories = $this->receivableService->bookingInvoiceHistories($booking);
+
+        return response()->json([
+            'data' => $histories->map(fn($h) => [
+                ...$h,
+                'created_at' => $h['created_at']?->toISOString(),
+            ]),
+        ]);
+    }
+
+    public function requestVoidInvoicePayment(RequestVoidInvoicePaymentRequest $request, Payment $payment): InvoiceResource
+    {
+        $this->authorize('update', $payment->invoice);
+
+        $this->receivableService->requestVoidInvoicePayment($payment, $request->validated('void_reason'));
+
+        return new InvoiceResource($payment->invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']));
+    }
+
+    public function approveVoidInvoicePayment(Payment $payment): InvoiceResource
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor']), 403);
+
+        $this->receivableService->approveVoidInvoicePayment($payment);
+
+        return new InvoiceResource($payment->invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']));
+    }
+
+    public function rejectVoidInvoicePayment(RejectVoidInvoicePaymentRequest $request, Payment $payment): InvoiceResource
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor']), 403);
+
+        $this->receivableService->rejectVoidInvoicePayment($payment, $request->validated('void_rejection_note'));
+
+        return new InvoiceResource($payment->invoice->fresh(['bookings.customer', 'payments.paymentAccount', 'payments.bookingPayments']));
+    }
+
+    public function requestVoidInvoice(RequestVoidInvoiceRequest $request, Invoice $invoice): InvoiceResource
+    {
+        $this->authorize('update', $invoice);
+
+        return new InvoiceResource($this->receivableService->requestVoidInvoice($invoice, $request->validated('void_reason')));
+    }
+
+    public function approveVoidInvoice(Invoice $invoice): InvoiceResource
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor']), 403);
+
+        return new InvoiceResource($this->receivableService->approveVoidInvoice($invoice));
+    }
+
+    public function rejectVoidInvoice(RejectVoidInvoiceRequest $request, Invoice $invoice): InvoiceResource
+    {
+        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'supervisor']), 403);
+
+        return new InvoiceResource($this->receivableService->rejectVoidInvoice($invoice, $request->validated('void_rejection_note')));
     }
 
     public function publicInvoice(Request $request, string $token): PublicInvoiceResource

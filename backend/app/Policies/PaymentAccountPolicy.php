@@ -26,20 +26,20 @@ class PaymentAccountPolicy
     public function create(User $user): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission);
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.create');
     }
 
     public function update(User $user, PaymentAccount $paymentAccount): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.update')
             && $user->branch_id === $paymentAccount->branch_id;
     }
 
     public function delete(User $user, PaymentAccount $paymentAccount): bool
     {
         if ($user->role === 'superadmin') return true;
-        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission)
+        return app(\App\Services\PermissionService::class)->hasPermission($user, $this->permission . '.delete')
             && $user->branch_id === $paymentAccount->branch_id;
     }
 }

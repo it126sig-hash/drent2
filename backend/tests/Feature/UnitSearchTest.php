@@ -141,6 +141,12 @@ class UnitSearchTest extends TestCase
             'provinsi' => 'DKI Jakarta',
             'is_active' => true,
         ]);
+        $updatedCity = City::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'nama' => 'Bandung',
+            'provinsi' => 'Jawa Barat',
+            'is_active' => true,
+        ]);
 
         $payload = [
             'tenant_id' => $ctx['tenant']->id,
@@ -175,16 +181,30 @@ class UnitSearchTest extends TestCase
             'merk' => null,
         ]);
 
+        $payloadWithoutCity = $payload;
+        unset($payloadWithoutCity['city_id']);
+        $this->putJson('/api/v1/units/' . $unitId, $payloadWithoutCity)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['city_id']);
+
         $this->putJson('/api/v1/units/' . $unitId, array_merge($payload, [
             'merk' => null,
             'tipe' => 'Innova',
+            'city_id' => $updatedCity->id,
         ]))->assertOk();
 
         $this->assertDatabaseHas('units', [
             'id' => $unitId,
             'merk' => null,
             'tipe' => 'Innova',
+            'city_id' => $updatedCity->id,
         ]);
+
+        $this->getJson('/api/v1/units/' . $unitId)
+            ->assertOk()
+            ->assertJsonPath('data.city_id', $updatedCity->id)
+            ->assertJsonPath('data.city.id', $updatedCity->id)
+            ->assertJsonPath('data.city.nama', 'Bandung');
     }
 
     private function searchUnitIds(string $search): array

@@ -24,6 +24,7 @@ class UpdateCostTypeRequest extends FormRequest
         return [
             'nama'                => 'sometimes|required|string|max:100',
             'kode'                => 'sometimes|required|string|max:50|unique:cost_types,kode,' . $costTypeId . ',id,tenant_id,' . auth()->user()->tenant_id,
+            'kledo_code'          => 'nullable|string|max:255',
             'require_description' => 'sometimes|boolean',
             'is_active'           => 'sometimes|boolean',
             'sort_order'          => 'sometimes|integer|min:0',

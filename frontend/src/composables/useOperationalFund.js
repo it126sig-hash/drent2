@@ -171,7 +171,11 @@ export function useOperationalFund() {
       const form = new FormData()
       Object.entries(payload).forEach(([key, value]) => {
         if (value !== null && value !== undefined && value !== '') {
-          form.append(key, value)
+          if (key === 'payment_date' && value instanceof Date) {
+            form.append(key, toApiDate(value))
+          } else {
+            form.append(key, value)
+          }
         }
       })
       const response = await operationalFundApi.createOperationalExpense(fundId, form)
@@ -191,7 +195,11 @@ export function useOperationalFund() {
       const form = new FormData()
       Object.entries(payload).forEach(([key, value]) => {
         if (value !== null && value !== undefined && value !== '') {
-          form.append(key, value)
+          if (key === 'payment_date' && value instanceof Date) {
+            form.append(key, toApiDate(value))
+          } else {
+            form.append(key, value)
+          }
         }
       })
       const response = await operationalFundApi.createBookingExpense(bookingId, form)

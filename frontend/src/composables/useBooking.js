@@ -182,6 +182,21 @@ export function useBooking() {
     }
   }
 
+  const reschedule = async (id, data) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.updateBookingStatus(id, { status: 'reschedule', ...data })
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Booking dijadwalkan ulang', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal reschedule booking'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   const checkout = async (id, data = {}) => {
     loading.value = true
     try {
@@ -482,6 +497,51 @@ export function useBooking() {
     }
   }
 
+  const requestCancelExtend = async (detailId, reason) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.requestCancelExtend(detailId, { reason })
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request batal Extend dikirim ke supervisor', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal mengajukan batal Extend'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const approveCancelExtend = async (detailId) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.approveCancelExtend(detailId)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request batal Extend disetujui', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menyetujui batal Extend'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const rejectCancelExtend = async (detailId, data = {}) => {
+    loading.value = true
+    try {
+      const response = await bookingApi.rejectCancelExtend(detailId, data)
+      toast?.add({ severity: 'success', summary: 'Sukses', detail: 'Request batal Extend ditolak', life: 3000 })
+      return response.data.data
+    } catch (err) {
+      error.value = err.response?.data?.message || 'Gagal menolak batal Extend'
+      toast?.add({ severity: 'error', summary: 'Error', detail: error.value, life: 5000 })
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     bookings,
     loading,
@@ -495,6 +555,7 @@ export function useBooking() {
     fetchOne,
     updateBooking,
     handle,
+    reschedule,
     checkout,
     complete,
     cancel,
@@ -514,6 +575,9 @@ export function useBooking() {
     stopEarly,
     addAdditionalCost,
     updateDetail,
-    updateCost
+    updateCost,
+    requestCancelExtend,
+    approveCancelExtend,
+    rejectCancelExtend
   }
 }

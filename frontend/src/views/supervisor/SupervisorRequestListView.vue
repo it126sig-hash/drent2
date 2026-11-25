@@ -14,6 +14,7 @@ import { getSupervisorRequests } from '../../api/supervisorRequest'
 import { useBooking } from '../../composables/useBooking'
 import { useOperationalFund } from '../../composables/useOperationalFund'
 import { usePaymentAccountTransaction } from '../../composables/usePaymentAccountTransaction'
+import { useReceivable } from '../../composables/useReceivable'
 
 const router = useRouter()
 const {
@@ -38,6 +39,11 @@ const {
   rejectVoidTransaction,
 } = usePaymentAccountTransaction()
 
+const {
+  approveVoidInvoicePayment,
+  rejectVoidInvoicePayment,
+} = useReceivable()
+
 const requests = ref([])
 const loading = ref(false)
 const activeTab = ref('all')
@@ -60,6 +66,7 @@ const requestTabs = [
   { label: 'Kembali Rental Unit', value: 'return_rental_unit' },
   { label: 'Revert Operasional', value: 'operational_revert' },
   { label: 'Ubah Nominal R2R', value: 'rent_to_rent_amount_change' },
+  { label: 'Void Pembayaran Invoice', value: 'invoice_payment_void' },
 ]
 
 const statusTabs = [
@@ -112,7 +119,7 @@ const formatDateTime = (value) => {
 
 const statusTone = (status) => status === 'approved' ? 'success' : 'warning'
 
-const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment', 'void_operational_expense', 'void_operational_fund', 'void_payment_transaction', 'rent_to_rent_amount_change'].includes(type) ? 'warning' : 'info'
+const requestTone = (type) => ['void_payment', 'rent_to_rent_void_bill', 'rent_to_rent_void_payment', 'void_operational_expense', 'void_operational_fund', 'void_payment_transaction', 'rent_to_rent_amount_change', 'invoice_payment_void'].includes(type) ? 'warning' : 'info'
 
 const bookingCode = (request) => request.bill?.bill_number || request.booking?.kode_booking || '-'
 
@@ -151,6 +158,10 @@ const requestDetailLabel = (request) => {
     return `Ubah Nominal: ${formatCurrency(request.debt?.current_amount)} -> ${request.debt?.requested_amount !== null ? formatCurrency(request.debt?.requested_amount) : 'Reset ke Default (Modal Booking)'}`
   }
 
+  if (request.type === 'invoice_payment_void') {
+    return `Void Pembayaran Invoice ${request.bill?.bill_number || '-'}: ${formatCurrency(request.payment?.amount)}`
+  }
+
   return 'Ubah status booking dari selesai ke rental_unit'
 }
 
@@ -182,6 +193,11 @@ const requestSecondaryDetail = (request) => {
     return `Hutang R2R: ${request.debt?.kode_booking || '-'}`
   }
 
+  if (request.type === 'invoice_payment_void') {
+    const account = request.payment?.payment_account
+    return `${account?.nama_bank || '-'} ${account?.nomor_rekening || ''}`.trim()
+  }
+
   return request.booking?.kode_booking || '-'
 }
 
@@ -202,6 +218,8 @@ const approveRequest = async (request) => {
     await approveRevertOperational(request.booking.id)
   } else if (request.type === 'rent_to_rent_amount_change') {
     await rentToRentApi.approveRentToRentAmountChange(request.amount_change.id)
+  } else if (request.type === 'invoice_payment_void') {
+    await approveVoidInvoicePayment(request.payment.id)
   } else {
     await approveReturnToRentalUnit(request.booking.id)
   }
@@ -242,6 +260,10 @@ const submitReject = async () => {
     })
   } else if (selectedRequest.value.type === 'rent_to_rent_amount_change') {
     await rentToRentApi.rejectRentToRentAmountChange(selectedRequest.value.amount_change.id, rejectionNote.value)
+  } else if (selectedRequest.value.type === 'invoice_payment_void') {
+    await rejectVoidInvoicePayment(selectedRequest.value.payment.id, {
+      void_rejection_note: rejectionNote.value,
+    })
   } else {
     await rejectReturnToRentalUnit(selectedRequest.value.booking.id, {
       rejection_note: rejectionNote.value,
@@ -468,7 +490,7 @@ onUnmounted(() => {
 
 .filter-label {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -492,7 +514,7 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   background: var(--surface-default);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -522,7 +544,7 @@ onUnmounted(() => {
 :deep(.drent-datatable .p-datatable-thead > tr > th) {
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   text-transform: uppercase;
 }
 
@@ -584,19 +606,19 @@ onUnmounted(() => {
 
 .detail-stack strong {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.35;
 }
 
 .detail-stack span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.4;
 }
 
 .approval-note {
   color: var(--positive);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   margin-top: 4px;
 }
@@ -644,7 +666,7 @@ onUnmounted(() => {
 
 .form-fieldset label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -667,7 +689,7 @@ onUnmounted(() => {
 .card-title-stack span,
 .request-date {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .booking-code {
@@ -678,7 +700,7 @@ onUnmounted(() => {
   color: var(--text-primary);
   cursor: pointer;
   font-family: var(--font-headline);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 800;
   line-height: 1.3;
   text-align: left;
@@ -706,7 +728,7 @@ onUnmounted(() => {
 
 .label {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   line-height: 1.2;
   text-transform: uppercase;
@@ -714,7 +736,7 @@ onUnmounted(() => {
 
 .value {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -722,7 +744,7 @@ onUnmounted(() => {
 
 .approval-panel {
   color: var(--positive);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -739,7 +761,7 @@ onUnmounted(() => {
   gap: var(--space-sm);
   padding: var(--space-xl);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 

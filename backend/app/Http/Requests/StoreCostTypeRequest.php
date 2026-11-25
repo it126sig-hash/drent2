@@ -22,6 +22,7 @@ class StoreCostTypeRequest extends FormRequest
         return [
             'nama'                => 'required|string|max:100',
             'kode'                => 'required|string|max:50|unique:cost_types,kode,NULL,id,tenant_id,' . auth()->user()->tenant_id,
+            'kledo_code'          => 'nullable|string|max:255',
             'require_description' => 'sometimes|boolean',
             'is_active'           => 'sometimes|boolean',
             'sort_order'          => 'sometimes|integer|min:0',

@@ -46,7 +46,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize));
 const toast = useToast();
 const confirm = useConfirm();
 const authStore = useAuthStore();
-const { fetchOne, updateBooking, handle, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, requestVoidPayment, approveVoidPayment, rejectVoidPayment, loading } = useBooking();
+const { fetchOne, updateBooking, handle, reschedule, checkout, complete, cancel, addDetail, addCost, updateDetail, updateCost, extend, rolling, stopEarly, addAdditionalCost, addPayment, requestVoidPayment, approveVoidPayment, rejectVoidPayment, requestCancelExtend, approveCancelExtend, rejectCancelExtend, loading } = useBooking();
 const { units, loading: unitsLoading } = useUnit();
 const { drivers, fetchAll: fetchDrivers } = useDriver();
 const { accounts: paymentAccounts, fetchAll: fetchAccounts } = usePaymentAccount();
@@ -62,9 +62,11 @@ const unitServerSearchTerm = ref('');
 const unitCityFilter = ref(null);
 const showUnitPriceDialog = ref(false);
 const unitPriceSaving = ref(false);
+const unitPriceErrors = ref({});
 const unitPriceForm = ref({
   id: null,
   label: '',
+  city_id: null,
   harga_1_hari: 0,
   harga_1_minggu: 0,
   harga_1_bulan: 0,
@@ -302,7 +304,14 @@ const onUnitFilter = (event) => {
 };
 
 const cityOptions = computed(() =>
-  cities.value.map(c => ({ id: c.id, label: c.nama, value: c.id }))
+  cities.value
+    .filter(city => city.is_active)
+    .map(city => ({
+      id: city.id,
+      label: city.provinsi ? `${city.nama} - ${city.provinsi}` : city.nama,
+      value: city.id,
+      searchableLabel: [city.nama, city.provinsi].filter(Boolean).join(' '),
+    }))
 );
 
 const onKotaChange = (selectedValue) => {
@@ -404,6 +413,28 @@ const getBillableCostTotal = (pricingMode, costs = []) => {
   return sumCosts(costs, { discountsOnly: pricingMode === 'all_in' });
 };
 
+// Saat data costs dimuat ulang dari server (edit detail/rolling), flag _auto_all_in_ops dkk tidak ikut
+// tersimpan di backend, sehingga item OP package hasilnya "lupa" cara auto-scale-nya saat lama sewa diubah.
+// Fungsi ini menandai ulang item yang cocok dengan item package saat ini, dengan rate dasar = amount tersimpan / lama sewa awal.
+const tagPackageCostItems = (costs, pricingMode, packageId, duration) => {
+  if (pricingMode !== 'all_in' || !packageId) return costs;
+  const pkg = findPricingPackage(packageId);
+  if (!pkg) return costs;
+
+  const getCostKey = (c) => `${c.cost_type_id}_${c.type}_${c.label}`;
+  const packageKeys = new Set(packageCostItems(pkg).map(getCostKey));
+
+  return (costs || []).map(cost => {
+    if (!packageKeys.has(getCostKey(cost))) return cost;
+    return {
+      ...cost,
+      _auto_all_in_ops: true,
+      _all_in_package_cost: true,
+      _all_in_base_amount: (cost.amount || 0) / (duration || 1),
+    };
+  });
+};
+
 const applyPricingPackage = (target, packageId, costKey = 'costs', priceKey = 'harga_all_in', duration = 1) => {
   const pkg = findPricingPackage(packageId);
   if (!pkg) {
@@ -427,20 +458,8 @@ const applyPricingPackage = (target, packageId, costKey = 'costs', priceKey = 'h
   });
 };
 
-const onDetailPackageChange = () => {
-  applyPricingPackage(detailForm.value, detailForm.value.pricing_package_id, 'costs', 'harga_all_in', detailForm.value.lama_sewa || 1);
-};
-
 const onExtendPackageChange = () => {
   applyPricingPackage(extendForm.value, extendForm.value.pricing_package_id, 'costs', 'harga_all_in', extendForm.value.lama_sewa || 1);
-};
-
-const onRollingOldPackageChange = () => {
-  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id_lama, 'costs_lama', 'harga_all_in_lama', rollingForm.value.lama_sewa_lama || 1);
-};
-
-const onRollingNewPackageChange = () => {
-  applyPricingPackage(rollingForm.value, rollingForm.value.pricing_package_id, 'costs', 'harga_all_in', rollingForm.value.lama_sewa || 1);
 };
 
 
@@ -451,6 +470,8 @@ const rollingStep = ref(1);
 const showStopEarlyDialog = ref(false);
 const showAdditionalCostDialog = ref(false);
 const showBatalDialog = ref(false);
+const showRescheduleDialog = ref(false);
+const rescheduleForm = ref({ reschedule_date: null, catatan_status: '' });
 
 const detailForm = ref({
   unit_id: null,
@@ -632,8 +653,14 @@ const hasZeroReadyUnitPrice = computed(() => {
   }
   return (detail.harga_mobil || 0) <= 0;
 });
-const unitActionLabel = computed(() => (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'Edit Unit' : 'Handle Unit');
-const unitActionIcon = computed(() => (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'pi pi-pencil' : 'pi pi-plus');
+const unitActionLabel = computed(() => {
+  if (booking.value?.status === 'reschedule') return 'Jadwalkan Ulang';
+  return (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'Edit Unit' : 'Handle Unit';
+});
+const unitActionIcon = computed(() => {
+  if (booking.value?.status === 'reschedule') return 'pi pi-calendar-plus';
+  return (hasFixedUnit.value && !hasZeroReadyUnitPrice.value) ? 'pi pi-pencil' : 'pi pi-plus';
+});
 
 const activeDetails = computed(() => {
   return validDetails.value.filter(d => d.status === 'aktif');
@@ -671,6 +698,9 @@ const totalRecordedPayments = computed(() => {
 const hasPricedDetails = computed(() => billableDetails.value.some(detail => detail.unit_id && ((detail.harga_mobil || 0) > 0 || (detail.harga_all_in || 0) > 0)));
 const bookingCalculatedTagihan = computed(() => billableDetails.value.reduce((sum, detail) => sum + detailConsumerBill(detail), 0));
 const bookingTotalTagihan = computed(() => {
+  if (['follow_up', 'confirm'].includes(booking.value?.status) && booking.value?.harga_dealing) {
+    return booking.value.harga_dealing;
+  }
   if (!hasPricedDetails.value) return booking.value?.harga_dealing ?? 0;
   return bookingCalculatedTagihan.value || booking.value?.total_tagihan || 0;
 });
@@ -737,6 +767,53 @@ const detailDisplayedPriceTotal = computed(() => {
     : detailHargaSewa.value;
 });
 const detailGrandTotalInternal = computed(() => detailDisplayedPriceTotal.value + detailTotalBiayaOps.value);
+
+// Helper harga unit/all-in untuk form rolling (lama & baru), mengikuti aturan yang sama dengan detailForm di atas.
+const buildUnitPriceDisplay = (formRef, { mobilField, allInField, modeField, packageField }) => {
+  const isManualAllIn = computed(() => formRef.value[modeField] === 'all_in' && !formRef.value[packageField]);
+  const priceInputLabel = computed(() => {
+    if (isManualAllIn.value) return 'Harga All In';
+    if (formRef.value[modeField] === 'all_in' && formRef.value[packageField]) return 'Harga mobil harian / lepas kunci';
+    return 'Harga Mobil';
+  });
+  const priceInputHint = computed(() => {
+    if (isManualAllIn.value) return 'Diisi otomatis dari unit. Klik Edit Harga Unit untuk mengubah.';
+    if (formRef.value[modeField] === 'all_in' && formRef.value[packageField]) return 'Harga lepas kunci harian dari unit; tagihan konsumen memakai pricing package.';
+    return 'Diisi otomatis dari unit dan paket sewa.';
+  });
+  const priceInputValue = computed({
+    get() {
+      return isManualAllIn.value ? formRef.value[allInField] : formRef.value[mobilField];
+    },
+    set(value) {
+      if (isManualAllIn.value) {
+        formRef.value[allInField] = value;
+        return;
+      }
+      formRef.value[mobilField] = value;
+    },
+  });
+  return { isManualAllIn, priceInputLabel, priceInputHint, priceInputValue };
+};
+
+const selectedRollingOldUnit = computed(() => findUnitOption(rollingForm.value.unit_id_lama));
+const selectedRollingNewUnit = computed(() => findUnitOption(rollingForm.value.unit_id));
+
+const rollingOldPrice = buildUnitPriceDisplay(rollingForm, {
+  mobilField: 'harga_mobil_lama', allInField: 'harga_all_in_lama', modeField: 'pricing_mode_lama', packageField: 'pricing_package_id_lama',
+});
+const isRollingOldManualAllIn = rollingOldPrice.isManualAllIn;
+const rollingOldPriceInputLabel = rollingOldPrice.priceInputLabel;
+const rollingOldPriceInputHint = rollingOldPrice.priceInputHint;
+const rollingOldPriceInputValue = rollingOldPrice.priceInputValue;
+
+const rollingNewPrice = buildUnitPriceDisplay(rollingForm, {
+  mobilField: 'harga_mobil', allInField: 'harga_all_in', modeField: 'pricing_mode', packageField: 'pricing_package_id',
+});
+const isRollingNewManualAllIn = rollingNewPrice.isManualAllIn;
+const rollingNewPriceInputLabel = rollingNewPrice.priceInputLabel;
+const rollingNewPriceInputHint = rollingNewPrice.priceInputHint;
+const rollingNewPriceInputValue = rollingNewPrice.priceInputValue;
 const detailTagihanKonsumen = computed(() => {
   if (detailForm.value.pricing_mode === 'all_in') {
     const lama = detailForm.value.lama_sewa || 1;
@@ -972,7 +1049,12 @@ const applyRollingOldDetail = (detail) => {
   rollingForm.value.pricing_mode_lama = detail?.pricing_mode || 'non_all_in';
   rollingForm.value.pricing_package_id_lama = detail?.pricing_package_id || null;
   rollingForm.value.harga_all_in_lama = detail?.harga_all_in || null;
-  rollingForm.value.costs_lama = cloneDetailCosts(detail);
+  rollingForm.value.costs_lama = tagPackageCostItems(
+    cloneDetailCosts(detail),
+    detail?.pricing_mode,
+    detail?.pricing_package_id,
+    oldDuration
+  );
   rollingForm.value.paket_sewa = detail?.paket_sewa || booking.value?.paket_sewa || 'harian';
   syncRollingNewSchedule();
 };
@@ -1027,6 +1109,7 @@ const getInitialBookingDetail = () => {
 };
 
 const isInitializingDetailDialog = ref(false);
+const isInitializingRollingDialog = ref(false);
 
 const getUnitHargaByPaket = (unit, paket) => {
   if (!unit) return 0;
@@ -1064,31 +1147,42 @@ const getUnitModalByPaket = (unit, paket, pricingMode = 'non_all_in', pricingPac
   }
 };
 
-const openUnitPriceDialog = () => {
-  if (!selectedDetailUnit.value) {
+const unitPriceDialogUnitId = ref(null);
+
+const openUnitPriceDialog = async (unit) => {
+  if (!unit) {
     toast.add({ severity: 'warn', summary: 'Pilih Unit', detail: 'Pilih unit dulu sebelum edit harga.', life: 3000 });
     return;
   }
 
-  const unit = selectedDetailUnit.value;
-  rememberUnitOption({ ...unit });
-  unitPriceForm.value = {
-    id: unit.id,
-    label: `${unit.merk || ''} ${unit.tipe || ''}`.trim() || unit.unitLabel || 'Unit',
-    harga_1_hari: unit.harga_1_hari || 0,
-    harga_1_minggu: unit.harga_1_minggu || 0,
-    harga_1_bulan: unit.harga_1_bulan || 0,
-    harga_all_in: unit.harga_all_in || 0,
-    harga_all_in_1_minggu: unit.harga_all_in_1_minggu || 0,
-    harga_all_in_1_bulan: unit.harga_all_in_1_bulan || 0,
-    modal_1_hari: unit.modal_1_hari || 0,
-    modal_1_minggu: unit.modal_1_minggu || 0,
-    modal_1_bulan: unit.modal_1_bulan || 0,
-    modal_all_in: unit.modal_all_in || 0,
-    modal_all_in_1_minggu: unit.modal_all_in_1_minggu || 0,
-    modal_all_in_1_bulan: unit.modal_all_in_1_bulan || 0,
-  };
-  showUnitPriceDialog.value = true;
+  unitPriceErrors.value = {};
+
+  try {
+    const response = await getUnit(unit.id);
+    const fullUnit = mapUnitOption(response.data.data);
+    const existingIndex = units.value.findIndex(option => option.id === fullUnit.id);
+
+    if (existingIndex >= 0) {
+      units.value.splice(existingIndex, 1, response.data.data);
+    } else {
+      units.value.unshift(response.data.data);
+    }
+
+    selectedUnitCache.value = fullUnit;
+    unitPriceDialogUnitId.value = fullUnit.id;
+    unitPriceForm.value = {
+      id: fullUnit.id,
+      label: `${fullUnit.merk || ''} ${fullUnit.tipe || ''}`.trim() || fullUnit.unitLabel || 'Unit',
+      city_id: fullUnit.city_id || fullUnit.city?.id || null,
+      ...unitPriceFields.reduce((payload, field) => {
+        payload[field] = fullUnit[field] || 0;
+        return payload;
+      }, {}),
+    };
+    showUnitPriceDialog.value = true;
+  } catch (err) {
+    showActionError(err, 'Gagal mengambil detail unit');
+  }
 };
 
 const refreshSelectedUnit = async (unitId) => {
@@ -1108,8 +1202,16 @@ const refreshSelectedUnit = async (unitId) => {
 
 const saveUnitPrice = async (data) => {
   if (unitPriceSaving.value) return;
-  if (!selectedDetailUnit.value?.id) return;
+  const unitId = unitPriceDialogUnitId.value;
+  if (!unitId) return;
+  unitPriceErrors.value = {};
 
+  if (!data?.city_id) {
+    unitPriceErrors.value.city_id = 'Kota unit wajib dipilih.';
+    return;
+  }
+
+  const currentUnit = findUnitOption(unitId) || {};
   const pricePayload = unitPriceFields.reduce((payload, field) => {
     payload[field] = data?.[field] ?? 0;
     return payload;
@@ -1117,15 +1219,20 @@ const saveUnitPrice = async (data) => {
 
   unitPriceSaving.value = true;
   try {
-    await updateUnit(selectedDetailUnit.value.id, {
-      ...selectedDetailUnit.value,
+    await updateUnit(unitId, {
+      ...currentUnit,
+      city_id: data.city_id,
       ...pricePayload,
-      id: selectedDetailUnit.value.id,
+      id: unitId,
     });
-    await refreshSelectedUnit(selectedDetailUnit.value.id);
+    await refreshSelectedUnit(unitId);
     toast.add({ severity: 'success', summary: 'Sukses', detail: 'Harga unit berhasil diperbarui.', life: 3000 });
     showUnitPriceDialog.value = false;
   } catch (err) {
+    const cityError = err.response?.data?.errors?.city_id;
+    if (cityError) {
+      unitPriceErrors.value.city_id = Array.isArray(cityError) ? cityError[0] : cityError;
+    }
     showActionError(err, 'Gagal memperbarui harga unit');
   } finally {
     unitPriceSaving.value = false;
@@ -1138,6 +1245,73 @@ const getCityIdByName = (cityName) => {
   return city ? city.id : null;
 };
 
+// Aturan auto-fill harga (dipakai bersama oleh detailForm & rollingForm lama/baru agar konsisten):
+//   - Post-init paket/mode/package change: selalu re-fill (user pilih paket/mode/package berbeda).
+const syncUnitPricing = (target, fields, oldPaket, oldMode, oldPackageId, isInit) => {
+  const {
+    unitField = 'unit_id',
+    paketField = 'paket_sewa',
+    modeField = 'pricing_mode',
+    packageField = 'pricing_package_id',
+    mobilField = 'harga_mobil',
+    allInField = 'harga_all_in',
+    modalField = 'modal_mobil',
+  } = fields;
+
+  const unit = findUnitOption(target[unitField]);
+  if (!unit) return;
+
+  const paket = target[paketField];
+  const pricingMode = target[modeField];
+  const packageId = target[packageField];
+
+  const paketChanged = paket !== oldPaket;
+  const modeChanged = pricingMode !== oldMode;
+  const packageChanged = packageId !== oldPackageId;
+  const userTriggeredRefill = paketChanged || modeChanged || packageChanged;
+
+  const currentHargaMobil = target[mobilField] || 0;
+  const currentHargaAllIn = target[allInField] || 0;
+  const currentModal = target[modalField] || 0;
+
+  const shouldFillMobil = isInit
+    ? currentHargaMobil <= 1
+    : userTriggeredRefill
+      ? true
+      : currentHargaMobil <= 1;
+
+  const shouldFillAllIn = isInit
+    ? currentHargaAllIn <= 1
+    : userTriggeredRefill
+      ? true
+      : currentHargaAllIn <= 1;
+
+  if (userTriggeredRefill || currentModal <= 1) {
+    target[modalField] = getUnitModalByPaket(unit, paket, pricingMode, packageId);
+  }
+
+  if (pricingMode === 'non_all_in') {
+    if (shouldFillMobil) {
+      target[mobilField] = getUnitHargaByPaket(unit, paket);
+    }
+  } else if (pricingMode === 'all_in') {
+    if (shouldFillMobil) {
+      target[mobilField] = getUnitHargaByPaket(unit, 'harian');
+    }
+    if (!packageId) {
+      if (shouldFillAllIn) {
+        target[allInField] = getUnitAllInByPaket(unit, paket);
+      }
+    } else {
+      // pricing package selected: harga_all_in mengikuti package
+      const pkg = findPricingPackage(packageId);
+      if (pkg) {
+        target[allInField] = pkg.harga || 0;
+      }
+    }
+  }
+};
+
 watch(
   () => [
     detailForm.value.unit_id,
@@ -1146,65 +1320,42 @@ watch(
     detailForm.value.pricing_package_id,
     unitOptions.value
   ],
-  ([unitId, paket, pricingMode, packageId], oldValues) => {
-    const unit = findUnitOption(unitId);
-    if (!unit) return;
+  (_, oldValues) => {
+    syncUnitPricing(detailForm.value, {}, oldValues?.[1], oldValues?.[2], oldValues?.[3], isInitializingDetailDialog.value);
+  }
+);
 
-    const oldPaket = oldValues?.[1];
-    const oldMode = oldValues?.[2];
-    const oldPackageId = oldValues?.[3];
+watch(
+  () => [
+    rollingForm.value.unit_id_lama,
+    rollingForm.value.paket_sewa_lama,
+    rollingForm.value.pricing_mode_lama,
+    rollingForm.value.pricing_package_id_lama,
+    unitOptions.value
+  ],
+  (_, oldValues) => {
+    syncUnitPricing(rollingForm.value, {
+      unitField: 'unit_id_lama',
+      paketField: 'paket_sewa_lama',
+      modeField: 'pricing_mode_lama',
+      packageField: 'pricing_package_id_lama',
+      mobilField: 'harga_mobil_lama',
+      allInField: 'harga_all_in_lama',
+      modalField: 'modal_mobil_lama',
+    }, oldValues?.[1], oldValues?.[2], oldValues?.[3], isInitializingRollingDialog.value);
+  }
+);
 
-    const paketChanged = paket !== oldPaket;
-    const modeChanged = pricingMode !== oldMode;
-    const packageChanged = packageId !== oldPackageId;
-    const userTriggeredRefill = paketChanged || modeChanged || packageChanged;
-
-    const isInit = isInitializingDetailDialog.value;
-    const currentHargaMobil = detailForm.value.harga_mobil || 0;
-    const currentHargaAllIn = detailForm.value.harga_all_in || 0;
-
-    // Aturan auto-fill harga:
-    //   - Saat init: fill bila harga current ≤ 1, preserve bila > 1.
-    //   - Post-init paket/mode/package change: selalu re-fill (user pilih paket/mode/package berbeda).
-    //   - Post-init unit_id change atau unitOptions arrive: fill bila ≤ 1, preserve bila > 1.
-    const shouldFillMobil = isInit
-      ? currentHargaMobil <= 1
-      : userTriggeredRefill
-        ? true
-        : currentHargaMobil <= 1;
-
-    const shouldFillAllIn = isInit
-      ? currentHargaAllIn <= 1
-      : userTriggeredRefill
-        ? true
-        : currentHargaAllIn <= 1;
-
-    // Modal mengikuti aturan yang sama: prefill dari unit selama belum diisi manual.
-    const currentModal = detailForm.value.modal_mobil || 0;
-    if (userTriggeredRefill || currentModal <= 1) {
-      detailForm.value.modal_mobil = getUnitModalByPaket(unit, paket, pricingMode, packageId);
-    }
-
-    if (pricingMode === 'non_all_in') {
-      if (shouldFillMobil) {
-        detailForm.value.harga_mobil = getUnitHargaByPaket(unit, paket);
-      }
-    } else if (pricingMode === 'all_in') {
-      if (shouldFillMobil) {
-        detailForm.value.harga_mobil = getUnitHargaByPaket(unit, 'harian');
-      }
-      if (!packageId) {
-        if (shouldFillAllIn) {
-          detailForm.value.harga_all_in = getUnitAllInByPaket(unit, paket);
-        }
-      } else {
-        // pricing package selected: harga_all_in mengikuti package (perilaku existing, tidak berubah)
-        const pkg = findPricingPackage(packageId);
-        if (pkg) {
-          detailForm.value.harga_all_in = pkg.harga || 0;
-        }
-      }
-    }
+watch(
+  () => [
+    rollingForm.value.unit_id,
+    rollingForm.value.paket_sewa,
+    rollingForm.value.pricing_mode,
+    rollingForm.value.pricing_package_id,
+    unitOptions.value
+  ],
+  (_, oldValues) => {
+    syncUnitPricing(rollingForm.value, {}, oldValues?.[1], oldValues?.[2], oldValues?.[3], isInitializingRollingDialog.value);
   }
 );
 
@@ -1232,8 +1383,8 @@ watch(
   }
 );
 
-const syncAllInOperationalCosts = (target, duration, costKey = 'costs', packageIdKey = 'pricing_package_id') => {
-  if (target.pricing_mode !== 'all_in') {
+const syncAllInOperationalCosts = (target, duration, costKey = 'costs', packageIdKey = 'pricing_package_id', modeKey = 'pricing_mode') => {
+  if (target[modeKey] !== 'all_in') {
     if (target[costKey]) {
       target[costKey] = target[costKey].filter(cost => !cost._all_in_package_cost);
     }
@@ -1321,6 +1472,7 @@ watch(
     rollingForm.value.lama_sewa,
   ],
   () => {
+    if (isInitializingRollingDialog.value) return;
     syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa || 1, 'costs', 'pricing_package_id');
   }
 );
@@ -1332,7 +1484,8 @@ watch(
     rollingForm.value.lama_sewa_lama,
   ],
   () => {
-    syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa_lama || 1, 'costs_lama', 'pricing_package_id_lama');
+    if (isInitializingRollingDialog.value) return;
+    syncAllInOperationalCosts(rollingForm.value, rollingForm.value.lama_sewa_lama || 1, 'costs_lama', 'pricing_package_id_lama', 'pricing_mode_lama');
   }
 );
 
@@ -1421,7 +1574,12 @@ const openDetailDialog = async (detail = null) => {
       pricing_mode: detail.pricing_mode || 'non_all_in',
       pricing_package_id: detail.pricing_package_id || null,
       harga_all_in: hargaAllInVal,
-      costs: detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '', is_additional: !!c.is_additional })) || [],
+      costs: tagPackageCostItems(
+        detail.costs?.map(c => ({ cost_type_id: c.cost_type_id, type: c.type || 'biaya', label: c.label, amount: c.amount, keterangan: c.keterangan || '', is_additional: !!c.is_additional })) || [],
+        detail.pricing_mode,
+        detail.pricing_package_id,
+        detail.lama_sewa || booking.value?.lama_sewa || 1
+      ),
       detail_type: detail.detail_type
     };
   } else {
@@ -1473,8 +1631,8 @@ const openDetailDialog = async (detail = null) => {
 const openPrimaryUnitDialog = () => {
   // Tombol Handle Unit muncul saat unit belum fix ATAU harga unit ready masih 0.
   // Kondisi sama dipakai untuk menentukan apakah save akan auto-handle.
-  const triggersHandle = ['follow_up', 'confirm'].includes(booking.value?.status)
-    && (!hasFixedUnit.value || hasZeroReadyUnitPrice.value);
+  const triggersHandle = booking.value?.status === 'reschedule'
+    || (['follow_up', 'confirm'].includes(booking.value?.status) && (!hasFixedUnit.value || hasZeroReadyUnitPrice.value));
   openDetailDialog(unitActionDetail.value);
   // Set setelah openDetailDialog karena openDetailDialog mereset flag di awal.
   unitDialogTriggersHandle.value = triggersHandle;
@@ -1532,6 +1690,7 @@ const openExtendDialog = () => {
 const openRollingDialog = () => {
   const active = activeDetails.value[0];
   rollingStep.value = 1;
+  isInitializingRollingDialog.value = true;
   rollingForm.value = {
     booking_detail_id: null,
     tgl_rolling: null,
@@ -1565,11 +1724,17 @@ const openRollingDialog = () => {
   };
   applyRollingOldDetail(active);
   showRollingDialog.value = true;
+  setTimeout(() => { isInitializingRollingDialog.value = false; }, 50);
 };
 
 const openBatalDialog = () => {
   batalForm.value = { ada_refund: false, nominal_refund: null, bank_refund: '', no_rek_refund: '', nama_rek_refund: '', catatan_refund: '' };
   showBatalDialog.value = true;
+};
+
+const openRescheduleDialog = () => {
+  rescheduleForm.value = { reschedule_date: null, catatan_status: '' };
+  showRescheduleDialog.value = true;
 };
 
 const openEditBookingDialog = () => {
@@ -1621,7 +1786,10 @@ const onDetailCostTypeChange = (idx, typeId) => {
 
 const onRollingDetailChange = (detailId) => {
   const detail = activeDetails.value.find(item => item.id === detailId);
-  if (detail) applyRollingOldDetail(detail);
+  if (!detail) return;
+  isInitializingRollingDialog.value = true;
+  applyRollingOldDetail(detail);
+  setTimeout(() => { isInitializingRollingDialog.value = false; }, 50);
 };
 
 const onRollingOldUnitChange = (e) => {
@@ -1757,7 +1925,7 @@ const doSubmitDetail = async () => {
     // sehingga handled_by + handled_at terisi.
     const shouldAutoHandle = unitDialogTriggersHandle.value
       && detailDialogMode.value === 'detail'
-      && ['follow_up', 'confirm'].includes(booking.value?.status)
+      && ['follow_up', 'confirm', 'reschedule'].includes(booking.value?.status)
       && hasFixedUnit.value
       && !hasZeroReadyUnitPrice.value;
     unitDialogTriggersHandle.value = false;
@@ -1803,6 +1971,44 @@ const doSubmitDetail = async () => {
 
 const submitDetail = async () => {
   if (loading.value || detailSaving.value) return;
+
+  if (unitDialogTriggersHandle.value && booking.value?.status === 'reschedule') {
+    confirm.require({
+      message: 'Booking akan dipindahkan ke Waiting List dan tidak bisa dibatalkan. Lanjutkan simpan?',
+      header: 'Konfirmasi Jadwalkan Ulang',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Ya, Simpan',
+      rejectLabel: 'Batal',
+      acceptClass: 'app-dialog-button app-dialog-button-primary',
+      rejectClass: 'app-dialog-button app-dialog-button-secondary',
+      accept: () => proceedSubmitDetail(),
+    });
+    return;
+  }
+
+  if (['extend', 'edit_extend', 'edit_rolling'].includes(detailDialogMode.value)) {
+    const messages = {
+      extend: 'Proses transaksi Extend ini?',
+      edit_extend: 'Simpan perubahan transaksi Extend ini?',
+      edit_rolling: 'Simpan perubahan transaksi Rolling ini?',
+    };
+    confirm.require({
+      message: messages[detailDialogMode.value],
+      header: 'Konfirmasi Simpan',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Ya, Simpan',
+      rejectLabel: 'Batal',
+      acceptClass: 'app-dialog-button app-dialog-button-warning',
+      rejectClass: 'app-dialog-button app-dialog-button-secondary',
+      accept: () => proceedSubmitDetail(),
+    });
+    return;
+  }
+
+  await proceedSubmitDetail();
+};
+
+const proceedSubmitDetail = async () => {
   if (detailForm.value.tgl_sewa && detailForm.value.tgl_kembali && detailForm.value.tgl_kembali < detailForm.value.tgl_sewa) {
     toast.add({
       severity: 'warn',
@@ -1903,7 +2109,7 @@ const submitExtend = async () => {
   }
 };
 
-const submitRolling = async () => {
+const proceedSubmitRolling = async () => {
   if (loading.value) return;
   try {
     syncRollingOldReturnDate();
@@ -1941,11 +2147,38 @@ const submitRolling = async () => {
   }
 };
 
+const confirmSubmitRolling = () => {
+  confirm.require({
+    message: 'Proses transaksi Rolling ini? Unit lama akan ditutup dan unit baru akan aktif.',
+    header: 'Konfirmasi Rolling',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Ya, Proses',
+    rejectLabel: 'Batal',
+    acceptClass: 'app-dialog-button app-dialog-button-warning',
+    rejectClass: 'app-dialog-button app-dialog-button-secondary',
+    accept: () => proceedSubmitRolling(),
+  });
+};
+
 const submitBatal = async () => {
   if (loading.value) return;
   try {
     await cancel(booking.value.id, batalForm.value);
     showBatalDialog.value = false;
+    loadBooking();
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+const submitReschedule = async () => {
+  if (loading.value || !rescheduleForm.value.catatan_status.trim()) return;
+  try {
+    await reschedule(booking.value.id, {
+      reschedule_date: rescheduleForm.value.reschedule_date?.toISOString() || null,
+      catatan_status: rescheduleForm.value.catatan_status.trim(),
+    });
+    showRescheduleDialog.value = false;
     loadBooking();
   } catch (err) {
     console.error(err);
@@ -2062,18 +2295,15 @@ const printPayment = (payment) => {
 
 const bookingInvoice = computed(() => booking.value?.invoice || null);
 const hasBookingInvoice = computed(() => Boolean(bookingInvoice.value?.id));
+const isBookingInvoicePaidOff = computed(() => bookingInvoice.value?.status === 'paid');
 const canAccessInvoice = computed(() => authStore.hasPermission('finance.receivable'));
+const canPayInvoice = computed(() => authStore.hasPermission('finance.receivable.pay'));
 
 // Invoice action state
 const showGenerateInvoiceDialog = ref(false);
 const showInvoicePaymentDialog = ref(false);
 const showInvoiceHistoryDialog = ref(false);
 const invoiceActionLoading = ref(false);
-
-// True once booking has been moved to waiting_list or beyond
-const isUnitHandled = computed(() =>
-  ['waiting_list', 'rental_unit', 'selesai'].includes(booking.value?.status)
-);
 
 // Whether the current invoice has amount changes requiring a refresh
 const hasBookingInvoiceChange = computed(() =>
@@ -2093,12 +2323,31 @@ const canRefreshBookingInvoice = computed(() => {
 const invoiceForPayment = ref(null);
 
 // Booking payload for GenerateInvoiceDialog
-const invoiceBookingPayload = computed(() => [{
-  id: booking.value?.id,
-  kode_booking: booking.value?.kode_booking,
-  total: bookingTotalTagihan.value || 0,
-  due_date: primaryUnitDetail.value?.tgl_kembali || null,
-}]);
+const invoiceBookingPayload = computed(() => {
+  const detail = primaryUnitDetail.value;
+  const unit = detail?.unit;
+  const vehicleName = unit ? `${unit.merk} ${unit.tipe}` : (detail?.unit_placeholder || null);
+  const total = bookingTotalTagihan.value || 0;
+  const sudahBayar = bookingTotalPayments.value || 0;
+  const sisa = bookingSisaTagihan.value || 0;
+
+  return [{
+    id: booking.value?.id,
+    kode_booking: booking.value?.kode_booking,
+    total,
+    invoiceable_balance: sisa,
+    has_active_invoice: hasBookingInvoice.value,
+    status: booking.value?.status,
+    customer_name: booking.value?.customer?.nama || null,
+    vehicle_name: vehicleName,
+    vehicle_plate: unit?.no_polisi || null,
+    driver_name: detail?.driver?.nama || null,
+    tgl_sewa: detail?.tgl_sewa || null,
+    tgl_kembali: detail?.tgl_kembali || null,
+    due_date: detail?.tgl_kembali || null,
+    total_biaya: { total, sudah_bayar: sudahBayar, sisa },
+  }];
+});
 
 const onAddPaymentClick = () => {
   if (hasBookingInvoice.value) {
@@ -2305,6 +2554,62 @@ const paymentStatusLabel = (status) => {
   return map[status || 'active'] || status;
 };
 
+// Batal Extend (request → supervisor approve/reject), mirip flow void pembayaran di atas.
+const showCancelExtendDialog = ref(false);
+const showRejectCancelExtendDialog = ref(false);
+const selectedCancelExtendDetail = ref(null);
+const cancelExtendForm = ref({ reason: '' });
+const rejectCancelExtendForm = ref({ rejection_note: '' });
+const cancelExtendFormErrors = ref({});
+
+const openCancelExtendDialog = (detail) => {
+  selectedCancelExtendDetail.value = detail;
+  cancelExtendForm.value = { reason: '' };
+  cancelExtendFormErrors.value = {};
+  showCancelExtendDialog.value = true;
+};
+
+const submitCancelExtendRequest = async () => {
+  if (loading.value) return;
+  cancelExtendFormErrors.value = {};
+  try {
+    await requestCancelExtend(selectedCancelExtendDetail.value.id, cancelExtendForm.value.reason);
+    showCancelExtendDialog.value = false;
+    await loadBooking();
+  } catch (err) {
+    if (err.response?.data?.errors) cancelExtendFormErrors.value = err.response.data.errors;
+    console.error(err);
+  }
+};
+
+const approveCancelExtendRequest = (detail) => {
+  confirm.require({
+    message: 'Setujui pembatalan transaksi Extend ini? Tagihan akan dikoreksi sesuai durasi sebelum extend.',
+    header: 'ACC Batal Extend',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'ACC Batal',
+    rejectLabel: 'Batal',
+    acceptClass: 'p-button-danger',
+    accept: async () => {
+      await approveCancelExtend(detail.id);
+      await loadBooking();
+    },
+  });
+};
+
+const openRejectCancelExtendDialog = (detail) => {
+  selectedCancelExtendDetail.value = detail;
+  rejectCancelExtendForm.value = { rejection_note: '' };
+  showRejectCancelExtendDialog.value = true;
+};
+
+const submitRejectCancelExtend = async () => {
+  if (loading.value) return;
+  await rejectCancelExtend(selectedCancelExtendDetail.value.id, rejectCancelExtendForm.value);
+  showRejectCancelExtendDialog.value = false;
+  await loadBooking();
+};
+
 // E4: Checkout & Complete dialogs
 const showCheckoutDialog = ref(false);
 const showCompleteDialog = ref(false);
@@ -2456,10 +2761,13 @@ const getDialogStateMap = () => ({
   showRollingDialog,
   showStopEarlyDialog,
   showBatalDialog,
+  showRescheduleDialog,
   showPaymentDialog,
   showVoidPaymentDialog,
   showRejectVoidDialog,
   showAdditionalCostDialog,
+  showCancelExtendDialog,
+  showRejectCancelExtendDialog,
 });
 
 const dialogTitles = {
@@ -2473,10 +2781,13 @@ const dialogTitles = {
   showRollingDialog: 'Ganti Unit',
   showStopEarlyDialog: 'Stop Early',
   showBatalDialog: 'Batalkan Booking',
+  showRescheduleDialog: 'Reschedule Booking',
   showPaymentDialog: 'Tambah Pembayaran',
   showVoidPaymentDialog: 'Request Void Pembayaran',
   showRejectVoidDialog: 'Tolak Void Pembayaran',
   showAdditionalCostDialog: 'Tambah Biaya/Diskon Tambahan',
+  showCancelExtendDialog: 'Request Batal Extend',
+  showRejectCancelExtendDialog: 'Tolak Batal Extend',
 };
 
 const closeDialogSilently = (dialogKey) => {
@@ -2553,9 +2864,10 @@ const auditUserName = (user) => user?.name || '-';
         <Button v-if="booking && ['follow_up', 'confirm'].includes(booking.status)" label="Waiting List" icon="pi pi-check-circle" class="detail-primary-action" @click="onHandle" :loading="loading" :disabled="!canHandleBooking" :title="canHandleBooking ? 'Pindahkan ke Waiting List' : 'Isi unit kendaraan terlebih dahulu'" />
         <Button v-if="booking && booking.status === 'waiting_list'" label="Checkout" icon="pi pi-sign-out" class="detail-primary-action" @click="openCheckoutDialog" :loading="loading" />
         <Button v-if="booking && booking.status === 'rental_unit'" label="Selesai" icon="pi pi-flag-fill" class="detail-primary-action" @click="openCompleteDialog" :loading="loading" />
+        <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list'].includes(booking.status)" label="Reschedule" icon="pi pi-calendar-times" severity="warning" outlined class="detail-secondary-action" @click="openRescheduleDialog" :loading="loading" />
         <Button v-if="booking && !['selesai', 'batal', 'cancelled'].includes(booking.status)" label="Batalkan" icon="pi pi-ban" severity="danger" outlined class="detail-secondary-action" @click="openBatalDialog" :loading="loading" />
-        <!-- Buat Invoice: unit sudah handled, belum ada invoice, punya akses finance -->
-        <Button v-if="booking && ['waiting_list', 'rental_unit'].includes(booking.status) && !hasBookingInvoice && canAccessInvoice" label="Buat Invoice" icon="pi pi-file-plus" severity="secondary" outlined class="detail-secondary-action" @click="showGenerateInvoiceDialog = true" />
+        <!-- Buat Invoice: unit sudah handled, belum ada invoice (atau invoice sebelumnya sudah lunas), punya akses finance -->
+        <Button v-if="booking && ['follow_up', 'confirm', 'waiting_list', 'rental_unit'].includes(booking.status) && (!hasBookingInvoice || isBookingInvoicePaidOff) && canAccessInvoice" label="Buat Invoice" icon="pi pi-file-plus" severity="success" outlined class="detail-secondary-action" @click="showGenerateInvoiceDialog = true" />
         <!-- Kirim Invoice + Print PDF: invoice sudah ada -->
         <template v-if="booking && hasBookingInvoice && canAccessInvoice">
           <Button label="Kirim Invoice" icon="pi pi-send" severity="secondary" outlined class="detail-secondary-action" :loading="invoiceActionLoading" @click="sendInvoice" />
@@ -2701,7 +3013,7 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h2 class="text-base font-bold text-slate-800">Unit Kendaraan & Driver</h2>
             </div>
-            <Button :label="unitActionLabel" :icon="unitActionIcon" size="small" class="bg-emerald-600 hover:bg-emerald-700 border-none font-semibold rounded-lg px-3.5 py-2 text-white text-xs shadow-sm transition-all" @click="openPrimaryUnitDialog" v-if="['follow_up', 'confirm', 'waiting_list'].includes(booking.status)" />
+            <Button :label="unitActionLabel" :icon="unitActionIcon" size="small" class="bg-emerald-600 hover:bg-emerald-700 border-none font-semibold rounded-lg px-3.5 py-2 text-white text-xs shadow-sm transition-all" @click="openPrimaryUnitDialog" v-if="['follow_up', 'confirm', 'waiting_list', 'reschedule'].includes(booking.status)" />
           </div>
 
           <div class="p-6">
@@ -2727,10 +3039,12 @@ const auditUserName = (user) => user?.name || '-';
                 <div v-if="detail.detail_type === 'extend'" class="px-5 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-700">
                   <i class="pi pi-calendar-plus text-[11px]"></i>
                   Ada Transaksi Extend
+                  <span v-if="detail.created_by_user" class="ml-auto font-semibold normal-case">oleh {{ auditUserName(detail.created_by_user) }}</span>
                 </div>
                 <div v-else-if="detail.detail_type === 'rolling'" class="px-5 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-700">
                   <i class="pi pi-sync text-[11px]"></i>
                   Ada Transaksi Rolling
+                  <span v-if="detail.created_by_user" class="ml-auto font-semibold normal-case">oleh {{ auditUserName(detail.created_by_user) }}</span>
                 </div>
                 <!-- Unit Header -->
                 <div class="p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-slate-50/40">
@@ -2797,6 +3111,20 @@ const auditUserName = (user) => user?.name || '-';
                         formatCurrency(detailBillableCostTotal(detail)) }}
                     </div>
                     <Button v-if="canEditDetailTransaction(detail)" :label="detail.detail_type === 'rolling' ? 'Edit Rolling' : (detail.detail_type === 'extend' ? 'Edit Extend' : 'Edit Transaksi Awal')" icon="pi pi-pencil" size="small" outlined :severity="detail.detail_type === 'rolling' ? 'info' : (detail.detail_type === 'extend' ? 'warning' : 'success')" class="mt-3 rounded-lg font-semibold text-xs px-3 py-1.5" @click="openDetailDialog(detail)" />
+
+                    <template v-if="detail.detail_type === 'extend' && detail.id === lastExtendDetail?.id && detail.status === 'aktif'">
+                      <Button v-if="detail.cancel_extend_status !== 'pending'" label="Batal Extend" icon="pi pi-ban" size="small" outlined severity="danger" class="mt-2 rounded-lg font-semibold text-xs px-3 py-1.5" @click="openCancelExtendDialog(detail)" />
+                      <template v-else>
+                        <Tag value="Menunggu ACC Batal Extend" severity="warning" class="mt-2 text-[10px]" />
+                        <div v-if="canApprovePaymentVoid" class="flex gap-1 mt-1.5">
+                          <Button label="" icon="pi pi-check" size="small" severity="success" text class="text-xs px-2 py-1" @click="approveCancelExtendRequest(detail)" />
+                          <Button label="" icon="pi pi-times" size="small" severity="danger" text class="text-xs px-2 py-1" @click="openRejectCancelExtendDialog(detail)" />
+                        </div>
+                      </template>
+                      <p v-if="detail.cancel_extend_status === 'rejected' && detail.cancel_extend_rejection_note" class="text-[10px] text-rose-500 mt-1 max-w-[180px]">
+                        Ditolak: {{ detail.cancel_extend_rejection_note }}
+                      </p>
+                    </template>
                   </div>
                 </div>
 
@@ -2932,12 +3260,10 @@ const auditUserName = (user) => user?.name || '-';
               </div>
               <h3 class="text-sm font-bold text-slate-800">Pembayaran</h3>
             </div>
-            <!-- Tambah: sebelum unit di-handle (follow_up / confirm) -->
-            <Button v-if="!isUnitHandled && !['cancelled', 'batal'].includes(booking.status)" label="Tambah" icon="pi pi-plus" size="small" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran booking" @click="openPaymentDialog" />
-            <!-- Perbarui Invoice: unit sudah di-handle & invoice perlu update -->
-            <Button v-else-if="isUnitHandled && hasBookingInvoice && canRefreshBookingInvoice" label="Perbarui Invoice" icon="pi pi-refresh" size="small" class="bg-amber-500 hover:bg-amber-600 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Invoice perlu diperbarui karena ada perubahan biaya" :loading="invoiceActionLoading" @click="refreshBookingInvoice" />
-            <!-- Bayar Invoice: unit sudah di-handle & invoice ada & tidak perlu update -->
-            <Button v-else-if="isUnitHandled && hasBookingInvoice && !['cancelled', 'batal'].includes(booking.status)" label="Bayar Invoice" icon="pi pi-wallet" size="small" :disabled="['paid', 'void'].includes(bookingInvoice?.status) || invoiceActionLoading" :loading="invoiceActionLoading" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran invoice" @click="openInvoicePaymentDialog" />
+            <!-- Perbarui Invoice: invoice ada & perlu update -->
+            <Button v-if="hasBookingInvoice && canRefreshBookingInvoice" label="Perbarui Invoice" icon="pi pi-refresh" size="small" class="bg-amber-500 hover:bg-amber-600 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Invoice perlu diperbarui karena ada perubahan biaya" :loading="invoiceActionLoading" @click="refreshBookingInvoice" />
+            <!-- Bayar Invoice: invoice ada & tidak perlu update -->
+            <Button v-else-if="hasBookingInvoice && canPayInvoice && !['cancelled', 'batal'].includes(booking.status)" label="Bayar Invoice" icon="pi pi-wallet" size="small" :disabled="['paid', 'void'].includes(bookingInvoice?.status) || invoiceActionLoading" :loading="invoiceActionLoading" class="bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-semibold px-3 py-1.5 rounded-lg" title="Catat pembayaran invoice" @click="openInvoicePaymentDialog" />
           </div>
 
           <div v-if="!booking.payments?.length && !booking.cancellation?.ada_refund" class="p-6 text-center text-slate-400">
@@ -3030,7 +3356,7 @@ const auditUserName = (user) => user?.name || '-';
           </div>
         </div>
 
-        <!-- Invoice History Card -->
+        <!-- Invoice Activity Card -->
         <div v-if="hasBookingInvoice && canAccessInvoice" class="app-card overflow-hidden">
           <div class="app-section-header px-5 py-4 flex justify-between items-center">
             <div class="flex items-center gap-2.5">
@@ -3038,14 +3364,14 @@ const auditUserName = (user) => user?.name || '-';
                 <i class="pi pi-history text-sm"></i>
               </div>
               <div>
-                <h3 class="text-sm font-bold text-slate-800">History Invoice</h3>
+                <h3 class="text-sm font-bold text-slate-800">Riwayat Aktivitas</h3>
                 <p class="text-xs text-slate-400 mt-0.5">
-                  {{ bookingInvoice?.number || bookingInvoice?.invoice_number || '-' }}
+                  Seluruh invoice booking ini
                   <span v-if="hasBookingInvoiceChange" class="ml-1 text-amber-500 font-semibold">(Ada perubahan)</span>
                 </p>
               </div>
             </div>
-            <Button label="Lihat History" icon="pi pi-external-link" size="small" text class="text-indigo-600 font-semibold text-xs" @click="showInvoiceHistoryDialog = true" />
+            <Button label="Lihat Riwayat" icon="pi pi-external-link" size="small" text class="text-indigo-600 font-semibold text-xs" @click="showInvoiceHistoryDialog = true" />
           </div>
         </div>
       </div>
@@ -3351,7 +3677,7 @@ const auditUserName = (user) => user?.name || '-';
                 <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                   <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> {{ detailPriceInputLabel }}
                 </label>
-                <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedDetailUnit" @click="openUnitPriceDialog" />
+                <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedDetailUnit" @click="openUnitPriceDialog(selectedDetailUnit)" />
               </div>
               <InputNumber v-model="detailPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
               <small class="text-xs text-slate-400">{{ detailPriceInputHint }}</small>
@@ -3378,7 +3704,7 @@ const auditUserName = (user) => user?.name || '-';
               <SelectButton v-model="detailForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             </div>
             <div v-if="detailForm.pricing_mode === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." filter @filter="onPricingPackageFilter" showClear class="w-full" @change="onDetailPackageChange" />
+              <Dropdown v-model="detailForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." filter @filter="onPricingPackageFilter" showClear class="w-full" />
               <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
@@ -3461,6 +3787,12 @@ const auditUserName = (user) => user?.name || '-';
           <Tag v-if="selectedDetailUnit" :value="unitStatusMeta(selectedDetailUnit.status).label" :severity="unitStatusMeta(selectedDetailUnit.status).severity" />
         </div>
 
+        <div class="unit-price-location">
+          <label class="text-xs font-semibold text-slate-600">Kota Unit *</label>
+          <Dropdown v-model="unitPriceForm.city_id" :options="cityOptions" optionLabel="label" optionValue="id" placeholder="Pilih kota unit" filter :filterFields="['searchableLabel', 'label']" :loading="citiesLoading" class="w-full" :class="{ 'p-invalid': unitPriceErrors.city_id }" :empty-message="'Belum ada kota aktif'" @filter="onCityFilter" />
+          <small v-if="unitPriceErrors.city_id" class="p-error">{{ unitPriceErrors.city_id }}</small>
+        </div>
+
         <div class="unit-price-grid">
           <section class="unit-price-section">
             <h3>Harga Lepas Kunci</h3>
@@ -3539,7 +3871,7 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="showUnitPriceDialog = false" />
-          <Button label="Simpan Harga" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" :loading="unitPriceSaving" :disabled="unitPriceSaving" @click="saveUnitPrice(unitPriceForm)" />
+          <Button label="Simpan Harga" icon="pi pi-save" class="app-dialog-button app-dialog-button-primary" :loading="unitPriceSaving" :disabled="unitPriceSaving || !unitPriceForm.city_id" @click="saveUnitPrice(unitPriceForm)" />
         </div>
       </template>
     </Dialog>
@@ -3712,11 +4044,31 @@ const auditUserName = (user) => user?.name || '-';
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Lama *</label>
-              <Dropdown v-model="rollingForm.unit_id_lama" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" class="w-full" @filter="onUnitFilter" @change="onRollingOldUnitChange" />
+              <Dropdown v-model="rollingForm.unit_id_lama" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" class="w-full" @filter="onUnitFilter" @change="onRollingOldUnitChange">
+                <template #option="{ option }">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex flex-col">
+                      <span class="font-semibold text-slate-800">{{ option.merk }} {{ option.tipe }}</span>
+                      <span class="text-xs text-slate-500">{{ option.no_polisi }} - {{ option.rental_owner?.nama ||
+                        'Internal' }}</span>
+                    </div>
+                    <Tag :value="option.status" :severity="option.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+                  </div>
+                </template>
+              </Dropdown>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
               <Dropdown v-model="rollingForm.driver_id_lama" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
+            </div>
+          </div>
+          <div v-if="selectedRollingOldUnit" class="app-muted-panel p-3 text-sm mt-3">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{ selectedRollingOldUnit.no_polisi }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Pemilik</span><strong>{{ selectedRollingOldUnit.rental_owner?.nama || 'Internal' }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Status</span>
+                <Tag :value="selectedRollingOldUnit.status" :severity="selectedRollingOldUnit.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+              </div>
             </div>
           </div>
         </fieldset>
@@ -3747,27 +4099,36 @@ const auditUserName = (user) => user?.name || '-';
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Harga & Mode Tagihan Lama
           </legend>
           <div class="flex flex-col gap-3 mt-2">
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-                <InputNumber v-model="rollingForm.harga_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
-                <small class="text-xs text-slate-400">Prefill dari unit & paket sewa, bisa diubah manual.</small>
+                <div class="detail-price-label-row">
+                  <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                    <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> {{ rollingOldPriceInputLabel }}
+                  </label>
+                  <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedRollingOldUnit" @click="openUnitPriceDialog(selectedRollingOldUnit)" />
+                </div>
+                <InputNumber v-model="rollingOldPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+                <small class="text-xs text-slate-400">{{ rollingOldPriceInputHint }}</small>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-600">Diskon</label>
+                <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <i class="pi pi-percentage text-orange-500 text-[11px]"></i> Diskon
+                </label>
                 <InputNumber v-model="rollingForm.diskon_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
                 <small class="text-xs text-slate-400">Total diskon untuk periode sewa (tidak dikali hari).</small>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-600">Harga Modal / periode</label>
+                <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <i class="pi pi-database text-blue-500 text-[11px]"></i> Harga Modal / periode
+                </label>
                 <InputNumber v-model="rollingForm.modal_mobil_lama" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
-                <small class="text-xs text-slate-400">Prefill dari unit, disimpan sebagai snapshot booking.</small>
+                <small class="text-xs text-slate-400">Prefill dari unit, bisa diubah manual dan disimpan sebagai snapshot booking.</small>
               </div>
             </div>
             <SelectButton v-model="rollingForm.pricing_mode_lama" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             <div v-if="rollingForm.pricing_mode_lama === 'all_in'" class="flex flex-col gap-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingOldPackageChange" />
-              <InputNumber v-if="!rollingForm.pricing_package_id_lama" v-model="rollingForm.harga_all_in_lama" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+              <Dropdown v-model="rollingForm.pricing_package_id_lama" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" />
+              <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
         </fieldset>
@@ -3775,22 +4136,43 @@ const auditUserName = (user) => user?.name || '-';
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional Lama
           </legend>
-          <div class="flex flex-col gap-2 mt-2">
-            <div v-if="!rollingForm.costs_lama.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.
+          <div class="flex flex-col gap-3 mt-3">
+            <div v-if="!rollingForm.costs_lama.length" class="text-center text-sm text-slate-400 py-5 border border-dashed border-slate-200 rounded-lg bg-white">
+              Belum ada biaya operasional.
             </div>
-            <div v-for="(cost, idx) in rollingForm.costs_lama" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4">
-                <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingOldCostTypeChange(idx, cost.cost_type_id)" />
+            <div v-for="(cost, idx) in rollingForm.costs_lama" :key="idx" class="rounded-lg border border-slate-200 bg-white p-3">
+              <div class="flex items-center justify-between gap-3 mb-3">
+                <span class="text-xs font-bold text-slate-500">Item {{ idx + 1 }}</span>
+                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs_lama.splice(idx, 1)" />
               </div>
-              <div class="col-span-4">
-                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Tipe Master</label>
+                  <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Pilih tipe" filter @filter="onCostTypeFilter" showClear class="w-full" @change="onRollingOldCostTypeChange(idx, cost.cost_type_id)" />
+                </div>
+                <div class="md:col-span-3 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Biaya / Diskon</label>
+                  <Dropdown v-model="cost.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                </div>
+                <div class="md:col-span-5 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Keterangan</label>
+                  <InputText v-model="cost.label" placeholder="Misal: Fee driver luar kota" class="w-full" />
+                </div>
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Nominal</label>
+                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa_lama || 1)" />
+                </div>
+                <div v-if="rollingForm.pricing_mode_lama === 'all_in'" class="md:col-span-4 flex items-center gap-2 pt-5">
+                  <Checkbox v-model="cost.is_additional" :binary="true" :inputId="`rolling-old-cost-additional-${idx}`" />
+                  <label :for="`rolling-old-cost-additional-${idx}`" class="text-[11px] font-semibold text-slate-500">Di luar All In</label>
+                </div>
+                <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" class="md:col-span-8 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Detail Tambahan</label>
+                  <InputText v-model="cost.keterangan" placeholder="Detail sesuai tipe biaya" class="w-full" />
+                </div>
               </div>
-              <div class="col-span-3">
-                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa_lama || 1)" />
-              </div>
-              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs_lama.splice(idx, 1)" /></div>
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs_lama.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '' })" />
+            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs_lama.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: false })" />
           </div>
         </fieldset>
 
@@ -3818,11 +4200,31 @@ const auditUserName = (user) => user?.name || '-';
           <div class="grid grid-cols-2 gap-3 mt-2">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Unit Baru *</label>
-              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onRollingNewUnitChange" class="w-full" />
+              <Dropdown v-model="rollingForm.unit_id" :options="unitOptions" optionLabel="no_polisi" optionValue="id" placeholder="Pilih unit baru" filter :filterFields="['serverSearchLabel', 'searchableLabel', 'normalizedSearchableLabel']" :loading="unitsLoading || unitSearchLoading" @filter="onUnitFilter" @change="onRollingNewUnitChange" class="w-full">
+                <template #option="{ option }">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex flex-col">
+                      <span class="font-semibold text-slate-800">{{ option.merk }} {{ option.tipe }}</span>
+                      <span class="text-xs text-slate-500">{{ option.no_polisi }} - {{ option.rental_owner?.nama ||
+                        'Internal' }}</span>
+                    </div>
+                    <Tag :value="option.status" :severity="option.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+                  </div>
+                </template>
+              </Dropdown>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Driver</label>
               <Dropdown v-model="rollingForm.driver_id" :options="drivers" optionLabel="nama" optionValue="id" placeholder="Lepas kunci / pilih" filter showClear class="w-full" />
+            </div>
+          </div>
+          <div v-if="selectedRollingNewUnit" class="app-muted-panel p-3 text-sm mt-3">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div><span class="text-slate-400 block text-xs">No Polisi</span><strong>{{ selectedRollingNewUnit.no_polisi }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Pemilik</span><strong>{{ selectedRollingNewUnit.rental_owner?.nama || 'Internal' }}</strong></div>
+              <div><span class="text-slate-400 block text-xs">Status</span>
+                <Tag :value="selectedRollingNewUnit.status" :severity="selectedRollingNewUnit.status === 'Aktif' ? 'success' : 'warning'" class="rounded-md" />
+              </div>
             </div>
           </div>
         </fieldset>
@@ -3838,8 +4240,6 @@ const auditUserName = (user) => user?.name || '-';
               <label class="text-xs font-semibold text-slate-600">Kembali</label>
               <Calendar v-model="rollingForm.tgl_kembali" showTime hourFormat="24" dateFormat="dd M yy" class="w-full" disabled />
             </div>
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
             <div class="flex flex-col gap-1.5">
               <label class="text-xs font-semibold text-slate-600">Lama Sewa</label>
               <Dropdown v-model="rollingForm.lama_sewa" :options="lamaSewaOptions" optionLabel="label" optionValue="value" placeholder="Lama" class="w-full" disabled />
@@ -3848,47 +4248,80 @@ const auditUserName = (user) => user?.name || '-';
               <label class="text-xs font-semibold text-slate-600">Paket</label>
               <Dropdown v-model="rollingForm.paket_sewa" :options="paketOptions" optionLabel="label" optionValue="value" class="w-full" disabled />
             </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Harga Mobil *</label>
-              <InputNumber v-model="rollingForm.harga_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
-              <small class="text-xs text-slate-400">Prefill dari unit & paket sewa, bisa diubah manual.</small>
+              <div class="detail-price-label-row">
+                <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <i class="pi pi-wallet text-emerald-500 text-[11px]"></i> {{ rollingNewPriceInputLabel }}
+                </label>
+                <Button label="Edit Harga Unit" icon="pi pi-pencil" text size="small" class="detail-price-action" :disabled="!selectedRollingNewUnit" @click="openUnitPriceDialog(selectedRollingNewUnit)" />
+              </div>
+              <InputNumber v-model="rollingNewPriceInputValue" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
+              <small class="text-xs text-slate-400">{{ rollingNewPriceInputHint }}</small>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Diskon</label>
+              <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                <i class="pi pi-percentage text-orange-500 text-[11px]"></i> Diskon
+              </label>
               <InputNumber v-model="rollingForm.diskon_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
               <small class="text-xs text-slate-400">Total diskon untuk periode sewa (tidak dikali hari).</small>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-600">Harga Modal / periode</label>
+              <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                <i class="pi pi-database text-blue-500 text-[11px]"></i> Harga Modal / periode
+              </label>
               <InputNumber v-model="rollingForm.modal_mobil" mode="currency" currency="IDR" locale="id-ID" class="w-full" />
-              <small class="text-xs text-slate-400">Prefill dari unit, disimpan sebagai snapshot booking.</small>
+              <small class="text-xs text-slate-400">Prefill dari unit, bisa diubah manual dan disimpan sebagai snapshot booking.</small>
             </div>
           </div>
           <div class="mt-3">
             <SelectButton v-model="rollingForm.pricing_mode" :options="pricingModeOptions" optionLabel="label" optionValue="value" class="w-full" />
             <div v-if="rollingForm.pricing_mode === 'all_in'" class="flex flex-col gap-2 mt-3 p-3 bg-cyan-50 border border-cyan-100 rounded-xl">
-              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket..." showClear class="w-full" @change="onRollingNewPackageChange" />
-              <InputNumber v-if="!rollingForm.pricing_package_id" v-model="rollingForm.harga_all_in" mode="currency" currency="IDR" locale="id-ID" placeholder="Harga All In manual" class="w-full" />
+              <Dropdown v-model="rollingForm.pricing_package_id" :options="packageOptions" optionLabel="label" optionValue="id" placeholder="Pilih paket All In..." showClear class="w-full" />
+              <p class="text-xs text-cyan-700">Harga All In dikalikan lama sewa pada tagihan konsumen.</p>
             </div>
           </div>
         </fieldset>
         <fieldset class="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
           <legend class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-2">Biaya Operasional</legend>
-          <div class="flex flex-col gap-2 mt-2">
-            <div v-if="!rollingForm.costs.length" class="text-center text-sm text-slate-400 py-2">Belum ada biaya.</div>
-            <div v-for="(cost, idx) in rollingForm.costs" :key="idx" class="grid grid-cols-12 gap-2 items-center">
-              <div class="col-span-4">
-                <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Tipe" class="w-full" showClear @change="onRollingNewCostTypeChange(idx, cost.cost_type_id)" />
-              </div>
-              <div class="col-span-4">
-                <InputText v-model="cost.label" placeholder="Keterangan" class="w-full" />
-              </div>
-              <div class="col-span-3">
-                <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa || 1)" />
-              </div>
-              <div class="col-span-1"><Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs.splice(idx, 1)" /></div>
+          <div class="flex flex-col gap-3 mt-3">
+            <div v-if="!rollingForm.costs.length" class="text-center text-sm text-slate-400 py-5 border border-dashed border-slate-200 rounded-lg bg-white">
+              Belum ada biaya operasional.
             </div>
-            <Button label="+ Tambah Biaya" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: 0 })" />
+            <div v-for="(cost, idx) in rollingForm.costs" :key="idx" class="rounded-lg border border-slate-200 bg-white p-3">
+              <div class="flex items-center justify-between gap-3 mb-3">
+                <span class="text-xs font-bold text-slate-500">Item {{ idx + 1 }}</span>
+                <Button icon="pi pi-times" text rounded severity="danger" size="small" class="w-7 h-7 p-0" @click="rollingForm.costs.splice(idx, 1)" />
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Tipe Master</label>
+                  <Dropdown v-model="cost.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" placeholder="Pilih tipe" filter @filter="onCostTypeFilter" showClear class="w-full" @change="onRollingNewCostTypeChange(idx, cost.cost_type_id)" />
+                </div>
+                <div class="md:col-span-3 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Biaya / Diskon</label>
+                  <Dropdown v-model="cost.type" :options="additionalTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                </div>
+                <div class="md:col-span-5 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Keterangan</label>
+                  <InputText v-model="cost.label" placeholder="Misal: Fee driver luar kota" class="w-full" />
+                </div>
+                <div class="md:col-span-4 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Nominal</label>
+                  <InputNumber v-model="cost.amount" mode="currency" currency="IDR" locale="id-ID" class="w-full" @update:modelValue="(val) => onCostAmountUpdate(cost, val, rollingForm.lama_sewa || 1)" />
+                </div>
+                <div v-if="rollingForm.pricing_mode === 'all_in'" class="md:col-span-4 flex items-center gap-2 pt-5">
+                  <Checkbox v-model="cost.is_additional" :binary="true" :inputId="`rolling-new-cost-additional-${idx}`" />
+                  <label :for="`rolling-new-cost-additional-${idx}`" class="text-[11px] font-semibold text-slate-500">Di luar All In</label>
+                </div>
+                <div v-if="costTypesMaster.find(c => c.id === cost.cost_type_id)?.require_description" class="md:col-span-8 flex flex-col gap-1.5">
+                  <label class="text-[11px] font-semibold text-slate-500">Detail Tambahan</label>
+                  <InputText v-model="cost.keterangan" placeholder="Detail sesuai tipe biaya" class="w-full" />
+                </div>
+              </div>
+            </div>
+            <Button label="+ Tambah Biaya" icon="pi pi-plus" text size="small" class="text-blue-600 font-semibold self-start" @click="rollingForm.costs.push({ cost_type_id: null, type: 'biaya', label: '', amount: 0, keterangan: '', is_additional: false })" />
           </div>
         </fieldset>
         <div class="bg-slate-900 rounded-xl p-4 text-white">
@@ -3907,9 +4340,9 @@ const auditUserName = (user) => user?.name || '-';
       <template #footer>
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Batal" icon="pi pi-times" text @click="requestCloseDialog('showRollingDialog')" />
-          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="app-dialog-button app-dialog-button-info" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
+          <Button v-if="rollingStep === 1" label="Lanjut" icon="pi pi-arrow-right" iconPos="right" class="app-dialog-button app-dialog-button-warning" @click="() => { syncRollingOldReturnDate(); syncRollingNewSchedule(); rollingStep = 2; }" />
           <Button v-if="rollingStep === 2" label="Kembali" icon="pi pi-arrow-left" text class="text-slate-500" @click="rollingStep = 1" />
-          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-info" @click="submitRolling" :loading="loading" :disabled="loading" />
+          <Button v-if="rollingStep === 2" label="Proses Rolling" icon="pi pi-check" class="app-dialog-button app-dialog-button-warning" @click="confirmSubmitRolling" :loading="loading" :disabled="loading" />
         </div>
       </template>
     </Dialog>
@@ -3982,6 +4415,36 @@ const auditUserName = (user) => user?.name || '-';
         <div class="flex gap-2 justify-end pt-3">
           <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showBatalDialog')" />
           <Button label="Ya, Batalkan Booking" icon="pi pi-ban" class="app-dialog-button app-dialog-button-danger" @click="submitBatal" :loading="loading" :disabled="loading || (batalForm.ada_refund && !batalForm.nominal_refund)" />
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- ======= DIALOG: Reschedule Booking ======= -->
+    <Dialog :visible="showRescheduleDialog" @update:visible="onDialogVisibleChange('showRescheduleDialog', $event)" header="Reschedule Booking" :style="{ width: '440px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-xl">
+          <div class="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
+            <i class="pi pi-calendar-times"></i>
+          </div>
+          <div>
+            <p class="font-bold text-slate-800 mb-0.5">Booking akan dijadwalkan ulang</p>
+            <p class="text-sm text-slate-500">Status berubah ke <strong>Reschedule</strong>. Gunakan tombol "Jadwalkan
+              Ulang" pada detail booking untuk memindahkannya kembali ke Waiting List.</p>
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Tanggal Reschedule <span class="text-slate-400 font-normal">(opsional)</span></label>
+          <Calendar v-model="rescheduleForm.reschedule_date" dateFormat="dd M yy" showIcon class="w-full" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Alasan Reschedule <span class="text-rose-500">*</span></label>
+          <Textarea v-model="rescheduleForm.catatan_status" rows="3" placeholder="Alasan booking dijadwalkan ulang..." class="w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Kembali" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRescheduleDialog')" />
+          <Button label="Ya, Reschedule" icon="pi pi-calendar-times" class="app-dialog-button app-dialog-button-primary" @click="submitReschedule" :loading="loading" :disabled="loading || !rescheduleForm.catatan_status.trim()" />
         </div>
       </template>
     </Dialog>
@@ -4081,6 +4544,40 @@ const auditUserName = (user) => user?.name || '-';
       </template>
     </Dialog>
 
+    <!-- ======= DIALOG: Request Batal Extend ======= -->
+    <Dialog :visible="showCancelExtendDialog" @update:visible="onDialogVisibleChange('showCancelExtendDialog', $event)" header="Request Batal Extend" :style="{ width: '460px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Alasan Batal Extend *</label>
+          <Textarea v-model="cancelExtendForm.reason" rows="3" placeholder="Jelaskan kenapa transaksi Extend ini perlu dibatalkan..." class="w-full" :class="{ 'p-invalid': cancelExtendFormErrors.reason }" />
+          <small class="p-error" v-if="cancelExtendFormErrors.reason">{{ cancelExtendFormErrors.reason[0] }}</small>
+        </div>
+        <p class="text-xs text-slate-400">Request akan dikirim ke supervisor untuk di-ACC. Tagihan baru terkoreksi setelah disetujui.</p>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showCancelExtendDialog')" />
+          <Button label="Kirim Request" icon="pi pi-send" class="app-dialog-button app-dialog-button-danger" @click="submitCancelExtendRequest" :loading="loading" :disabled="loading" />
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- ======= DIALOG: Tolak Batal Extend ======= -->
+    <Dialog :visible="showRejectCancelExtendDialog" @update:visible="onDialogVisibleChange('showRejectCancelExtendDialog', $event)" header="Tolak Batal Extend" :style="{ width: '440px' }" modal class="custom-dialog">
+      <div class="flex flex-col gap-5 pt-2">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-600">Catatan Penolakan</label>
+          <Textarea v-model="rejectCancelExtendForm.rejection_note" rows="3" placeholder="Opsional..." class="w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex gap-2 justify-end pt-3">
+          <Button label="Batal" icon="pi pi-times" text class="text-slate-500 font-semibold px-4" @click="requestCloseDialog('showRejectCancelExtendDialog')" />
+          <Button label="Tolak Request" icon="pi pi-times" class="app-dialog-button app-dialog-button-danger" @click="submitRejectCancelExtend" :loading="loading" :disabled="loading" />
+        </div>
+      </template>
+    </Dialog>
+
     <!-- ======= DIALOG: Additional Cost/Discount ======= -->
     <Dialog :visible="showAdditionalCostDialog" @update:visible="onDialogVisibleChange('showAdditionalCostDialog', $event)" header="Tambah Biaya/Diskon Tambahan" :style="{ width: '460px' }" modal class="custom-dialog">
       <div class="flex flex-col gap-5 pt-2">
@@ -4120,7 +4617,7 @@ const auditUserName = (user) => user?.name || '-';
     <InvoicePaymentDialog v-model="showInvoicePaymentDialog" :invoice="invoiceForPayment" @paid="onInvoicePaid" />
 
     <!-- ======= DIALOG: History Invoice ======= -->
-    <InvoiceHistoryDialog v-model="showInvoiceHistoryDialog" :invoiceId="bookingInvoice?.id" :invoiceNumber="bookingInvoice?.number || bookingInvoice?.invoice_number" />
+    <InvoiceHistoryDialog v-model="showInvoiceHistoryDialog" :bookingId="booking?.id" />
   </div>
 </template>
 
@@ -4161,7 +4658,7 @@ const auditUserName = (user) => user?.name || '-';
   border: 1px solid #B0DDE4;
   border-radius: 9999px;
   color: #085A66;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
   align-self: flex-start;
@@ -4169,7 +4666,7 @@ const auditUserName = (user) => user?.name || '-';
 }
 
 .unit-city-filter-chip i {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.chip-clear-btn.p-button) {
@@ -4178,7 +4675,7 @@ const auditUserName = (user) => user?.name || '-';
   padding: 0 !important;
   border-radius: 50% !important;
   color: #085A66 !important;
-  font-size: 9px;
+  font-size: var(--font-size-9px);
 }
 
 .detail-page-header {
@@ -4195,7 +4692,7 @@ const auditUserName = (user) => user?.name || '-';
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: 0;
@@ -4207,14 +4704,14 @@ const auditUserName = (user) => user?.name || '-';
   gap: var(--space-sm);
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 400;
   line-height: 1.4;
 }
 
 .detail-subtitle i {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 
@@ -4227,7 +4724,7 @@ const auditUserName = (user) => user?.name || '-';
   border-radius: var(--radius-sm);
   background: #FCEAE9;
   color: #B02A24;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -4241,7 +4738,7 @@ const auditUserName = (user) => user?.name || '-';
   min-height: 34px;
   border-radius: var(--radius-full) !important;
   padding: 8px 16px !important;
-  font-size: 12px !important;
+  font-size: var(--font-size-12px) !important;
   font-weight: 600 !important;
   box-shadow: none !important;
 }
@@ -4300,14 +4797,14 @@ const auditUserName = (user) => user?.name || '-';
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
 }
 
 .app-section-header p {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   line-height: 1.4;
 }
 
@@ -4337,7 +4834,7 @@ const auditUserName = (user) => user?.name || '-';
 
 :deep(.detail-price-action.p-button) {
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .unit-price-dialog {
@@ -4360,13 +4857,23 @@ const auditUserName = (user) => user?.name || '-';
 .unit-price-heading span {
   display: block;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.35;
 }
 
 .unit-price-heading strong {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
+}
+
+.unit-price-location {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-default);
+  background: var(--card-bg);
 }
 
 .unit-price-grid {
@@ -4388,7 +4895,7 @@ const auditUserName = (user) => user?.name || '-';
 .unit-price-section h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 700;
 }
 
@@ -4410,7 +4917,7 @@ const auditUserName = (user) => user?.name || '-';
 
 .unit-price-fields :deep(.p-inputtext) {
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   min-height: 36px;
 }
 
@@ -4443,7 +4950,7 @@ const auditUserName = (user) => user?.name || '-';
 .app-card :deep(.status-badge) {
   border-radius: var(--radius-sm);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .app-card :deep(.status-badge.neutral) {
@@ -4486,7 +4993,7 @@ const auditUserName = (user) => user?.name || '-';
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: 0;
@@ -4515,14 +5022,14 @@ const auditUserName = (user) => user?.name || '-';
 .summary-row span,
 .summary-status span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 500;
 }
 
 .summary-row strong {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 500;
   line-height: 1.4;
   text-align: right;
@@ -4547,7 +5054,7 @@ const auditUserName = (user) => user?.name || '-';
 .summary-balance span {
   display: block;
   margin-bottom: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -4555,7 +5062,7 @@ const auditUserName = (user) => user?.name || '-';
 .summary-balance strong {
   display: block;
   font-family: var(--font-headline);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -4572,7 +5079,7 @@ const auditUserName = (user) => user?.name || '-';
 .custom-mini-table :deep(.p-datatable-thead > tr > th) {
   background-color: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -4598,7 +5105,7 @@ const auditUserName = (user) => user?.name || '-';
 :deep(.custom-dialog .p-dialog-header) {
   padding: 1.25rem 1.5rem;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: var(--font-size-1p05rem);
   color: var(--text-primary);
   border-bottom: 1px solid var(--surface-border);
 }
@@ -4616,7 +5123,7 @@ const auditUserName = (user) => user?.name || '-';
   min-height: 36px;
   border-radius: var(--radius-full) !important;
   padding: 8px 18px !important;
-  font-size: 12px !important;
+  font-size: var(--font-size-12px) !important;
   font-weight: 600 !important;
   box-shadow: none !important;
   transition: opacity 0.2s ease, background-color 0.2s ease;
@@ -4689,7 +5196,7 @@ fieldset legend {
 
 .cost-mini-box span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -4697,7 +5204,7 @@ fieldset legend {
 
 .cost-mini-box strong {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 @media (min-width: 1024px) {
@@ -4809,7 +5316,7 @@ fieldset legend {
   }
 
   .detail-title {
-    font-size: 18px;
+    font-size: var(--font-size-18px);
     overflow-wrap: anywhere;
   }
 

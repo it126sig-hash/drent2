@@ -16,9 +16,12 @@ import BookingStatusBadge from '../../components/bookings/BookingStatusBadge.vue
 import { useCostType } from '../../composables/useCostType'
 import { useOperationalFund } from '../../composables/useOperationalFund'
 import { usePaymentAccount } from '../../composables/usePaymentAccount'
+import { useAuthStore } from '../../stores/auth'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const canDisburseFund = computed(() => authStore.hasPermission('finance.operational_cost.create'))
 const {
   bookings,
   history,
@@ -445,12 +448,17 @@ const detailBudgetBreakdown = (detail) => {
   const operationalCosts = (detail?.costs || []).filter(cost => cost.type === 'biaya')
   if (operationalCosts.length > 0) {
     return operationalCosts.map(c => ({
+      cost_type_id: c.cost_type_id,
       label: c.cost_type?.kode === 'driver' ? 'Gaji Driver' : (c.label || c.cost_type?.nama || 'Biaya'),
       keterangan: c.keterangan || '',
       amount: c.amount,
     }))
   }
   return []
+}
+
+const onExpenseCostTypeChange = () => {
+  // Sesuai request, nominal tidak langsung terisi otomatis saat memilih cost type
 }
 
 const expenseDialogDetail = computed(() => {
@@ -519,7 +527,7 @@ const detailRealizationBreakdown = (booking, detail) => {
   const fundExpenses = detailFunds(booking, detail)
     .filter(fund => Array.isArray(fund.expenses))
     .flatMap(fund => fund.expenses)
-  const directExpenses = (booking.operational_expenses || []).filter(exp => exp.booking_detail_id === detail?.id && !exp.driver_operational_fund_id)
+  const directExpenses = (booking.operational_expenses || []).filter(exp => Number(exp.booking_detail_id) === Number(detail?.id) && !exp.driver_operational_fund_id)
   return [...fundExpenses, ...directExpenses]
     .filter(expense => expense.type === 'expense' && expense.status === 'approved')
     .map(expense => ({ label: expense.description || expense.cost_type?.nama || 'Realisasi', amount: expense.amount }))
@@ -872,10 +880,10 @@ const firstFundForDetail = (booking, detail) => {
   const funds = booking.operational_funds || []
 
   return funds.find(fund =>
-    fund.booking_detail_id === detail.id
+    Number(fund.booking_detail_id) === Number(detail.id)
     && !fund.is_salary
     && fund.fund_type !== 'salary'
-  ) || funds.find(fund => fund.booking_detail_id === detail.id) || firstFund(booking)
+  ) || funds.find(fund => Number(fund.booking_detail_id) === Number(detail.id)) || firstFund(booking)
 }
 
 const openExpenseDialog = (fund, type = 'expense') => {
@@ -885,7 +893,8 @@ const openExpenseDialog = (fund, type = 'expense') => {
     fund_id: fund.id,
     cost_type_id: null,
     type,
-    amount: null,
+    amount: 0,
+    payment_date: null,
     description: '',
     photo: null,
   }
@@ -901,7 +910,8 @@ const openBookingExpenseDialog = (booking, detail) => {
     cost_type_id: null,
     payment_account_id: paymentAccountOptions.value[0]?.id || null,
     type: 'expense',
-    amount: null,
+    amount: 0,
+    payment_date: null,
     description: '',
     photo: null,
   }
@@ -1032,326 +1042,329 @@ onUnmounted(() => {
 
       <Transition :name="transitionName" mode="out-in">
         <div :key="activeTab + (isMobile ? '-m' : '-d')" class="tab-content-wrapper">
-      <div v-if="!isMobile && activeTab !== 'history'" class="table-shell operational-table-shell">
-        <DataTable :value="operationalRows" dataKey="row_key" rowGroupMode="rowspan" groupRowsBy="booking_group_id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="operationalRowClass">
-          <Column field="booking_group_id" header="Booking" style="min-width: 10rem">
-            <template #body="{ data }">
-              <div class="rowspan-booking-cell">
-                <button class="text-xs text-secondary mt-2 link-button" @click="router.push(`/bookings/${data.booking.id}`)">{{ data.booking.kode_booking }}</button>
-                <div class="text-xs text-secondary mt-2">{{ data.booking.customer?.nama || '-' }}</div>
-                <BookingStatusBadge :status="data.booking.status" />
-                <button v-if="activeTab === 'active'" class="btn-pill btn-secondary btn-pill-compact booking-complete-button" :disabled="!canMarkOperationalComplete(data.booking) || actionLoading" @click="openCompleteOperationalDialog(data.booking)">
+          <div v-if="!isMobile && activeTab !== 'history'" class="table-shell operational-table-shell">
+            <DataTable :value="operationalRows" dataKey="row_key" rowGroupMode="rowspan" groupRowsBy="booking_group_id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="operationalRowClass">
+              <Column field="booking_group_id" header="Booking" style="min-width: 10rem">
+                <template #body="{ data }">
+                  <div class="rowspan-booking-cell">
+                    <button class="text-xs text-secondary mt-2 link-button" @click="router.push(`/bookings/${data.booking.id}`)">{{ data.booking.kode_booking }}</button>
+                    <div class="text-xs text-secondary mt-2">{{ data.booking.customer?.nama || '-' }}</div>
+                    <BookingStatusBadge :status="data.booking.status" />
+                    <button v-if="activeTab === 'active'" class="btn-pill btn-secondary btn-pill-compact booking-complete-button" :disabled="!canMarkOperationalComplete(data.booking) || actionLoading" @click="openCompleteOperationalDialog(data.booking)">
+                      <i class="pi pi-check"></i>
+                      Tandai selesai
+                    </button>
+                    <span v-if="data.booking.operational_revert_status === 'pending'" class="status-badge warning mt-2 block text-center">
+                      Menunggu ACC
+                    </span>
+                    <button v-else-if="activeTab === 'completed'" class="btn-pill btn-secondary btn-pill-compact booking-revert-button mt-2" :disabled="actionLoading" @click="handleRevertOperational(data.booking)">
+                      <i class="pi pi-undo"></i>
+                      Aktifkan Kembali
+                    </button>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Driver & Jadwal" style="min-width: 12rem">
+                <template #body="{ data }">
+                  <div v-if="data.row_type === 'summary'" class="group-summary-label">
+                    Total {{ data.detail_count }} sub transaksi
+                  </div>
+                  <div v-else class="detail-line detail-line-rowspan">
+                    <div class="detail-title-row">
+                      <strong>{{ data.detail?.driver?.nama || 'Belum ada driver' }}</strong>
+                      <Tag :value="data.detail ? detailTypeLabel(data.detail.detail_type) : '-'" :severity="isModifiedDetail(data.detail) ? 'info' : 'secondary'" />
+                    </div>
+                    <span>{{ data.detail ? `${formatDateTime(data.detail.tgl_sewa)} -
+                      ${formatDateTime(data.detail.tgl_kembali)}` : '-' }}</span>
+                    <span>{{ data.detail?.unit?.tipe || '-' }} ({{ data.detail?.unit?.no_polisi || '-' }})</span>
+                  </div>
+                </template>
+              </Column>
+
+              <Column header="Anggaran Awal" style="min-width: 12rem">
+                <template #body="{ data }">
+                  <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+                    <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.budget_total) }}</span>
+                    <div v-else class="breakdown-list">
+                      <div v-for="(item, idx) in data.budget_breakdown" :key="idx" class="breakdown-item">
+                        <span class="breakdown-label breakdown-label-wide" :title="budgetItemText(item)">{{ budgetItemText(item) }}</span>
+                        <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
+                      </div>
+                      <div v-if="!data.budget_breakdown?.length" class="breakdown-empty">-</div>
+                    </div>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Deposit" style="min-width: 9rem">
+                <template #body="{ data }">
+                  <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+                    <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.disbursed_total) }}</span>
+                    <div v-else class="breakdown-list">
+                      <div v-for="(item, idx) in data.deposit_breakdown" :key="idx" class="breakdown-item">
+                        <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
+                        <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
+                      </div>
+                      <div v-if="!data.deposit_breakdown?.length" class="breakdown-empty">-</div>
+                    </div>
+                    <Tag v-if="data.has_pending_driver_acceptance" value="Belum di ACC driver" severity="warn" />
+                  </div>
+                </template>
+              </Column>
+
+              <Column header="Realisasi OP" style="min-width: 9rem">
+                <template #body="{ data }">
+                  <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+                    <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.realization_total) }}</span>
+                    <div v-else class="breakdown-list">
+                      <div v-for="(item, idx) in data.realization_breakdown" :key="idx" class="breakdown-item">
+                        <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
+                        <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
+                      </div>
+                      <div v-if="!data.realization_breakdown?.length" class="breakdown-empty">-</div>
+                    </div>
+                    <Tag v-if="data.has_pending_driver_receipts" value="Request ACC" severity="warn" />
+                  </div>
+                </template>
+              </Column>
+              <Column header="Gaji Driver (Paid)" style="min-width: 9rem">
+                <template #body="{ data }">
+                  <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+                    <span>{{ formatCurrency(data.salary_total) }}</span>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Total (Real + Gaji)" style="min-width: 10rem">
+                <template #body="{ data }">
+                  <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+                    <span>{{ formatCurrency(data.total_real_gaji) }}</span>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Pengembalian" style="min-width: 9rem">
+                <template #body="{ data }">
+                  <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
+                    <span>{{ formatCurrency(data.return_total) }}</span>
+                  </div>
+                </template>
+              </Column>
+
+              <Column header="Aksi" style="min-width: 14rem">
+                <template #body="{ data }">
+                  <div v-if="data.row_type === 'summary'" class="group-summary-label group-summary-balance text-right">
+                    <span v-if="operationalSummaryLabel(data) !== '-'">Sisa Saldo </span>
+                    <strong>{{ operationalSummaryLabel(data) }}</strong>
+                  </div>
+                  <div v-else class="detail-action-cell">
+                    <!-- If driver exists -->
+                    <template v-if="data.detail?.driver">
+                      <button v-if="activeTab !== 'completed'" class="btn-pill btn-primary btn-pill-compact" type="button" @click="openFundDialog(data.booking, 'operational', data.detail?.id)">
+                        <i class="pi pi-plus"></i> Tambah Deposit
+                      </button>
+                      <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openFundDialog(data.booking, 'salary', data.detail?.id)">
+                        <i class="pi pi-money-bill"></i> Bayar Gaji Driver
+                      </button>
+                      <button v-if="activeTab !== 'completed' && !detailDisbursedTotal(data.booking, data.detail)" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openBookingExpenseDialog(data.booking, data.detail)">
+                        <i class="pi pi-credit-card"></i> Input Realisasi
+                      </button>
+                    </template>
+                    <!-- If no driver exists -->
+                    <template v-else>
+                      <button v-if="activeTab !== 'completed' && !detailDisbursedTotal(data.booking, data.detail)" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openBookingExpenseDialog(data.booking, data.detail)">
+                        <i class="pi pi-plus"></i> Input Realisasi
+                      </button>
+                    </template>
+
+                    <button v-if="firstFundForDetail(data.booking, data.detail)" class="btn-pill btn-secondary btn-pill-compact" type="button" :disabled="detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id || actionLoading" @click="openFundDetail(firstFundForDetail(data.booking, data.detail).id, data.booking)">
+                      <i :class="detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id ? 'pi pi-spin pi-spinner' : 'pi pi-eye'"></i>
+                      {{ detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id ? 'Memuat' : 'Lihat Bon' }}
+                    </button>
+                  </div>
+                </template>
+              </Column>
+            </DataTable>
+          </div>
+
+          <div v-else-if="!isMobile && activeTab === 'history'" class="table-shell operational-table-shell">
+            <DataTable :value="history" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="historyRowClass">
+              <Column header="Tanggal" style="min-width: 11rem">
+                <template #body="{ data }">
+                  <strong>{{ formatDateTime(data.happened_at) }}</strong>
+                  <div class="text-xs text-secondary">{{ data.booking_code || '-' }}</div>
+                </template>
+              </Column>
+              <Column header="Jenis" style="min-width: 13rem">
+                <template #body="{ data }">
+                  <Tag :value="data.label" :severity="historyKindSeverity(data)" />
+                  <div class="text-xs text-secondary mt-2">{{ formatStatusLabel(data.status, data.rejection_reason) }}</div>
+                </template>
+              </Column>
+              <Column header="Driver / Pelanggan" style="min-width: 14rem">
+                <template #body="{ data }">
+                  <strong>{{ data.driver_name || '-' }}</strong>
+                  <div class="text-xs text-secondary">{{ data.customer_name || '-' }}</div>
+                </template>
+              </Column>
+              <Column header="Nominal" style="min-width: 11rem">
+                <template #body="{ data }">
+                  <div class="amount-stack">
+                    <span>{{ formatCurrency(data.amount) }}</span>
+                    <span :class="historyDirectionClass(data)">{{ historyDirectionLabel(data) }}</span>
+                  </div>
+                </template>
+              </Column>
+              <Column header="Rekening Sumber" style="min-width: 16rem">
+                <template #body="{ data }">
+                  <strong>{{ data.payment_account?.nama_bank || '-' }}</strong>
+                  <div class="text-xs text-secondary">{{ data.payment_account?.nomor_rekening || '-' }}</div>
+                  <div class="text-xs text-tertiary">{{ data.payment_account?.atas_nama || '-' }}</div>
+                </template>
+              </Column>
+              <Column header="Keterangan" style="min-width: 18rem">
+                <template #body="{ data }">
+                  <span v-if="data.description" class="table-text-clamp" :title="data.description">{{ data.description }}</span>
+                  <div class="text-xs text-secondary mt-1">{{ data.created_by_name || data.reviewed_by_name || '-' }}</div>
+                </template>
+              </Column>
+              <Column header="Aksi" style="min-width: 6rem">
+                <template #body="{ data }">
+                  <button v-if="data.status !== 'cancelled' && data.status !== 'rejected' && data.status !== 'void_requested'" class="btn-pill btn-secondary btn-pill-compact text-red-600 border-red-200 hover:bg-red-50" title="Batalkan/Void Transaksi" @click="openVoidDialog(data)">
+                    <i class="pi pi-trash text-[10px]"></i> Void
+                  </button>
+                </template>
+              </Column>
+            </DataTable>
+          </div>
+
+          <div v-else-if="activeTab !== 'history'" class="mobile-card-list">
+            <article v-for="booking in bookings" :key="booking.id" class="mobile-card">
+
+              <!-- Head: booking code + status -->
+              <div class="card-head">
+                <div class="card-head-left">
+                  <button class="card-code-btn" @click="router.push(`/bookings/${booking.id}`)">
+                    {{ booking.kode_booking }}
+                    <i class="pi pi-arrow-up-right"></i>
+                  </button>
+                </div>
+                <BookingStatusBadge :status="booking.status" />
+              </div>
+
+              <!-- Customer name -->
+              <div class="card-title">{{ booking.customer?.nama || '-' }}</div>
+
+              <!-- Warnings: pending ACC tags -->
+              <div v-if="hasPendingDriverAcceptance(booking) || hasPendingDriverReceipts(booking)" class="card-warnings">
+                <Tag v-if="hasPendingDriverAcceptance(booking)" value="Belum di ACC driver" severity="warn" />
+                <Tag v-if="hasPendingDriverReceipts(booking)" value="Request ACC" severity="warn" />
+              </div>
+
+              <!-- Amounts: Deposit / Realisasi / Kembali -->
+              <div class="card-amounts">
+                <div class="card-amount-item">
+                  <span>Deposit</span>
+                  <strong>{{ formatCurrency(booking.summary.finance_disbursed_total) }}</strong>
+                </div>
+                <div class="card-amount-item">
+                  <span>Realisasi</span>
+                  <strong>{{ formatCurrency(booking.summary.approved_reimbursement_total || booking.summary.approved_expense_total) }}</strong>
+                </div>
+                <div class="card-amount-item card-amount-highlight">
+                  <span>Kembali</span>
+                  <strong class="text-positive">{{ formatCurrency(booking.summary.approved_return_total) }}</strong>
+                </div>
+              </div>
+
+              <!-- Meta: rencana + gaji -->
+              <div class="card-meta">
+                <div class="card-meta-row">
+                  <i class="pi pi-file card-meta-icon"></i>
+                  <span>Rencana:</span>
+                  <span style="font-weight:700;font-variant-numeric:tabular-nums;">{{ formatCurrency(booking.summary.booking_operational_total + booking.summary.all_in_total) }}</span>
+                </div>
+                <div class="card-meta-row">
+                  <i class="pi pi-money-bill card-meta-icon"></i>
+                  <span>Gaji driver:</span>
+                  <span style="font-weight:700;font-variant-numeric:tabular-nums;">{{ formatCurrency(booking.summary.driver_salary_total) }}</span>
+                </div>
+              </div>
+
+              <!-- Footer: actions -->
+              <div class="card-footer">
+                <button v-if="activeTab !== 'completed'" class="btn-pill btn-primary btn-pill-compact" @click="openFundDialog(booking)">
+                  <i class="pi pi-plus"></i>
+                  Deposit
+                </button>
+                <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" @click="openFundDialog(booking, 'salary')">
+                  <i class="pi pi-money-bill"></i>
+                  Gaji
+                </button>
+                <button v-if="activeTab !== 'completed' && !detailDisbursedTotal(booking, booking.booking_details?.[0])" class="btn-pill btn-secondary btn-pill-compact" @click="openBookingExpenseDialog(booking, booking.booking_details?.[0])">
+                  <i class="pi pi-credit-card"></i>
+                  Realisasi
+                </button>
+                <button v-if="firstFund(booking)" class="btn-pill btn-secondary btn-pill-compact" :disabled="detailLoadingFundId === firstFund(booking).id || actionLoading" @click="openFundDetail(firstFund(booking).id, booking)">
+                  <i :class="detailLoadingFundId === firstFund(booking).id ? 'pi pi-spin pi-spinner' : 'pi pi-eye'"></i>
+                  {{ detailLoadingFundId === firstFund(booking).id ? 'Memuat' : 'Detail' }}
+                </button>
+                <button v-if="activeTab === 'active'" class="btn-pill btn-secondary btn-pill-compact" :disabled="!canMarkOperationalComplete(booking) || actionLoading" @click="openCompleteOperationalDialog(booking)">
                   <i class="pi pi-check"></i>
                   Tandai selesai
                 </button>
-                <span v-if="data.booking.operational_revert_status === 'pending'" class="status-badge warning mt-2 block text-center">
+                <span v-if="booking.operational_revert_status === 'pending'" class="status-badge warning text-center" style="padding:6px 0;font-size: var(--font-size-12px);">
                   Menunggu ACC
                 </span>
-                <button v-else-if="activeTab === 'completed'" class="btn-pill btn-secondary btn-pill-compact booking-revert-button mt-2" :disabled="actionLoading" @click="handleRevertOperational(data.booking)">
+                <button v-else-if="activeTab === 'completed'" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="handleRevertOperational(booking)">
                   <i class="pi pi-undo"></i>
                   Aktifkan Kembali
                 </button>
               </div>
-            </template>
-          </Column>
-          <Column header="Driver & Jadwal" style="min-width: 12rem">
-            <template #body="{ data }">
-              <div v-if="data.row_type === 'summary'" class="group-summary-label">
-                Total {{ data.detail_count }} sub transaksi
-              </div>
-              <div v-else class="detail-line detail-line-rowspan">
-                <div class="detail-title-row">
-                  <strong>{{ data.detail?.driver?.nama || 'Belum ada driver' }}</strong>
-                  <Tag :value="data.detail ? detailTypeLabel(data.detail.detail_type) : '-'" :severity="isModifiedDetail(data.detail) ? 'info' : 'secondary'" />
+
+            </article>
+          </div>
+
+          <div v-else class="mobile-card-list">
+            <article v-for="item in history" :key="item.id" class="mobile-card" :class="{ 'mobile-card-void': isVoidRow(item) }">
+
+              <!-- Head: booking code + kind tag -->
+              <div class="card-head">
+                <div class="card-head-left">
+                  <span class="card-invoice-num">{{ item.booking_code || '-' }}</span>
                 </div>
-                <span>{{ data.detail ? `${formatDateTime(data.detail.tgl_sewa)} -
-                  ${formatDateTime(data.detail.tgl_kembali)}` : '-' }}</span>
-                <span>{{ data.detail?.unit?.tipe || '-' }} ({{ data.detail?.unit?.no_polisi || '-' }})</span>
+                <Tag :value="item.label" :severity="historyKindSeverity(item)" />
               </div>
-            </template>
-          </Column>
 
-          <Column header="Anggaran Awal" style="min-width: 12rem">
-            <template #body="{ data }">
-              <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
-                <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.budget_total) }}</span>
-                <div v-else class="breakdown-list">
-                  <div v-for="(item, idx) in data.budget_breakdown" :key="idx" class="breakdown-item">
-                    <span class="breakdown-label breakdown-label-wide" :title="budgetItemText(item)">{{ budgetItemText(item) }}</span>
-                    <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
-                  </div>
-                  <div v-if="!data.budget_breakdown?.length" class="breakdown-empty">-</div>
+              <!-- Meta: driver + rekening + tanggal -->
+              <div class="card-meta">
+                <div class="card-meta-row">
+                  <i class="pi pi-user card-meta-icon"></i>
+                  <span>{{ item.driver_name || item.customer_name || '-' }}</span>
+                </div>
+                <div v-if="item.payment_account?.nama_bank" class="card-meta-row">
+                  <i class="pi pi-credit-card card-meta-icon"></i>
+                  <span>{{ item.payment_account.nama_bank }}</span>
+                  <span v-if="item.payment_account?.nomor_rekening" class="card-meta-sep">·</span>
+                  <span v-if="item.payment_account?.nomor_rekening" class="font-mono-numeric">{{ item.payment_account.nomor_rekening }}</span>
+                </div>
+                <div class="card-meta-row">
+                  <i class="pi pi-clock card-meta-icon"></i>
+                  <span>{{ formatDateTime(item.happened_at) }}</span>
                 </div>
               </div>
-            </template>
-          </Column>
-          <Column header="Deposit" style="min-width: 9rem">
-            <template #body="{ data }">
-              <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
-                <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.disbursed_total) }}</span>
-                <div v-else class="breakdown-list">
-                  <div v-for="(item, idx) in data.deposit_breakdown" :key="idx" class="breakdown-item">
-                    <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
-                    <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
-                  </div>
-                  <div v-if="!data.deposit_breakdown?.length" class="breakdown-empty">-</div>
+
+              <!-- Amounts: nominal + arus (2 kolom) -->
+              <div class="card-amounts card-amounts-2col">
+                <div class="card-amount-item card-amount-highlight">
+                  <span>Nominal</span>
+                  <strong>{{ formatCurrency(item.amount) }}</strong>
                 </div>
-                <Tag v-if="data.has_pending_driver_acceptance" value="Belum di ACC driver" severity="warn" />
-              </div>
-            </template>
-          </Column>
-
-          <Column header="Realisasi OP" style="min-width: 9rem">
-            <template #body="{ data }">
-              <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
-                <span v-if="data.row_type === 'summary'">{{ formatCurrency(data.realization_total) }}</span>
-                <div v-else class="breakdown-list">
-                  <div v-for="(item, idx) in data.realization_breakdown" :key="idx" class="breakdown-item">
-                    <span class="breakdown-label" :title="item.label">{{ abbreviateLabel(item.label) }}</span>
-                    <span class="breakdown-amount">{{ formatCurrency(item.amount) }}</span>
-                  </div>
-                  <div v-if="!data.realization_breakdown?.length" class="breakdown-empty">-</div>
+                <div class="card-amount-item">
+                  <span>Arus</span>
+                  <strong :class="historyDirectionClass(item)">{{ historyDirectionLabel(item) }}</strong>
                 </div>
-                <Tag v-if="data.has_pending_driver_receipts" value="Request ACC" severity="warn" />
               </div>
-            </template>
-          </Column>
-          <Column header="Gaji Driver (Paid)" style="min-width: 9rem">
-            <template #body="{ data }">
-              <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
-                <span>{{ formatCurrency(data.salary_total) }}</span>
-              </div>
-            </template>
-          </Column>
-          <Column header="Total (Real + Gaji)" style="min-width: 10rem">
-            <template #body="{ data }">
-              <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
-                <span>{{ formatCurrency(data.total_real_gaji) }}</span>
-              </div>
-            </template>
-          </Column>
-          <Column header="Pengembalian" style="min-width: 9rem">
-            <template #body="{ data }">
-              <div class="amount-stack amount-stack-rowspan" :class="{ 'group-summary-amount': data.row_type === 'summary' }">
-                <span>{{ formatCurrency(data.return_total) }}</span>
-              </div>
-            </template>
-          </Column>
 
-          <Column header="Aksi" style="min-width: 14rem">
-            <template #body="{ data }">
-              <div v-if="data.row_type === 'summary'" class="group-summary-label group-summary-balance text-right">
-                <span v-if="operationalSummaryLabel(data) !== '-'">Sisa Saldo </span>
-                <strong>{{ operationalSummaryLabel(data) }}</strong>
-              </div>
-              <div v-else class="detail-action-cell">
-                <!-- If driver exists -->
-                <template v-if="data.detail?.driver">
-                  <button v-if="activeTab !== 'completed'" class="btn-pill btn-primary btn-pill-compact" type="button" @click="openFundDialog(data.booking, 'operational', data.detail?.id)">
-                    <i class="pi pi-plus"></i> Tambah Deposit
-                  </button>
-                  <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openFundDialog(data.booking, 'salary', data.detail?.id)">
-                    <i class="pi pi-money-bill"></i> Bayar Gaji Driver
-                  </button>
-                </template>
-                <!-- If no driver exists -->
-                <template v-else>
-                  <button v-if="activeTab !== 'completed' && !detailDisbursedTotal(data.booking, data.detail)" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openBookingExpenseDialog(data.booking, data.detail)">
-                    <i class="pi pi-plus"></i> Input Realisasi
-                  </button>
-                </template>
-
-                <button v-if="firstFundForDetail(data.booking, data.detail)" class="btn-pill btn-secondary btn-pill-compact" type="button" :disabled="detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id || actionLoading" @click="openFundDetail(firstFundForDetail(data.booking, data.detail).id, data.booking)">
-                  <i :class="detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id ? 'pi pi-spin pi-spinner' : 'pi pi-eye'"></i>
-                  {{ detailLoadingFundId === firstFundForDetail(data.booking, data.detail).id ? 'Memuat' : 'Lihat Bon' }}
-                </button>
-              </div>
-            </template>
-          </Column>
-        </DataTable>
-      </div>
-
-      <div v-else-if="!isMobile && activeTab === 'history'" class="table-shell operational-table-shell">
-        <DataTable :value="history" dataKey="id" lazy paginator scrollable scrollHeight="flex" :rows="pagination.per_page" :totalRecords="pagination.total" :loading="loading" @page="onPage" responsiveLayout="scroll" class="drent-datatable" :rowClass="historyRowClass">
-          <Column header="Tanggal" style="min-width: 11rem">
-            <template #body="{ data }">
-              <strong>{{ formatDateTime(data.happened_at) }}</strong>
-              <div class="text-xs text-secondary">{{ data.booking_code || '-' }}</div>
-            </template>
-          </Column>
-          <Column header="Jenis" style="min-width: 13rem">
-            <template #body="{ data }">
-              <Tag :value="data.label" :severity="historyKindSeverity(data)" />
-              <div class="text-xs text-secondary mt-2">{{ formatStatusLabel(data.status, data.rejection_reason) }}</div>
-            </template>
-          </Column>
-          <Column header="Driver / Pelanggan" style="min-width: 14rem">
-            <template #body="{ data }">
-              <strong>{{ data.driver_name || '-' }}</strong>
-              <div class="text-xs text-secondary">{{ data.customer_name || '-' }}</div>
-            </template>
-          </Column>
-          <Column header="Nominal" style="min-width: 11rem">
-            <template #body="{ data }">
-              <div class="amount-stack">
-                <span>{{ formatCurrency(data.amount) }}</span>
-                <span :class="historyDirectionClass(data)">{{ historyDirectionLabel(data) }}</span>
-              </div>
-            </template>
-          </Column>
-          <Column header="Rekening Sumber" style="min-width: 16rem">
-            <template #body="{ data }">
-              <strong>{{ data.payment_account?.nama_bank || '-' }}</strong>
-              <div class="text-xs text-secondary">{{ data.payment_account?.nomor_rekening || '-' }}</div>
-              <div class="text-xs text-tertiary">{{ data.payment_account?.atas_nama || '-' }}</div>
-            </template>
-          </Column>
-          <Column header="Keterangan" style="min-width: 18rem">
-            <template #body="{ data }">
-              <span v-if="data.description" class="table-text-clamp" :title="data.description">{{ data.description }}</span>
-              <div class="text-xs text-secondary mt-1">{{ data.created_by_name || data.reviewed_by_name || '-' }}</div>
-            </template>
-          </Column>
-          <Column header="Aksi" style="min-width: 6rem">
-            <template #body="{ data }">
-              <button v-if="data.status !== 'cancelled' && data.status !== 'rejected' && data.status !== 'void_requested'" class="btn-pill btn-secondary btn-pill-compact text-red-600 border-red-200 hover:bg-red-50" title="Batalkan/Void Transaksi" @click="openVoidDialog(data)">
-                <i class="pi pi-trash text-[10px]"></i> Void
-              </button>
-            </template>
-          </Column>
-        </DataTable>
-      </div>
-
-      <div v-else-if="activeTab !== 'history'" class="mobile-card-list">
-        <article v-for="booking in bookings" :key="booking.id" class="mobile-card">
-
-          <!-- Head: booking code + status -->
-          <div class="card-head">
-            <div class="card-head-left">
-              <button class="card-code-btn" @click="router.push(`/bookings/${booking.id}`)">
-                {{ booking.kode_booking }}
-                <i class="pi pi-arrow-up-right"></i>
-              </button>
-            </div>
-            <BookingStatusBadge :status="booking.status" />
+            </article>
           </div>
-
-          <!-- Customer name -->
-          <div class="card-title">{{ booking.customer?.nama || '-' }}</div>
-
-          <!-- Warnings: pending ACC tags -->
-          <div v-if="hasPendingDriverAcceptance(booking) || hasPendingDriverReceipts(booking)" class="card-warnings">
-            <Tag v-if="hasPendingDriverAcceptance(booking)" value="Belum di ACC driver" severity="warn" />
-            <Tag v-if="hasPendingDriverReceipts(booking)" value="Request ACC" severity="warn" />
-          </div>
-
-          <!-- Amounts: Deposit / Realisasi / Kembali -->
-          <div class="card-amounts">
-            <div class="card-amount-item">
-              <span>Deposit</span>
-              <strong>{{ formatCurrency(booking.summary.finance_disbursed_total) }}</strong>
-            </div>
-            <div class="card-amount-item">
-              <span>Realisasi</span>
-              <strong>{{ formatCurrency(booking.summary.approved_reimbursement_total || booking.summary.approved_expense_total) }}</strong>
-            </div>
-            <div class="card-amount-item card-amount-highlight">
-              <span>Kembali</span>
-              <strong class="text-positive">{{ formatCurrency(booking.summary.approved_return_total) }}</strong>
-            </div>
-          </div>
-
-          <!-- Meta: rencana + gaji -->
-          <div class="card-meta">
-            <div class="card-meta-row">
-              <i class="pi pi-file card-meta-icon"></i>
-              <span>Rencana:</span>
-              <span style="font-weight:700;font-variant-numeric:tabular-nums;">{{ formatCurrency(booking.summary.booking_operational_total + booking.summary.all_in_total) }}</span>
-            </div>
-            <div class="card-meta-row">
-              <i class="pi pi-money-bill card-meta-icon"></i>
-              <span>Gaji driver:</span>
-              <span style="font-weight:700;font-variant-numeric:tabular-nums;">{{ formatCurrency(booking.summary.driver_salary_total) }}</span>
-            </div>
-          </div>
-
-          <!-- Footer: actions -->
-          <div class="card-footer">
-            <button v-if="activeTab !== 'completed'" class="btn-pill btn-primary btn-pill-compact" @click="openFundDialog(booking)">
-              <i class="pi pi-plus"></i>
-              Deposit
-            </button>
-            <button v-if="activeTab !== 'completed'" class="btn-pill btn-secondary btn-pill-compact" @click="openFundDialog(booking, 'salary')">
-              <i class="pi pi-money-bill"></i>
-              Gaji
-            </button>
-            <button v-if="activeTab !== 'completed' && !booking.booking_details?.[0]?.driver && !detailDisbursedTotal(booking, booking.booking_details?.[0])" class="btn-pill btn-secondary btn-pill-compact" @click="openBookingExpenseDialog(booking, booking.booking_details?.[0])">
-              <i class="pi pi-credit-card"></i>
-              Realisasi
-            </button>
-            <button v-if="firstFund(booking)" class="btn-pill btn-secondary btn-pill-compact" :disabled="detailLoadingFundId === firstFund(booking).id || actionLoading" @click="openFundDetail(firstFund(booking).id, booking)">
-              <i :class="detailLoadingFundId === firstFund(booking).id ? 'pi pi-spin pi-spinner' : 'pi pi-eye'"></i>
-              {{ detailLoadingFundId === firstFund(booking).id ? 'Memuat' : 'Detail' }}
-            </button>
-            <button v-if="activeTab === 'active'" class="btn-pill btn-secondary btn-pill-compact" :disabled="!canMarkOperationalComplete(booking) || actionLoading" @click="openCompleteOperationalDialog(booking)">
-              <i class="pi pi-check"></i>
-              Tandai selesai
-            </button>
-            <span v-if="booking.operational_revert_status === 'pending'" class="status-badge warning text-center" style="padding:6px 0;font-size:12px;">
-              Menunggu ACC
-            </span>
-            <button v-else-if="activeTab === 'completed'" class="btn-pill btn-secondary btn-pill-compact" :disabled="actionLoading" @click="handleRevertOperational(booking)">
-              <i class="pi pi-undo"></i>
-              Aktifkan Kembali
-            </button>
-          </div>
-
-        </article>
-      </div>
-
-      <div v-else class="mobile-card-list">
-        <article v-for="item in history" :key="item.id" class="mobile-card" :class="{ 'mobile-card-void': isVoidRow(item) }">
-
-          <!-- Head: booking code + kind tag -->
-          <div class="card-head">
-            <div class="card-head-left">
-              <span class="card-invoice-num">{{ item.booking_code || '-' }}</span>
-            </div>
-            <Tag :value="item.label" :severity="historyKindSeverity(item)" />
-          </div>
-
-          <!-- Meta: driver + rekening + tanggal -->
-          <div class="card-meta">
-            <div class="card-meta-row">
-              <i class="pi pi-user card-meta-icon"></i>
-              <span>{{ item.driver_name || item.customer_name || '-' }}</span>
-            </div>
-            <div v-if="item.payment_account?.nama_bank" class="card-meta-row">
-              <i class="pi pi-credit-card card-meta-icon"></i>
-              <span>{{ item.payment_account.nama_bank }}</span>
-              <span v-if="item.payment_account?.nomor_rekening" class="card-meta-sep">·</span>
-              <span v-if="item.payment_account?.nomor_rekening" class="font-mono-numeric">{{ item.payment_account.nomor_rekening }}</span>
-            </div>
-            <div class="card-meta-row">
-              <i class="pi pi-clock card-meta-icon"></i>
-              <span>{{ formatDateTime(item.happened_at) }}</span>
-            </div>
-          </div>
-
-          <!-- Amounts: nominal + arus (2 kolom) -->
-          <div class="card-amounts card-amounts-2col">
-            <div class="card-amount-item card-amount-highlight">
-              <span>Nominal</span>
-              <strong>{{ formatCurrency(item.amount) }}</strong>
-            </div>
-            <div class="card-amount-item">
-              <span>Arus</span>
-              <strong :class="historyDirectionClass(item)">{{ historyDirectionLabel(item) }}</strong>
-            </div>
-          </div>
-
-        </article>
-      </div>
         </div>
       </Transition>
     </div>
@@ -1365,9 +1378,16 @@ onUnmounted(() => {
             </div>
           </div>
           <fieldset class="form-fieldset">
-            <label>Detail & Driver</label>
-            <Dropdown v-model="fundForm.booking_detail_id" :options="fundDetailOptions" optionLabel="label" optionValue="value" class="w-full" @change="onFundDetailChange" />
-          </fieldset>
+              <label>Detail & Driver</label>
+              <Dropdown v-model="fundForm.booking_detail_id" :options="fundDetailOptions" optionLabel="label" optionValue="value" class="w-full" @change="onFundDetailChange" />
+            </fieldset>
+            <div v-if="selectedFundDetail" class="app-muted-panel mb-2">
+              <div class="summary-row"><span>Status</span><strong>{{ detailTypeLabel(selectedFundDetail.detail_type) }}</strong></div>
+              <div class="summary-row"><span>Supir</span><strong>{{ selectedFundDetail.driver?.nama || '-' }}</strong></div>
+              <div class="summary-row"><span>Mobil</span><strong>{{ selectedFundDetail.unit?.no_polisi || '-' }}</strong></div>
+              <div class="summary-row"><span>Tujuan</span><strong>{{ selectedBooking?.tujuan || '-' }}</strong></div>
+              <div class="summary-row"><span>Tanggal Sewa</span><strong>{{ formatDateTime(selectedFundDetail.tgl_sewa) }} - {{ formatDateTime(selectedFundDetail.tgl_kembali) }}</strong></div>
+            </div>
           <fieldset class="form-fieldset">
             <label>Rekening Sumber Biaya</label>
             <Dropdown v-model="fundForm.payment_account_id" :options="paymentAccountOptions" optionLabel="label" optionValue="id" placeholder="Pilih rekening sumber" class="w-full" />
@@ -1571,10 +1591,10 @@ onUnmounted(() => {
             </DataTable>
           </section>
 
-          <div class="detail-total-panel">
+          <div style="display:none" class="detail-total-panel">
             <div class="summary-row"><span>Subtotal Transaksi</span><strong>{{
               formatCurrency(visibleTransactionSubtotal)
-                }}</strong></div>
+            }}</strong></div>
             <div class="summary-row"><span>Biaya Administrasi</span><strong>{{ formatCurrency(0) }}</strong></div>
             <div class="summary-row detail-total-row"><span>Total Realisasi</span><strong>{{
               formatCurrency(visibleRealizationTotal) }}</strong></div>
@@ -1594,7 +1614,7 @@ onUnmounted(() => {
           </div>
           <div class="summary-row"><span>Sisa dana</span><strong>{{
             formatCurrency(selectedFund?.summary?.remaining_amount)
-              }}</strong></div>
+          }}</strong></div>
         </div>
         <fieldset class="form-fieldset">
           <label>Catatan Close</label>
@@ -1612,7 +1632,7 @@ onUnmounted(() => {
         <div class="app-muted-panel">
           <div class="summary-row"><span>Booking</span><strong>{{ selectedBooking?.kode_booking || '-' }}</strong></div>
           <div class="summary-row"><span>Transaksi aktif</span><strong>{{ bookingClosableFunds(selectedBooking).length
-              }}</strong></div>
+          }}</strong></div>
         </div>
         <fieldset class="form-fieldset">
           <label>Catatan selesai</label>
@@ -1649,6 +1669,13 @@ onUnmounted(() => {
 
     <Dialog v-model:visible="showExpenseDialog" :header="expenseForm.type === 'return' ? 'Input Pengembalian' : 'Input Bon Finance'" modal :style="{ width: '480px' }" :position="isMobile ? 'bottom' : 'center'" :class="[{ 'mobile-bottom-sheet': isMobile }, 'custom-dialog']">
       <div class="dialog-stack">
+        <div v-if="expenseDialogDetail" class="app-muted-panel mb-2">
+          <div class="summary-row"><span>Status</span><strong>{{ detailTypeLabel(expenseDialogDetail.detail_type) }}</strong></div>
+          <div class="summary-row"><span>Supir</span><strong>{{ expenseDialogDetail.driver?.nama || '-' }}</strong></div>
+          <div class="summary-row"><span>Mobil</span><strong>{{ expenseDialogDetail.unit?.no_polisi || '-' }}</strong></div>
+          <div class="summary-row"><span>Tujuan</span><strong>{{ selectedBooking?.tujuan || '-' }}</strong></div>
+          <div class="summary-row"><span>Tanggal Sewa</span><strong>{{ formatDateTime(expenseDialogDetail.tgl_sewa) }} - {{ formatDateTime(expenseDialogDetail.tgl_kembali) }}</strong></div>
+        </div>
         <div v-if="expenseDialogBudgetBreakdown.length" class="app-muted-panel expense-budget-reference">
           <div class="summary-row">
             <span>Anggaran Biaya Operasional</span>
@@ -1661,9 +1688,13 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <fieldset class="form-fieldset">
+          <label>Tanggal Pembayaran</label>
+          <DatePicker v-model="expenseForm.payment_date" dateFormat="dd M yy" showTime hourFormat="24" showIcon class="w-full" />
+        </fieldset>
         <fieldset v-if="expenseForm.type === 'expense'" class="form-fieldset">
           <label>Cost Type</label>
-          <Dropdown v-model="expenseForm.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" showClear class="w-full" />
+          <Dropdown v-model="expenseForm.cost_type_id" :options="costTypeOptions" optionLabel="label" optionValue="id" showClear class="w-full" @change="onExpenseCostTypeChange" />
         </fieldset>
         <fieldset v-if="expenseForm.type === 'expense' && !expenseForm.fund_id" class="form-fieldset">
           <label>Rekening Sumber Biaya</label>
@@ -1684,7 +1715,7 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <button class="app-dialog-button app-dialog-button-secondary" @click="showExpenseDialog = false">Batal</button>
-        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !expenseForm.amount || expenseForm.description.length < 3" @click="submitFinanceExpense">
+        <button class="app-dialog-button app-dialog-button-primary" :disabled="actionLoading || !expenseForm.payment_date || (expenseForm.type === 'expense' && !expenseForm.cost_type_id) || !expenseForm.amount || expenseForm.amount <= 0" @click="submitFinanceExpense">
           Simpan
         </button>
       </template>
@@ -1763,7 +1794,7 @@ onUnmounted(() => {
 }
 
 .form-fieldset label {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
   color: var(--text-secondary);
 }
@@ -1779,7 +1810,7 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   background: rgba(43, 52, 72, 0.08);
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -1795,7 +1826,7 @@ onUnmounted(() => {
 .detail-line {
   padding-bottom: 8px;
   border-bottom: 1px dashed var(--surface-border);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .detail-line-rowspan {
@@ -1809,7 +1840,7 @@ onUnmounted(() => {
 
 .amount-stack {
   align-items: flex-end;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -1865,7 +1896,7 @@ onUnmounted(() => {
 
 .group-summary-balance span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -1892,7 +1923,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 7px;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 .amount-breakdown-row {
@@ -1934,7 +1965,7 @@ onUnmounted(() => {
   background: var(--surface-default);
   padding: 6px 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2028,14 +2059,14 @@ onUnmounted(() => {
 .deposit-history-head span,
 .deposit-history-meta {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
 .deposit-history-amount {
   margin-top: var(--space-sm);
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
@@ -2092,14 +2123,14 @@ onUnmounted(() => {
 .detail-review-header h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: var(--font-size-20px);
   font-weight: 800;
 }
 
 .detail-review-header p {
   margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2148,7 +2179,7 @@ onUnmounted(() => {
 
 .detail-metric-card span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 900;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2157,7 +2188,7 @@ onUnmounted(() => {
 .detail-metric-card strong {
   min-width: 0;
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 900;
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -2237,7 +2268,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .detail-table-title i {
@@ -2246,7 +2277,7 @@ onUnmounted(() => {
 
 .detail-table-header span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2256,7 +2287,7 @@ onUnmounted(() => {
 
 .detail-table-header small {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 900;
   text-transform: uppercase;
 }
@@ -2270,7 +2301,7 @@ onUnmounted(() => {
   padding: 14px 16px;
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 900;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2294,7 +2325,7 @@ onUnmounted(() => {
 
 .detail-total-panel .summary-row {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 700;
 }
 
@@ -2312,7 +2343,7 @@ onUnmounted(() => {
 .detail-total-row span,
 .detail-total-row strong {
   color: var(--text-primary) !important;
-  font-size: 15px;
+  font-size: var(--font-size-15px);
   font-weight: 900;
 }
 
@@ -2361,7 +2392,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--font-size-13px);
 }
 
 .void-summary-row span {
@@ -2410,7 +2441,7 @@ onUnmounted(() => {
 .fund-mini-item small {
   grid-column: 1 / -1;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -2451,13 +2482,13 @@ onUnmounted(() => {
 .timeline-description {
   margin: 3px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .timeline-amount {
   margin-top: var(--space-sm);
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: var(--font-size-18px);
   font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
@@ -2465,7 +2496,7 @@ onUnmounted(() => {
 .timeline-meta {
   margin-top: 6px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -2496,7 +2527,7 @@ onUnmounted(() => {
 .timeline-source,
 .empty-timeline {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 800;
 }
 
@@ -2510,7 +2541,7 @@ onUnmounted(() => {
 .payment-invoice-empty {
   padding: 14px 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   text-align: center;
 }
 
@@ -2525,14 +2556,14 @@ onUnmounted(() => {
 .compact-section-header h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 800;
 }
 
 .compact-section-header p {
   margin: 2px 0 0;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -2547,7 +2578,7 @@ onUnmounted(() => {
 .reject-note {
   margin-top: 4px;
   color: var(--negative);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 700;
 }
 
@@ -2563,12 +2594,15 @@ onUnmounted(() => {
 .swipe-hint {
   margin: 6px 0 0;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   text-align: center;
 }
 
 .tab-content-wrapper {
+  flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .list-tab-fill.operational-list-tab {
@@ -2641,7 +2675,7 @@ onUnmounted(() => {
   border: none;
   background: transparent;
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 800;
   font-family: var(--font-mono);
   cursor: pointer;
@@ -2650,19 +2684,19 @@ onUnmounted(() => {
 }
 
 .card-code-btn i {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   opacity: 0.65;
 }
 
 .card-invoice-num {
-  font-size: 13px;
+  font-size: var(--font-size-13px);
   font-weight: 800;
   color: var(--text-primary);
 }
 
 .card-title {
   padding: 0 14px 12px;
-  font-size: 16px;
+  font-size: var(--font-size-16px);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.3;
@@ -2681,14 +2715,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-secondary);
   flex-wrap: wrap;
 }
 
 .card-meta-icon {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-tertiary);
   width: 14px;
 }
@@ -2729,7 +2763,7 @@ onUnmounted(() => {
 }
 
 .card-amount-item span {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2737,7 +2771,7 @@ onUnmounted(() => {
 }
 
 .card-amount-item strong {
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -2761,7 +2795,7 @@ onUnmounted(() => {
 
 .field-hint {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
 }
 
 :deep(.custom-dialog .p-dialog-footer) {
@@ -2851,7 +2885,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: baseline;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   line-height: 1.6;
   border-bottom: 1px dashed rgba(0, 0, 0, 0.07);
   padding-bottom: 2px;
@@ -2899,7 +2933,7 @@ onUnmounted(() => {
 
 .breakdown-empty {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 /* ── Right-align all amount data ── */
@@ -2911,7 +2945,7 @@ onUnmounted(() => {
 :deep(.operational-table-shell .p-datatable-thead > tr > th) {
   background: var(--card-bg);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.05em;

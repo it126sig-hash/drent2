@@ -5,10 +5,11 @@ import Dialog from 'primevue/dialog'
 import Tag from 'primevue/tag'
 import ProgressBar from 'primevue/progressbar'
 import { useToast } from 'primevue/usetoast'
-import { getInvoiceHistories } from '../../api/receivable'
+import { getInvoiceHistories, getBookingInvoiceHistories } from '../../api/receivable'
 
 const props = defineProps({
   modelValue: Boolean,
+  bookingId: { type: [Number, String], default: null },
   invoiceId: { type: [Number, String], default: null },
   invoiceNumber: { type: String, default: '' },
 })
@@ -48,14 +49,16 @@ const formatCurrency = (value) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value || 0)
 
 watch(() => props.modelValue, async (visible) => {
-  if (!visible || !props.invoiceId) return
+  if (!visible || (!props.bookingId && !props.invoiceId)) return
   loading.value = true
   histories.value = []
   try {
-    const res = await getInvoiceHistories(props.invoiceId)
+    const res = props.bookingId
+      ? await getBookingInvoiceHistories(props.bookingId)
+      : await getInvoiceHistories(props.invoiceId)
     histories.value = res.data.data || []
   } catch {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'Gagal mengambil history invoice', life: 5000 })
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Gagal mengambil riwayat aktivitas invoice', life: 5000 })
   } finally {
     loading.value = false
   }
@@ -68,7 +71,7 @@ const close = () => emit('update:modelValue', false)
   <Dialog
     :visible="modelValue"
     @update:visible="close"
-    :header="`History — ${invoiceNumber || 'Invoice'}`"
+    :header="bookingId ? 'Riwayat Aktivitas' : `History — ${invoiceNumber || 'Invoice'}`"
     modal
     :style="{ width: 'min(560px, 96vw)' }"
     class="custom-dialog"
@@ -77,7 +80,7 @@ const close = () => emit('update:modelValue', false)
       <ProgressBar mode="indeterminate" style="height: 4px" />
     </div>
     <div v-else-if="!histories.length" class="history-empty">
-      Belum ada riwayat untuk invoice ini.
+      {{ bookingId ? 'Belum ada riwayat invoice untuk booking ini.' : 'Belum ada riwayat untuk invoice ini.' }}
     </div>
     <div v-else class="invoice-history-timeline">
       <div v-for="entry in histories" :key="entry.id" class="history-entry">
@@ -92,6 +95,7 @@ const close = () => emit('update:modelValue', false)
               :severity="historyEventSeverity(entry.event_type)"
               class="history-tag"
             />
+            <span v-if="entry.invoice_number" class="history-invoice-number">{{ entry.invoice_number }}</span>
             <span class="history-time text-xs text-secondary">{{ formatDateTime(entry.created_at) }}</span>
           </div>
           <div v-if="entry.actor_name" class="text-xs text-secondary mt-1">{{ entry.actor_name }}</div>
@@ -126,7 +130,7 @@ const close = () => emit('update:modelValue', false)
 .history-empty {
   padding: 14px 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   text-align: center;
 }
 
@@ -189,7 +193,13 @@ const close = () => emit('update:modelValue', false)
   flex-wrap: wrap;
 }
 
-.history-tag { font-size: 11px; }
+.history-tag { font-size: var(--font-size-11px); }
+
+.history-invoice-number {
+  font-size: var(--font-size-11px);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
 
 .history-time {
   margin-left: auto;
@@ -200,7 +210,7 @@ const close = () => emit('update:modelValue', false)
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }

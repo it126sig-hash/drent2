@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\V1\RentToRentController;
 use App\Http\Controllers\Api\V1\SupervisorRequestController;
 use App\Http\Controllers\Api\V1\MyRequestController;
 use App\Http\Controllers\Api\V1\DriverOperationalFundController;
+use App\Http\Controllers\Api\V1\FleetCardController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\FinanceCategoryController;
 use App\Http\Controllers\Api\V1\MonthlyFinanceReportController;
@@ -38,11 +39,13 @@ use App\Http\Controllers\Api\V1\PaymentAccountTransactionController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\InvoiceTermsTemplateController;
 use App\Http\Controllers\Api\V1\BookingCancellationController;
+use App\Http\Controllers\Api\V1\BookingPublicController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
+    Route::get('public/invoices/soa/{token}', [ReceivableController::class, 'publicInvoice']);
     Route::get('public/invoices/{token}', [ReceivableController::class, 'publicInvoice']);
     Route::get('public/rent-to-rent-bills/{token}', [RentToRentController::class, 'publicBill']);
     Route::get('public/rent-to-rent-bills/{token}/pdf', [RentToRentController::class, 'publicBillPdf']);
@@ -50,6 +53,8 @@ Route::prefix('v1')->group(function () {
     Route::post('public/physical-checks/{token}/otp', [PhysicalCheckController::class, 'publicRequestOtp']);
     Route::post('public/physical-checks/{token}/activities', [PhysicalCheckController::class, 'publicActivity']);
     Route::post('public/physical-checks/{token}/submit', [PhysicalCheckController::class, 'publicStore']);
+    Route::get('public/bookings/{token}', [BookingPublicController::class, 'progress']);
+    Route::get('public/bookings/{token}/invoices', [BookingPublicController::class, 'invoices']);
 
     Route::middleware(['auth:sanctum', 'branch.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
@@ -157,6 +162,7 @@ Route::prefix('v1')->group(function () {
         Route::get('receivables', [ReceivableController::class, 'index']);
         Route::get('receivables/payment-history', [ReceivableController::class, 'paymentHistory']);
         Route::post('receivables/invoices', [ReceivableController::class, 'generateInvoice']);
+        Route::post('invoices/merge', [ReceivableController::class, 'mergeInvoices']);
         Route::get('invoices', [ReceivableController::class, 'invoices']);
         Route::get('invoices/{invoice}', [ReceivableController::class, 'showInvoice']);
         Route::get('invoices/{invoice}/pdf', [ReceivableController::class, 'invoicePdf']);
@@ -164,6 +170,13 @@ Route::prefix('v1')->group(function () {
         Route::post('invoices/{invoice}/refresh-amount', [ReceivableController::class, 'refreshInvoiceAmount']);
         Route::post('invoices/{invoice}/payments', [ReceivableController::class, 'storeInvoicePayment']);
         Route::get('invoices/{invoice}/histories', [ReceivableController::class, 'invoiceHistories']);
+        Route::get('bookings/{booking}/invoice-histories', [ReceivableController::class, 'bookingInvoiceHistories']);
+        Route::post('invoice-payments/{payment}/request-void', [ReceivableController::class, 'requestVoidInvoicePayment']);
+        Route::post('invoice-payments/{payment}/approve-void', [ReceivableController::class, 'approveVoidInvoicePayment']);
+        Route::post('invoice-payments/{payment}/reject-void', [ReceivableController::class, 'rejectVoidInvoicePayment']);
+        Route::post('invoices/{invoice}/request-void', [ReceivableController::class, 'requestVoidInvoice']);
+        Route::post('invoices/{invoice}/approve-void', [ReceivableController::class, 'approveVoidInvoice']);
+        Route::post('invoices/{invoice}/reject-void', [ReceivableController::class, 'rejectVoidInvoice']);
         Route::apiResource('invoice-terms-templates', InvoiceTermsTemplateController::class)->except(['show']);
 
         // Transactions
@@ -222,6 +235,28 @@ Route::prefix('v1')->group(function () {
         Route::get('driver/operational-funds', [DriverOperationalFundController::class, 'driverFunds']);
         Route::get('driver/schedules', [DriverOperationalFundController::class, 'driverSchedules']);
 
+        // Fleet cards (kartu fleet)
+        Route::get('fleet-cards', [FleetCardController::class, 'cards']);
+        Route::post('fleet-cards', [FleetCardController::class, 'storeCard']);
+        Route::post('fleet-cards/{card}/status', [FleetCardController::class, 'updateCardStatus']);
+        Route::get('fleet-card-funds/booking-details', [FleetCardController::class, 'bookingDetails']);
+        Route::get('fleet-card-funds/history', [FleetCardController::class, 'history']);
+        Route::get('fleet-card-funds/{fund}', [FleetCardController::class, 'show']);
+        Route::post('booking-details/{bookingDetail}/fleet-card-funds', [FleetCardController::class, 'store']);
+        Route::post('fleet-card-funds/{fund}/close', [FleetCardController::class, 'close']);
+        Route::post('fleet-card-funds/{fund}/accept', [FleetCardController::class, 'accept']);
+        Route::post('fleet-card-funds/{fund}/expenses', [FleetCardController::class, 'storeExpense']);
+        Route::post('fleet-card-funds/{fund}/void', [FleetCardController::class, 'voidFund']);
+        Route::post('fleet-card-funds/{fund}/approve-void', [FleetCardController::class, 'approveVoidFund']);
+        Route::post('fleet-card-funds/{fund}/reject-void', [FleetCardController::class, 'rejectVoidFund']);
+        Route::get('fleet-card-expenses/{expense}/photo', [FleetCardController::class, 'showExpensePhoto']);
+        Route::post('fleet-card-expenses/{expense}/approve', [FleetCardController::class, 'approveExpense']);
+        Route::post('fleet-card-expenses/{expense}/reject', [FleetCardController::class, 'rejectExpense']);
+        Route::post('fleet-card-expenses/{expense}/void', [FleetCardController::class, 'voidExpense']);
+        Route::post('fleet-card-expenses/{expense}/approve-void', [FleetCardController::class, 'approveVoidExpense']);
+        Route::post('fleet-card-expenses/{expense}/reject-void', [FleetCardController::class, 'rejectVoidExpense']);
+        Route::get('driver/fleet-card-funds', [FleetCardController::class, 'driverFunds']);
+
         // Bookings
         Route::patch('bookings/{booking}/status', [BookingController::class, 'updateStatus']);
         Route::patch('bookings/{booking}/handle', [BookingController::class, 'handle']);
@@ -238,6 +273,9 @@ Route::prefix('v1')->group(function () {
         Route::patch('booking-details/{bookingDetail}', [BookingDetailController::class, 'update']);
         Route::post('booking-details/{bookingDetail}/costs', [BookingCostController::class, 'store']);
         Route::patch('booking-costs/{bookingCost}', [BookingCostController::class, 'update']);
+        Route::post('booking-details/{bookingDetail}/request-cancel-extend', [BookingDetailController::class, 'requestCancelExtend']);
+        Route::post('booking-details/{bookingDetail}/approve-cancel-extend', [BookingDetailController::class, 'approveCancelExtend']);
+        Route::post('booking-details/{bookingDetail}/reject-cancel-extend', [BookingDetailController::class, 'rejectCancelExtend']);
         
         // Modification routes
         Route::post('bookings/{booking}/extend', [BookingModificationController::class, 'extend']);

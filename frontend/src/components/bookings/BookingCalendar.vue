@@ -314,7 +314,7 @@ const handleBookingClick = (event, bar) => {
   padding: 10px 4px;
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   text-align: center;
   border-bottom: 1px solid var(--surface-border);
   border-right: 1px solid var(--surface-border);
@@ -341,14 +341,14 @@ const handleBookingClick = (event, bar) => {
 }
 
 .day-name {
-  font-size: 9px;
+  font-size: var(--font-size-9px);
   color: var(--text-tertiary);
   text-transform: uppercase;
 }
 
 .day-num {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   color: var(--text-primary);
 }
 
@@ -388,7 +388,7 @@ const handleBookingClick = (event, bar) => {
 .unit-name {
   font-family: var(--font-headline);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -407,7 +407,7 @@ const handleBookingClick = (event, bar) => {
 
 .unit-plate {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
@@ -425,7 +425,7 @@ const handleBookingClick = (event, bar) => {
 /* The badge itself scrolls when hovered */
 .owner-marquee {
   display: inline-block;
-  font-size: 9px;
+  font-size: var(--font-size-9px);
   font-family: var(--font-body);
   font-weight: 600;
   padding: 1px 4px;
@@ -504,7 +504,7 @@ const handleBookingClick = (event, bar) => {
   padding: 3px 6px;
   border-radius: var(--radius-xs);
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   cursor: pointer;
   z-index: 5;
@@ -548,7 +548,7 @@ const handleBookingClick = (event, bar) => {
 }
 
 .bar-sub {
-  font-size: 8px;
+  font-size: var(--font-size-8px);
   font-weight: 400;
   opacity: 0.8;
   white-space: nowrap;
@@ -561,7 +561,7 @@ const handleBookingClick = (event, bar) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 8px;
+  font-size: var(--font-size-8px);
   font-weight: 700;
   padding: 1px 3px;
   border-radius: 3px;
@@ -595,7 +595,7 @@ const handleBookingClick = (event, bar) => {
 
 .legend-title {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -621,7 +621,7 @@ const handleBookingClick = (event, bar) => {
   width: 28px;
   height: 16px;
   border-radius: 3px;
-  font-size: 8px;
+  font-size: var(--font-size-8px);
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -630,7 +630,7 @@ const handleBookingClick = (event, bar) => {
   background: rgba(212, 160, 23, 0.2);
   color: #8C660A;
   border: 1px solid #D4A017;
-  font-size: 8px;
+  font-size: var(--font-size-8px);
 }
 
 .legend-dot-lunas {
@@ -646,7 +646,7 @@ const handleBookingClick = (event, bar) => {
 
 .legend-label {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   color: var(--text-secondary);
   white-space: nowrap;
 }

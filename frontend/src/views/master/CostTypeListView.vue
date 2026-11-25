@@ -20,10 +20,12 @@ const toast = useToast()
 const confirm = useConfirm()
 const authStore = useAuthStore()
 
-const canManage = computed(() => ['superadmin', 'admin_branch'].includes(authStore.user?.role))
+const canCreate = computed(() => authStore.hasPermission('master.cost_type.create'))
+const canEdit = computed(() => authStore.hasPermission('master.cost_type.update'))
+const canDelete = computed(() => authStore.hasPermission('master.cost_type.delete'))
 
 const showDialog = ref(false)
-const form = ref({ id: null, nama: '', kode: '', require_description: false, sort_order: 0, is_active: true })
+const form = ref({ id: null, nama: '', kode: '', kledo_code: '', require_description: false, sort_order: 0, is_active: true })
 const formErrors = ref({})
 const saving = ref(false)
 
@@ -35,13 +37,13 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 onMounted(() => fetchAll())
 
 const openNew = () => {
-  form.value = { id: null, nama: '', kode: '', require_description: false, sort_order: 0, is_active: true }
+  form.value = { id: null, nama: '', kode: '', kledo_code: '', require_description: false, sort_order: 0, is_active: true }
   formErrors.value = {}
   showDialog.value = true
 }
 
 const openEdit = (row) => {
-  form.value = { id: row.id, nama: row.nama, kode: row.kode, require_description: !!row.require_description, sort_order: row.sort_order ?? 0, is_active: !!row.is_active }
+  form.value = { id: row.id, nama: row.nama, kode: row.kode, kledo_code: row.kledo_code ?? '', require_description: !!row.require_description, sort_order: row.sort_order ?? 0, is_active: !!row.is_active }
   formErrors.value = {}
   showDialog.value = true
 }
@@ -106,7 +108,7 @@ const onPageChange = (event) => {
         </div>
       </div>
       <div class="header-actions">
-        <button v-if="canManage" class="btn-pill btn-primary" type="button" @click="openNew">
+        <button v-if="canCreate" class="btn-pill btn-primary" type="button" @click="openNew">
           <i class="pi pi-plus"></i>
           <span>Tambah Tipe Biaya</span>
         </button>
@@ -152,6 +154,12 @@ const onPageChange = (event) => {
           </template>
         </Column>
 
+        <Column field="kledo_code" header="Kledo Code" style="min-width:130px">
+          <template #body="{ data }">
+            <span class="kode-badge mono-text">{{ data.kledo_code || '-' }}</span>
+          </template>
+        </Column>
+
         <Column field="require_description" header="Butuh Keterangan" style="min-width:140px;text-align:center">
           <template #body="{ data }">
             <span class="drent-badge" :class="data.require_description ? 'warning' : 'neutral'">
@@ -171,10 +179,10 @@ const onPageChange = (event) => {
         <Column header="Aksi" style="min-width:110px;text-align:center">
           <template #body="{ data }">
             <div class="action-pill-group">
-              <button class="action-btn" type="button" title="Edit" @click="openEdit(data)">
+              <button v-if="canEdit" class="action-btn" type="button" title="Edit" @click="openEdit(data)">
                 <i class="pi pi-pencil"></i>
               </button>
-              <button v-if="canManage" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
+              <button v-if="canDelete" class="action-btn action-btn-danger" type="button" title="Hapus" @click="confirmDelete(data)">
                 <i class="pi pi-trash"></i>
               </button>
             </div>
@@ -197,14 +205,15 @@ const onPageChange = (event) => {
         </div>
         <div class="card-body">
           <div><span class="field-hint">Kode</span> <span class="kode-badge">{{ ct.kode }}</span></div>
+          <div><span class="field-hint">Kledo Code</span> {{ ct.kledo_code || '-' }}</div>
           <div><span class="field-hint">Urutan</span> {{ ct.sort_order }}</div>
           <div><span class="field-hint">Butuh Keterangan</span> {{ ct.require_description ? 'Ya' : 'Tidak' }}</div>
         </div>
         <div class="card-footer">
-          <button class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(ct)">
+          <button v-if="canEdit" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="openEdit(ct)">
             <i class="pi pi-pencil"></i> Edit
           </button>
-          <button v-if="canManage" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(ct)">
+          <button v-if="canDelete" class="btn-pill btn-secondary btn-pill-compact" type="button" @click="confirmDelete(ct)">
             <i class="pi pi-trash"></i> Hapus
           </button>
         </div>
@@ -234,6 +243,11 @@ const onPageChange = (event) => {
           <InputText v-model="form.kode" placeholder="driver, bbm, tol..." class="w-full" :class="{ 'p-invalid': formErrors.kode }" />
           <small class="p-error" v-if="formErrors.kode">{{ formErrors.kode[0] }}</small>
           <small class="hint">Huruf kecil, tanpa spasi. Digunakan sebagai identifier.</small>
+        </div>
+        <div class="field">
+          <label>Kledo Code</label>
+          <InputText v-model="form.kledo_code" placeholder="Kode akun di Kledo..." class="w-full" :class="{ 'p-invalid': formErrors.kledo_code }" />
+          <small class="p-error" v-if="formErrors.kledo_code">{{ formErrors.kledo_code[0] }}</small>
         </div>
         <div class="field">
           <label>Urutan Tampil</label>
@@ -280,29 +294,29 @@ const onPageChange = (event) => {
 
 .summary-tile-compact span {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .summary-tile-compact strong {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .paginator-wrapper { padding: var(--space-sm); border-top: 1px solid var(--surface-border); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 0; color: #94a3b8; }
-.empty-state i { font-size: 3rem; margin-bottom: 15px; opacity: .5; }
-.order-badge { background: var(--card-bg); color: var(--text-secondary); padding: 2px 8px; border-radius: var(--radius-xs); font-weight: 700; font-size: 11px; border: 1px solid var(--surface-border); }
-.kode-badge { font-family: var(--font-mono); background: var(--card-bg); color: var(--text-primary); padding: 3px 8px; border-radius: var(--radius-xs); font-size: 11px; border: 1px solid var(--surface-border); }
+.empty-state i { font-size: var(--font-size-3rem); margin-bottom: 15px; opacity: .5; }
+.order-badge { background: var(--card-bg); color: var(--text-secondary); padding: 2px 8px; border-radius: var(--radius-xs); font-weight: 700; font-size: var(--font-size-11px); border: 1px solid var(--surface-border); }
+.kode-badge { font-family: var(--font-mono); background: var(--card-bg); color: var(--text-primary); padding: 3px 8px; border-radius: var(--radius-xs); font-size: var(--font-size-11px); border: 1px solid var(--surface-border); }
 .form-grid { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-row { display: flex; gap: 16px; }
 .field-row .field { flex: 1; }
-.field label { font-weight: 700; font-size: 12px; color: var(--text-secondary); }
-.hint { color: var(--text-tertiary); font-size: 11px; }
+.field label { font-weight: 700; font-size: var(--font-size-12px); color: var(--text-secondary); }
+.hint { color: var(--text-tertiary); font-size: var(--font-size-11px); }
 .req { color: var(--negative); }
 .w-full { width: 100%; }
 .action-btn-danger { color: var(--negative) !important; }
@@ -314,7 +328,7 @@ const onPageChange = (event) => {
   padding: 3px 6px;
   border-radius: 6px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.3;
   text-transform: capitalize;
@@ -340,6 +354,6 @@ const onPageChange = (event) => {
   color: var(--info-cyan);
 }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 </style>

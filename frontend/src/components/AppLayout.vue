@@ -62,6 +62,7 @@ const menuSections = [
       { label: 'Piutang', icon: 'pi pi-wallet', route: '/finance/receivables', permission: 'finance.receivable' },
       { label: 'Rent to Rent', icon: 'pi pi-building', route: '/finance/rent-to-rent', permission: 'finance.rent_to_rent' },
       { label: 'Biaya Operasional', icon: 'pi pi-receipt', route: '/finance/operational-costs', permission: 'finance.operational_cost' },
+      { label: 'Kartu Fleet', icon: 'pi pi-credit-card', route: '/finance/fleet-cards', permission: 'finance.fleet_card' },
       { label: 'List Transaksi', icon: 'pi pi-list', route: '/finance/transactions', permission: 'finance.transaction' },
       { label: 'Mutasi Rekening', icon: 'pi pi-arrow-right-arrow-left', route: '/finance/account-mutations', permission: 'finance.account_mutation' },
       { label: 'Laporan Bulanan', icon: 'pi pi-chart-bar', route: '/reports/transactions', permission: 'finance.monthly_report' },
@@ -477,7 +478,7 @@ const filteredMenuSections = computed(() => {
 }
 
 .sidebar-search i {
-  font-size: 0.85rem;
+  font-size: var(--font-size-0p85rem);
 }
 
 .sidebar-search-input {
@@ -488,7 +489,7 @@ const filteredMenuSections = computed(() => {
   outline: none;
   color: #FFFFFF;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .sidebar-search-input::placeholder {
@@ -502,7 +503,7 @@ const filteredMenuSections = computed(() => {
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   padding: 2px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-0p75rem);
   display: inline-flex;
 }
 
@@ -518,7 +519,7 @@ const filteredMenuSections = computed(() => {
   padding: var(--space-lg);
   text-align: center;
   color: rgba(255, 255, 255, 0.42);
-  font-size: 12px;
+  font-size: var(--font-size-12px);
 }
 
 .sidebar-nav {
@@ -577,7 +578,7 @@ const filteredMenuSections = computed(() => {
   padding: 0 var(--space-lg) var(--space-xs);
   color: rgba(255, 255, 255, 0.42);
   font-family: var(--font-headline);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: 0;
@@ -593,7 +594,7 @@ const filteredMenuSections = computed(() => {
   color: rgba(255, 255, 255, 0.72);
   text-decoration: none;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   font-weight: 500;
   transition: all 0.2s;
   width: 100%;
@@ -610,7 +611,7 @@ const filteredMenuSections = computed(() => {
 .nav-item i {
   width: 18px;
   flex: 0 0 18px;
-  font-size: 1.1rem;
+  font-size: var(--font-size-1p1rem);
   text-align: center;
 }
 
@@ -671,7 +672,7 @@ const filteredMenuSections = computed(() => {
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   overflow: hidden;
 }
 
@@ -690,7 +691,7 @@ const filteredMenuSections = computed(() => {
 }
 
 .user-name {
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   font-weight: 600;
   color: #FFFFFF;
   white-space: nowrap;
@@ -699,7 +700,7 @@ const filteredMenuSections = computed(() => {
 }
 
 .user-role {
-  font-size: 10px;
+  font-size: var(--font-size-10px);
   color: rgba(255, 255, 255, 0.64);
 }
 
@@ -749,7 +750,7 @@ const filteredMenuSections = computed(() => {
 .menu-btn {
   background: none;
   border: none;
-  font-size: 1.25rem;
+  font-size: var(--font-size-1p25rem);
   color: #FFFFFF;
 }
 
@@ -767,7 +768,7 @@ const filteredMenuSections = computed(() => {
    display: flex;
    align-items: center;
    justify-content: center;
-   font-size: 10px;
+   font-size: var(--font-size-10px);
    font-weight: 700;
    color: var(--text-primary);
    text-decoration: none;
@@ -806,8 +807,8 @@ const filteredMenuSections = computed(() => {
   width: 33.3333%;
 }
 
-.bottom-nav-item i { font-size: 1.2rem; }
-.bottom-nav-item span { font-size: 10px; font-weight: 500; }
+.bottom-nav-item i { font-size: var(--font-size-1p2rem); }
+.bottom-nav-item span { font-size: var(--font-size-10px); font-weight: 500; }
 
 .bottom-nav-item.active {
   color: #0B1F3A;
@@ -888,10 +889,30 @@ const filteredMenuSections = computed(() => {
    text-decoration: none;
 }
 
-.close-btn { background: none; border: none; font-size: 1.2rem; color: rgba(255, 255, 255, 0.72); }
+.close-btn { background: none; border: none; font-size: var(--font-size-1p2rem); color: rgba(255, 255, 255, 0.72); }
 
 /* === Utility === */
 .show-mobile { display: none; }
+
+@media (min-width: 769px) and (max-width: 1365px) {
+  .layout-sidebar {
+    width: 220px;
+    flex: 0 0 220px;
+  }
+  .sidebar-panel {
+    width: 220px;
+  }
+  .sidebar-header {
+    height: 56px;
+  }
+  .app-logo-sidebar {
+    width: 110px;
+    height: 32px;
+  }
+  .nav-item {
+    min-height: 28px;
+  }
+}
 
 @media (max-width: 992px) {
   .layout-wrapper {

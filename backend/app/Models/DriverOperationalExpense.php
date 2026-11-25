@@ -19,6 +19,7 @@ class DriverOperationalExpense extends Model
         'type',
         'amount',
         'description',
+        'payment_date',
         'photo_path',
         'status',
         'source',

@@ -79,12 +79,10 @@ const fetchSecureDoc = async (type) => {
 }
 
 const canActivate = computed(() => {
-  return ['superadmin', 'admin_branch'].includes(authStore.user?.role) && member.value?.status_member === 'Pending'
+  return authStore.hasPermission('member.update') && member.value?.status_member === 'Pending'
 })
 
-const canManage = computed(() => {
-  return ['superadmin', 'admin_branch', 'cs'].includes(authStore.user?.role)
-})
+const canManage = computed(() => authStore.hasPermission('member.update'))
 
 const onActivate = () => {
   confirm.require({
@@ -440,7 +438,7 @@ const getStatusSeverity = (status) => {
 }
 
 .header-content h1 {
-  font-size: 2rem;
+  font-size: var(--font-size-2rem);
   font-weight: 800;
   color: #1e293b;
   margin: 0;
@@ -474,20 +472,20 @@ const getStatusSeverity = (status) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.6rem;
+  font-size: var(--font-size-1p6rem);
 }
 
 .info-text h3 {
   margin: 0;
   color: #92400e;
   font-weight: 800;
-  font-size: 1.2rem;
+  font-size: var(--font-size-1p2rem);
 }
 
 .info-text p {
   margin: 5px 0 0;
   color: #b45309;
-  font-size: 1rem;
+  font-size: var(--font-size-1rem);
 }
 
 /* Detail Layout */
@@ -548,7 +546,7 @@ const getStatusSeverity = (status) => {
 }
 
 .profile-name {
-  font-size: 1.5rem;
+  font-size: var(--font-size-1p5rem);
   font-weight: 800;
   margin: 0;
   color: #1e293b;
@@ -557,7 +555,7 @@ const getStatusSeverity = (status) => {
 .member-id {
   font-family: monospace;
   color: #64748b;
-  font-size: 1.1rem;
+  font-size: var(--font-size-1p1rem);
   margin: 5px 0 15px;
   letter-spacing: 1px;
 }
@@ -565,7 +563,7 @@ const getStatusSeverity = (status) => {
 .status-badge {
   padding: 8px 16px;
   font-weight: 800;
-  font-size: 0.9rem;
+  font-size: var(--font-size-0p9rem);
   text-transform: uppercase;
 }
 
@@ -579,7 +577,7 @@ const getStatusSeverity = (status) => {
 .info-item {
   display: flex;
   justify-content: space-between;
-  font-size: 0.95rem;
+  font-size: var(--font-size-0p95rem);
   padding-bottom: 8px;
   border-bottom: 1px dashed #e2e8f0;
 }
@@ -627,7 +625,7 @@ const getStatusSeverity = (status) => {
 }
 
 .preview-empty i {
-  font-size: 3rem;
+  font-size: var(--font-size-3rem);
   margin-bottom: 10px;
 }
 
@@ -649,12 +647,12 @@ const getStatusSeverity = (status) => {
 }
 
 .section-header i {
-  font-size: 1.4rem;
+  font-size: var(--font-size-1p4rem);
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: var(--font-size-1p2rem);
   font-weight: 800;
   color: #1e293b;
   text-transform: uppercase;
@@ -678,7 +676,7 @@ const getStatusSeverity = (status) => {
 }
 
 .info-group label {
-  font-size: 0.8rem;
+  font-size: var(--font-size-0p8rem);
   font-weight: 700;
   color: #94a3b8;
   text-transform: uppercase;
@@ -686,7 +684,7 @@ const getStatusSeverity = (status) => {
 
 .info-group p {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: var(--font-size-1p05rem);
   color: #1e293b;
   font-weight: 500;
 }
@@ -707,7 +705,7 @@ const getStatusSeverity = (status) => {
 .sub-card-header {
   font-weight: 800;
   color: #0891b2;
-  font-size: 0.9rem;
+  font-size: var(--font-size-0p9rem);
   text-transform: uppercase;
   border-bottom: 2px solid #e0f2fe;
   padding-bottom: 8px;
@@ -721,7 +719,7 @@ const getStatusSeverity = (status) => {
   font-style: italic;
   color: #164e63;
   line-height: 1.7;
-  font-size: 1.1rem;
+  font-size: var(--font-size-1p1rem);
 }
 
 .p-shadow {

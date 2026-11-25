@@ -34,10 +34,12 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 const isSuperadmin = computed(() => authStore.user?.role === 'superadmin')
 const userBranchId = computed(() => authStore.user?.branch_id)
 
-const canCreate = computed(() => isSuperadmin.value)
-const canDelete = (row) => isSuperadmin.value
+const canCreate = computed(() => authStore.hasPermission('master.branch.create'))
+const canDelete = (row) => isSuperadmin.value || authStore.hasPermission('master.branch.delete')
 const canEdit = (row) =>
-  isSuperadmin.value || (authStore.user?.role === 'admin_branch' && row?.id === userBranchId.value)
+  isSuperadmin.value ||
+  (authStore.hasPermission('master.branch.update') &&
+    (authStore.user?.role !== 'admin_branch' || row?.id === userBranchId.value))
 
 const errorMessage = (err, fallback) => {
   const errors = err?.response?.data?.errors
@@ -275,14 +277,14 @@ const onSearch = () => {
 
 .summary-tile-compact span {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--font-size-11px);
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .summary-tile-compact strong {
   font-family: var(--font-headline);
-  font-size: 14px;
+  font-size: var(--font-size-14px);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -315,12 +317,12 @@ const onSearch = () => {
   color: var(--text-tertiary);
 }
 
-.empty-state i { font-size: 2.4rem; margin-bottom: var(--space-md); opacity: .7; }
+.empty-state i { font-size: var(--font-size-2p4rem); margin-bottom: var(--space-md); opacity: .7; }
 
 .action-btn-danger { color: var(--negative) !important; }
 
 .text-info { color: var(--info-cyan); }
 
-.field-hint { color: var(--text-tertiary); font-size: 11px; margin-right: 4px; }
+.field-hint { color: var(--text-tertiary); font-size: var(--font-size-11px); margin-right: 4px; }
 .mobile-card-list .card-footer { justify-content: flex-end; gap: var(--space-sm); }
 </style>

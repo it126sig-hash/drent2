@@ -138,7 +138,7 @@ defineExpose({ clear })
 .btn-clear-sig {
   align-self: flex-end;
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-12px);
   border-radius: 4px;
   border: 1px solid var(--surface-border, #ccc);
   background: transparent;

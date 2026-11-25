@@ -173,7 +173,7 @@ const handleClose = () => {
 }
 
 .field label {
-  font-size: 0.85rem;
+  font-size: var(--font-size-0p85rem);
   font-weight: 600;
   color: #475569;
 }
@@ -191,7 +191,7 @@ const handleClose = () => {
 }
 
 .section-title {
-  font-size: 0.8rem;
+  font-size: var(--font-size-0p8rem);
   font-weight: 700;
   color: #06b6d4;
   margin: 0 0 12px 0;
