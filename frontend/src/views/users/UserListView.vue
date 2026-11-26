@@ -14,7 +14,7 @@ import Tag from 'primevue/tag'
 import ConfirmDialog from 'primevue/confirmdialog'
 import UserFormDialog from '../../components/users/UserFormDialog.vue'
 import ResetPasswordDialog from '../../components/users/ResetPasswordDialog.vue'
-import UserPermissionOverrideDialog from './components/UserPermissionOverrideDialog.vue'
+import UserPermissionOverrideDialog from '../../components/users/UserPermissionOverrideDialog.vue'
 
 const { 
   users, 

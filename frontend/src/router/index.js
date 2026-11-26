@@ -254,13 +254,13 @@ const router = createRouter({
         {
           path: "/driver/operational",
           name: "DriverOperational",
-          component: () => import("../views/driver/DriverOperationalView.vue"),
+          component: () => import("../views/driver-portal/DriverOperationalView.vue"),
           meta: { permission: "driver.operational" },
         },
         {
           path: "/driver/trip-history",
           name: "DriverTripHistory",
-          component: () => import("../views/driver/DriverTripHistoryView.vue"),
+          component: () => import("../views/driver-portal/DriverTripHistoryView.vue"),
           meta: { permission: "driver.operational" },
         },
         {

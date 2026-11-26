@@ -3,8 +3,8 @@ import { ref, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
-import { getUserPermissions, updateUserPermissions, getRolePermissions } from '../../../api/rolePermission'
-import { permissionDefinitions } from '../../../constants/permissionDefinitions'
+import { getUserPermissions, updateUserPermissions, getRolePermissions } from '../../api/rolePermission'
+import { permissionDefinitions } from '../../constants/permissionDefinitions'
 
 const props = defineProps({
   visible: Boolean,
