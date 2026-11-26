@@ -75,10 +75,9 @@ class DashboardTest extends TestCase
             ->assertOk();
 
         $response->assertJsonPath('data.kpis.0.value', 1)
-            ->assertJsonPath('data.kpis.0.display_value', '1 / 1')
-            ->assertJsonPath('data.kpis.1.value', 1)
-            ->assertJsonPath('data.kpis.2.value', 5)
-            ->assertJsonPath('data.kpis.3.value', 250000);
+            ->assertJsonPath('data.kpis.0.display_value', '1')
+            ->assertJsonPath('data.kpis.1.value', 5)
+            ->assertJsonPath('data.kpis.2.value', 250000);
 
         $armadaStatus = collect($response->json('data.armada_status'));
         $this->assertEquals(1, $armadaStatus->firstWhere('key', 'available')['value']);
@@ -113,7 +112,7 @@ class DashboardTest extends TestCase
 
         $this->getJson("/api/v1/dashboard?branch_id={$branchB->id}&date_from=2026-05-01&date_to=2026-05-31")
             ->assertOk()
-            ->assertJsonPath('data.kpis.2.value', 1)
+            ->assertJsonPath('data.kpis.1.value', 1)
             ->assertJsonPath('data.repeat_order_leaderboards.0.items.0.total_bookings', 1);
     }
 
@@ -130,6 +129,14 @@ class DashboardTest extends TestCase
             'role' => $role,
             'is_active' => true,
         ]);
+
+        foreach (['dashboard.view', 'booking.view'] as $key) {
+            \App\Models\RolePermission::create([
+                'tenant_id' => $tenant->id,
+                'role' => $role,
+                'permission_key' => $key,
+            ]);
+        }
 
         Sanctum::actingAs($user);
 

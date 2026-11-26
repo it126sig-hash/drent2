@@ -13,6 +13,7 @@ use App\Models\Payment;
 use App\Models\PaymentAccount;
 use App\Models\Tenant;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -23,7 +24,7 @@ class MonthlyFinanceReportTest extends TestCase
 
     public function test_transfer_and_other_transactions_update_balances_and_monthly_report(): void
     {
-        $ctx = $this->context('finance');
+        $ctx = $this->context('supervisor');
         $source = $this->paymentAccount($ctx, 'BCA', 1000000);
         $target = $this->paymentAccount($ctx, 'Mandiri', 100000);
         $incomeCategory = $this->category($ctx, 'Setoran Owner', 'income');
@@ -96,47 +97,56 @@ class MonthlyFinanceReportTest extends TestCase
             'created_by' => $ctx['user']->id,
         ]);
         $invoice->bookings()->attach($booking->id, ['amount' => 1000000]);
-        $invoicePayment = Payment::create([
-            'invoice_id' => $invoice->id,
+        // Invoice payment: 300k (invoice_payment_in).
+        $invoicePayment = app(\App\Services\ReceivableService::class)->storePayment($invoice, [
             'payment_account_id' => $account->id,
             'amount' => 300000,
             'paid_at' => '2026-05-05 10:00:00',
-            'created_by' => $ctx['user']->id,
         ]);
 
-        BookingPayment::create([
-            'booking_id' => $booking->id,
+        // Booking payments: DP 100k + cicilan 200k yang di-void → sisa aktif 100k.
+        // (Pembayaran invoice TIDAK diduplikasi sebagai booking payment,
+        //  karena itu akan menghitung uang yang sama dua kali di laporan.)
+        app(\App\Services\BookingPaymentService::class)->create($booking, [
             'payment_account_id' => $account->id,
             'amount' => 100000,
             'payment_type' => 'dp',
             'status' => 'active',
             'paid_at' => '2026-05-03 10:00:00',
-            'created_by' => $ctx['user']->id,
         ]);
-        BookingPayment::create([
-            'booking_id' => $booking->id,
-            'payment_account_id' => $account->id,
-            'amount' => 300000,
-            'payment_type' => 'pelunasan',
-            'status' => 'active',
-            'paid_at' => '2026-05-05 10:00:00',
-            'invoice_payment_id' => $invoicePayment->id,
-            'created_by' => $ctx['user']->id,
-        ]);
-        BookingPayment::create([
-            'booking_id' => $booking->id,
+        $voided = app(\App\Services\BookingPaymentService::class)->create($booking, [
             'payment_account_id' => $account->id,
             'amount' => 200000,
             'payment_type' => 'cicilan',
-            'status' => 'voided',
+            'status' => 'active',
             'paid_at' => '2026-05-06 10:00:00',
-            'created_by' => $ctx['user']->id,
         ]);
+        app(\App\Services\BookingPaymentService::class)->requestVoid($voided, 'salah input');
+
+        // ACC harus oleh user lain (superadmin bypass aturan "supervisor lain").
+        $supervisor = User::create([
+            'tenant_id' => $ctx['tenant']->id,
+            'branch_id' => $ctx['branch']->id,
+            'name' => 'Super',
+            'email' => uniqid('super-').'@example.test',
+            'password' => 'password',
+            'role' => 'superadmin',
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($supervisor);
+        // Void reversal tx memakai transaction_at = now(); bekukan waktu agar tetap di periode Mei.
+        Carbon::setTestNow('2026-05-07 09:00:00');
+        app(\App\Services\BookingPaymentService::class)->approveVoid($voided);
+        Carbon::setTestNow();
+        Sanctum::actingAs($ctx['user']);
 
         $this->getJson('/api/v1/reports/monthly-finance?month=5&year=2026')
             ->assertOk()
             ->assertJsonPath('data.summary.booking_revenue', 1000000)
             ->assertJsonPath('data.summary.rental_income', 400000);
+        // rental_income = invoice_payment_in 300k + booking_payment_in 100k
+        // − booking_payment_void 100k (cicilan di-void) + 100k DP... = 400k aktif
+        // (invoice 300k + booking aktif 100k = 400k; void 100k masuk lalu dikeluarkan)
     }
 
     private function context(string $role): array
@@ -151,6 +161,13 @@ class MonthlyFinanceReportTest extends TestCase
             'password' => 'password',
             'role' => $role,
             'is_active' => true,
+        ]);
+
+        // Report access is gated by finance.account_mutation (PaymentAccountTransactionPolicy::viewAny).
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
+            'role' => $role,
+            'permission_key' => 'finance.account_mutation',
         ]);
 
         Sanctum::actingAs($user);

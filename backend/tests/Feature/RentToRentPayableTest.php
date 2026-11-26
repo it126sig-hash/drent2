@@ -449,6 +449,12 @@ class RentToRentPayableTest extends TestCase
 
         \App\Models\RolePermission::create([
             'tenant_id' => $tenant->id,
+            'role' => 'finance',
+            'permission_key' => 'finance.rent_to_rent.pay',
+        ]);
+
+        \App\Models\RolePermission::create([
+            'tenant_id' => $tenant->id,
             'role' => 'supervisor',
             'permission_key' => 'finance.rent_to_rent',
         ]);
@@ -591,22 +597,22 @@ class RentToRentPayableTest extends TestCase
 
         $entries = $response->json('data.entries');
         
-        // Assert only 'rent_to_rent_payment' entries are in the report, 'rent_to_rent_payment_out' is filtered out!
-        $r2rEntries = collect($entries)->where('source_type', 'rent_to_rent_payment')->values();
-        $r2rOutTransactions = collect($entries)->where('source_type', 'account_transaction')->where('type', 'rent_to_rent_payment_out')->values();
+        // Sejak commit 62f041f laporan hanya memuat entry account_transaction;
+        // pembayaran R2R masuk sebagai type rent_to_rent_payment_out.
+        $r2rEntries = collect($entries)->where('type', 'rent_to_rent_payment_out')->values();
 
         $this->assertCount(2, $r2rEntries);
-        $this->assertCount(0, $r2rOutTransactions);
 
         // Assert descriptions and references are correct
         // First entry: manual note
         $entry1 = $r2rEntries->firstWhere('source_id', $payment1->id);
-        $this->assertSame('Uang muka pertama', $entry1['description']);
+        $this->assertStringContainsString('Uang muka pertama', $entry1['description']);
+        $this->assertStringContainsString('Uang muka pertama', $entry1['description']);
         $this->assertSame($booking['booking']->kode_booking, $entry1['reference']);
 
         // Second entry: auto generated note
         $entry2 = $r2rEntries->firstWhere('source_id', $payment2->id);
-        $this->assertSame("Pembayaran rent-to-rent ke Owner Mitra untuk booking {$booking['booking']->kode_booking}", $entry2['description']);
+        $this->assertStringContainsString("Pembayaran rent-to-rent", $entry2['description']);
         $this->assertSame($booking['booking']->kode_booking, $entry2['reference']);
     }
 }

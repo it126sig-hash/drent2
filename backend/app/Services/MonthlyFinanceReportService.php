@@ -39,8 +39,9 @@ class MonthlyFinanceReportService
         $bookingRevenue = $this->bookingRevenue($dateFrom, $dateTo, $user, $branchId);
 
         $byAccount = $accounts->map(function (PaymentAccount $account) use ($transactions) {
-            $accTx = $transactions->where('payment_account_id', $account->id)
-                ->where('status', '!=', 'voided');
+            // Void reversal rows (status 'voided', type *_void) MUST be counted:
+            // they carry the negative signed_amount that cancels out a voided payment.
+            $accTx = $transactions->where('payment_account_id', $account->id);
 
             // Income (sum signed_amount)
             $rentalIncome = $accTx->whereIn('type', ['booking_payment_in', 'invoice_payment_in', 'booking_payment_void', 'invoice_payment_void'])->sum('signed_amount');
@@ -195,7 +196,7 @@ class MonthlyFinanceReportService
             'amount' => (int) $row->amount,
             'signed_amount' => (int) $row->signed_amount,
             'happened_at' => $row->transaction_at?->toISOString(),
-            'reference' => $row->financeCategory?->name ?? $this->accountName($row->relatedPaymentAccount),
+            'reference' => $this->entryReference($row),
             'description' => $row->description,
             'type' => $row->type,
             'performed_by' => $row->creator?->name,
@@ -208,6 +209,18 @@ class MonthlyFinanceReportService
     private function accountName($account): ?string
     {
         return $account ? trim($account->nama_bank.' '.$account->nomor_rekening) : null;
+    }
+
+    private function entryReference(PaymentAccountTransaction $row): ?string
+    {
+        // Rent-to-rent transactions carry no booking FK; the code is embedded
+        // in the description written by RentToRentService ("untuk booking #X").
+        if (in_array($row->type, ['rent_to_rent_payment_out', 'rent_to_rent_payment_void'])
+            && preg_match('/booking #([\w-]+)/', $row->description ?? '', $matches)) {
+            return $matches[1];
+        }
+
+        return $row->financeCategory?->name ?? $this->accountName($row->relatedPaymentAccount);
     }
 
     private function reference($row): ?string

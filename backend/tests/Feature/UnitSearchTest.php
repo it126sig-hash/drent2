@@ -237,6 +237,13 @@ class UnitSearchTest extends TestCase
             'role' => 'admin_branch',
             'permission_key' => 'vehicle.unit',
         ]);
+        foreach (['vehicle.unit.create', 'vehicle.unit.update'] as $key) {
+            \App\Models\RolePermission::create([
+                'tenant_id' => $tenant->id,
+                'role' => 'admin_branch',
+                'permission_key' => $key,
+            ]);
+        }
 
         return compact('tenant', 'branch', 'user');
     }

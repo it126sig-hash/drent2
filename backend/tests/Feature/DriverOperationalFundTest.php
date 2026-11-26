@@ -18,6 +18,17 @@ class DriverOperationalFundTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function seedPermissions(int $tenantId): void
+    {
+        foreach (['finance.operational_cost', 'finance.operational_cost.create', 'finance.operational_cost.update'] as $key) {
+            \App\Models\RolePermission::create([
+                'tenant_id' => $tenantId,
+                'role' => 'finance',
+                'permission_key' => $key,
+            ]);
+        }
+    }
+
     public function test_can_authorize_review_policy_with_class_name(): void
     {
         $tenant = Tenant::create(['name' => 'DRENT', 'slug' => uniqid('drent-'), 'is_active' => true]);
@@ -32,6 +43,8 @@ class DriverOperationalFundTest extends TestCase
             'role' => 'finance',
             'is_active' => true,
         ]);
+
+        $this->seedPermissions($tenant->id);
 
         Sanctum::actingAs($financeUser);
 
@@ -53,6 +66,8 @@ class DriverOperationalFundTest extends TestCase
             'role' => 'finance',
             'is_active' => true,
         ]);
+
+        $this->seedPermissions($tenant->id);
 
         Sanctum::actingAs($financeUser);
 
@@ -112,6 +127,8 @@ class DriverOperationalFundTest extends TestCase
             'role' => 'finance',
             'is_active' => true,
         ]);
+
+        $this->seedPermissions($tenant->id);
 
         $supervisorUser = User::create([
             'tenant_id' => $tenant->id,
