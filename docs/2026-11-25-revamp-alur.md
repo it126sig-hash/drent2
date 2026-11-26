@@ -3,7 +3,7 @@
 - **Tanggal mulai:** 2026-11-25
 - **Tipe tugas:** REFACTOR (multi-fase)
 - **Sumber rencana:** `docs/2026-11-25-module-map.md` §5, referensi komponen: `docs/component-inventory.md` §5
-- **Status:** `IN_PROGRESS` — Fase 0 selesai
+- **Status:** `IN_PROGRESS` — Fase A selesai
 
 ---
 
@@ -98,6 +98,7 @@ Mengeksekusi langkah 5 dari module map: (1) validasi alur bisnis saat ini terhad
 | Fase | Keputusan / Temuan | Hasil verifikasi | Tanggal |
 |------|--------------------|------------------|---------|
 | 0 | Scope: semua 6 item §4 module-map; URL publik tetap; Legacy*ImportService diputuskan di Fase A; commit per fase sebagai checkpoint | Work doc + ADR terbaca; baseline git `e852cb2` | 2026-11-26 |
+| A | Verdict per alur §3: booking→invoice→payment OK; R2R OK; approval 2-langkah OK; physical check OK; semua sesuai kode. Legacy*ImportService **DIPERTAHANKAN** (masih dipakai app/Console/Commands/LegacyImport*Command.php). ReceivableController 293 baris/20 method (invoice+payment+void+public). Endpoint publik tersebar 4 controller (routes/api.php:48-57). Duplikat komponen signature & lokasi dialog terkonfirmasi | Baca routes/api.php, ReceivableController, Services, struktur views | 2026-11-26 |
 
 ## 6. Sertifikat QA
 
