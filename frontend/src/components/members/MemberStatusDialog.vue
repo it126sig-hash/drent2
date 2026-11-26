@@ -51,7 +51,7 @@ const onSubmit = () => {
     header="Ubah Status Member"
     :modal="true"
     :draggable="false"
-    class="w-full max-w-sm"
+    class="custom-dialog w-full max-w-sm"
   >
     <div class="flex flex-col gap-4 py-2">
       <div class="flex flex-col gap-1">

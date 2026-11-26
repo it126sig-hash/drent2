@@ -113,7 +113,8 @@ const close = () => {
     :visible="visible" 
     @update:visible="val => emit('update:visible', val)" 
     modal 
-    header="Override Permission Pengguna" 
+    header="Override Permission Pengguna"
+    class="custom-dialog"
     :style="{ width: '50vw', minWidth: '600px' }"
   >
     <div v-if="loading" class="flex justify-content-center p-4">

@@ -59,7 +59,8 @@ const handleClose = () => {
     :visible="visible" 
     @update:visible="handleClose"
     header="Reset Password" 
-    :modal="true" 
+    :modal="true"
+    class="custom-dialog"
     :style="{ width: '400px' }"
   >
     <div class="form-container p-fluid">

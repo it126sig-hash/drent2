@@ -62,7 +62,7 @@ const onSubmit = () => {
     header="Perpanjang Masa Aktif Member"
     :modal="true"
     :draggable="false"
-    class="w-full max-w-md"
+    class="custom-dialog w-full max-w-md"
   >
     <div class="flex flex-col gap-4 py-2">
       <div class="flex flex-col gap-1">
