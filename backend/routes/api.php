@@ -40,21 +40,24 @@ use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\InvoiceTermsTemplateController;
 use App\Http\Controllers\Api\V1\BookingCancellationController;
 use App\Http\Controllers\Api\V1\BookingPublicController;
+use App\Http\Controllers\Api\V1\PublicAccessController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
-    Route::get('public/invoices/soa/{token}', [ReceivableController::class, 'publicInvoice']);
-    Route::get('public/invoices/{token}', [ReceivableController::class, 'publicInvoice']);
-    Route::get('public/rent-to-rent-bills/{token}', [RentToRentController::class, 'publicBill']);
-    Route::get('public/rent-to-rent-bills/{token}/pdf', [RentToRentController::class, 'publicBillPdf']);
-    Route::get('public/physical-checks/{token}', [PhysicalCheckController::class, 'publicShow']);
-    Route::post('public/physical-checks/{token}/otp', [PhysicalCheckController::class, 'publicRequestOtp']);
-    Route::post('public/physical-checks/{token}/activities', [PhysicalCheckController::class, 'publicActivity']);
-    Route::post('public/physical-checks/{token}/submit', [PhysicalCheckController::class, 'publicStore']);
-    Route::get('public/bookings/{token}', [BookingPublicController::class, 'progress']);
-    Route::get('public/bookings/{token}/invoices', [BookingPublicController::class, 'invoices']);
+    Route::prefix('public')->group(function () {
+        Route::get('invoices/soa/{token}', [PublicAccessController::class, 'invoice']);
+        Route::get('invoices/{token}', [PublicAccessController::class, 'invoice']);
+        Route::get('rent-to-rent-bills/{token}', [PublicAccessController::class, 'rentToRentBill']);
+        Route::get('rent-to-rent-bills/{token}/pdf', [PublicAccessController::class, 'rentToRentBillPdf']);
+        Route::get('physical-checks/{token}', [PublicAccessController::class, 'physicalCheck']);
+        Route::post('physical-checks/{token}/otp', [PublicAccessController::class, 'physicalCheckOtp']);
+        Route::post('physical-checks/{token}/activities', [PublicAccessController::class, 'physicalCheckActivity']);
+        Route::post('physical-checks/{token}/submit', [PublicAccessController::class, 'physicalCheckSubmit']);
+        Route::get('bookings/{token}', [BookingPublicController::class, 'progress']);
+        Route::get('bookings/{token}/invoices', [BookingPublicController::class, 'invoices']);
+    });
 
     Route::middleware(['auth:sanctum', 'branch.scope'])->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);

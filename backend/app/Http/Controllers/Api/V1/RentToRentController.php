@@ -307,16 +307,6 @@ class RentToRentController extends Controller
         return new PublicRentToRentBillResource($this->service->publicBill($token));
     }
 
-    public function publicBillPdf(string $token)
-    {
-        $bill = $this->service->publicBill($token);
-
-        return response($this->pdfService->make($bill), 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.$bill->bill_number.'.pdf"',
-        ]);
-    }
-
     private function scopedFilters(array $filters): array
     {
         $user = auth()->user();

@@ -283,11 +283,4 @@ class ReceivableController extends Controller
 
         return new InvoiceResource($this->receivableService->rejectVoidInvoice($invoice, $request->validated('void_rejection_note')));
     }
-
-    public function publicInvoice(Request $request, string $token): PublicInvoiceResource
-    {
-        [$invoice, $paymentAccounts] = $this->receivableService->publicInvoice($token);
-
-        return new PublicInvoiceResource($invoice, $paymentAccounts);
-    }
 }
