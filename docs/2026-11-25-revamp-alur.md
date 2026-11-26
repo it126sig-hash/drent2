@@ -3,7 +3,7 @@
 - **Tanggal mulai:** 2026-11-25
 - **Tipe tugas:** REFACTOR (multi-fase)
 - **Sumber rencana:** `docs/2026-11-25-module-map.md` §5, referensi komponen: `docs/component-inventory.md` §5
-- **Status:** `IN_PROGRESS` — Fase D3 selesai
+- **Status:** `IN_PROGRESS` — Fase D selesai; bugfix pasca-D (laporan keuangan + seed permission test) selesai; lanjut Fase E
 
 ---
 
@@ -29,14 +29,14 @@ Mengeksekusi langkah 5 dari module map: (1) validasi alur bisnis saat ini terhad
 
 | Fase | Nama | Peran utama | Status | Commit |
 |------|------|-------------|--------|--------|
-| 0 | Kickoff & konfirmasi scope | Orchestrator | `DONE` | (diisi saat commit) |
-| A | Validasi alur (read-only) | drent-explorer | `PLANNED` | — |
-| B | Konsolidasi komponen bag. 1 | drent-frontend | `PLANNED` | — |
-| C | Konsolidasi komponen bag. 2 (struktur) | drent-frontend | `PLANNED` | — |
-| D1 | Refactor ReceivableController | drent-engineer | `PLANNED` | — |
-| D2 | Sentralisasi controller publik | drent-engineer | `PLANNED` | — |
-| D3 | Penyesuaian frontend endpoint | drent-frontend | `PLANNED` | — |
-| E | Keselarasan rent-to-rent | drent-engineer | `PLANNED` | — |
+| 0 | Kickoff & konfirmasi scope | Orchestrator | `DONE` | `93421b0` |
+| A | Validasi alur (read-only) | drent-explorer | `DONE` | `a9ee96d` |
+| B | Konsolidasi komponen bag. 1 | drent-frontend | `DONE` | `cd0f318` |
+| C | Konsolidasi komponen bag. 2 (struktur) | drent-frontend | `DONE` | `1850194` |
+| D1 | Refactor ReceivableController | drent-engineer | `DONE` | `443973d` |
+| D2 | Sentralisasi controller publik | drent-engineer | `DONE` | `443973d` |
+| D3 | Penyesuaian frontend endpoint | drent-frontend | `DONE` | `b7ec726` |
+| E | Keselarasan rent-to-rent | drent-engineer | `IN_PROGRESS` | — |
 | F | QA independen | drent-qa | `PLANNED` | — |
 | G | Finalisasi dokumentasi | drent-docs | `PLANNED` | — |
 
@@ -103,6 +103,7 @@ Mengeksekusi langkah 5 dari module map: (1) validasi alur bisnis saat ini terhad
 | C | UserPermissionOverrideDialog dipindah ke components/users/ (reuse lintas halaman); views/driver di-rename views/driver-portal (hilangkan ambiguitas driver/drivers); import router & UserListView diperbarui. Bug ditemukan & diperbaiki: relative import dialog masih 3 level setelah pindah (build FAIL) → dikoreksi ke 2 level | `npm run build` PASS setelah fix (built in 2.97s); build FAIL pertama tertangkap & diperbaiki | 2026-11-26 |
 | D3 | Semua pemanggilan endpoint publik di frontend (api/physicalCheck.js, api/receivable.js, api/rentToRent.js) sudah cocok dengan URL yang dipertahankan — **tidak ada perubahan kode yang diperlukan** | grep 9 pemanggilan `public/...` vs route:list 10 route publik — semua match | 2026-11-26 |
 | D1+D2 | Endpoint publik berbasis token disatukan di controller baru `PublicAccessController` (invoice, R2R bill+pdf, physical check show/otp/activity/submit); method publik lama dihapus dari ReceivableController, RentToRentController, PhysicalCheckController. **Semua URL publik tetap identik** (routes/api.php di-rewrite dengan prefix `public` + group; 10 route terverifikasi via route:list). Catatan: ReceivableController masih memegang invoice internal; refactor penuhnya ditunda agar perubahan tetap kecil | `php artisan test tests/Feature`: 15 failed / 40 passed — **identik dengan baseline sebelum perubahan** (diverifikasi via git stash); `php -l` PASS 4 controller; route:list 10 route publik OK | 2026-11-26 |
+| Bugfix pasca-D | 3 bug: (1) `MonthlyFinanceReportService` menyaring `status != 'voided'` sehingga baris reversi void (bertipe `*_void`, status `voided`, signed_amount negatif) ikut tersembunyi → pendapatan over-count (600k vs 400k) — filter dihapus, reversi kini dihitung; (2) entry R2R di laporan punya `reference` null — kini diisi kode booking dari deskripsi transaksi (`entryReference()`); (3) `PublicAccessController` tertinggal dari commit `443973d` (untracked) padahal routes/api.php menunjuk ke sana — ikut di-commit | `php artisan test` (full suite): **59 passed / 0 failed** (363 assertions) — sebelumnya 7 failed. Test helper lama (Dashboard, UnitSearch, DriverOperationalFund) di-seed ulang sesuai RolePermissionSeeder pasca-split permission b717706; asersi KPI DashboardTest disesuaikan ke kontrak 5 KPI saat ini (frontend merender KPI generik dari API) | 2026-11-26 |
 
 ## 6. Sertifikat QA
 
