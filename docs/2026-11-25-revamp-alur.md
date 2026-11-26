@@ -3,7 +3,7 @@
 - **Tanggal mulai:** 2026-11-25
 - **Tipe tugas:** REFACTOR (multi-fase)
 - **Sumber rencana:** `docs/2026-11-25-module-map.md` §5, referensi komponen: `docs/component-inventory.md` §5
-- **Status:** `PLANNED` — belum ada fase yang dieksekusi
+- **Status:** `IN_PROGRESS` — Fase 0 selesai
 
 ---
 
@@ -29,7 +29,7 @@ Mengeksekusi langkah 5 dari module map: (1) validasi alur bisnis saat ini terhad
 
 | Fase | Nama | Peran utama | Status | Commit |
 |------|------|-------------|--------|--------|
-| 0 | Kickoff & konfirmasi scope | Orchestrator | `PLANNED` | — |
+| 0 | Kickoff & konfirmasi scope | Orchestrator | `DONE` | (diisi saat commit) |
 | A | Validasi alur (read-only) | drent-explorer | `PLANNED` | — |
 | B | Konsolidasi komponen bag. 1 | drent-frontend | `PLANNED` | — |
 | C | Konsolidasi komponen bag. 2 (struktur) | drent-frontend | `PLANNED` | — |
@@ -97,7 +97,7 @@ Mengeksekusi langkah 5 dari module map: (1) validasi alur bisnis saat ini terhad
 
 | Fase | Keputusan / Temuan | Hasil verifikasi | Tanggal |
 |------|--------------------|------------------|---------|
-| — | (belum ada) | — | — |
+| 0 | Scope: semua 6 item §4 module-map; URL publik tetap; Legacy*ImportService diputuskan di Fase A; commit per fase sebagai checkpoint | Work doc + ADR terbaca; baseline git `e852cb2` | 2026-11-26 |
 
 ## 6. Sertifikat QA
 
